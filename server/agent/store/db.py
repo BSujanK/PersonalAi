@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS devices (
@@ -134,6 +134,57 @@ CREATE TABLE IF NOT EXISTS local_files (
     size INTEGER NOT NULL,
     mtime_ns INTEGER NOT NULL,
     indexed_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS finance_sms (
+    key_hash TEXT PRIMARY KEY,
+    received_at TEXT NOT NULL,
+    sender TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('parsed', 'balance', 'ignored', 'unparsed')),
+    body_enc BLOB,
+    txn_id INTEGER
+);
+CREATE TABLE IF NOT EXISTS finance_txns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bank TEXT NOT NULL,
+    account_hash TEXT,
+    account_mask_enc BLOB,
+    direction TEXT NOT NULL CHECK (direction IN ('debit', 'credit')),
+    channel TEXT NOT NULL,
+    amount_enc BLOB NOT NULL,
+    occurred_at TEXT NOT NULL,
+    txn_date TEXT,
+    counterparty_enc BLOB,
+    counterparty_hash TEXT,
+    reference_hash TEXT,
+    balance_enc BLOB,
+    category TEXT,
+    category_source TEXT CHECK (category_source IN ('rule', 'user_rule', 'llm', 'user')),
+    from_sms INTEGER NOT NULL DEFAULT 0,
+    from_email INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS finance_txns_time ON finance_txns(occurred_at);
+CREATE INDEX IF NOT EXISTS finance_txns_account ON finance_txns(account_hash, occurred_at);
+CREATE INDEX IF NOT EXISTS finance_txns_reference ON finance_txns(reference_hash);
+CREATE TABLE IF NOT EXISTS finance_balances (
+    account_hash TEXT PRIMARY KEY,
+    bank TEXT NOT NULL,
+    account_mask_enc BLOB NOT NULL,
+    balance_enc BLOB NOT NULL,
+    as_of TEXT NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('sms', 'email'))
+);
+CREATE TABLE IF NOT EXISTS finance_email_alerts (
+    account TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    txn_id INTEGER,
+    PRIMARY KEY (account, message_id)
+);
+CREATE TABLE IF NOT EXISTS finance_category_rules (
+    counterparty_hash TEXT PRIMARY KEY,
+    category TEXT NOT NULL,
+    created_at TEXT NOT NULL
 );
 -- Holds keyed hashes of words, never plaintext; rowid = local_files.id.
 CREATE VIRTUAL TABLE IF NOT EXISTS local_files_fts USING fts5(tokens);

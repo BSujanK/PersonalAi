@@ -7,7 +7,13 @@ import uvicorn
 
 import agent.main as main_module
 from agent.main import main
-from agent.scheduler import DEADLINE_JOB_ID, FILE_INDEX_JOB_ID, MAIL_JOB_ID, Job
+from agent.scheduler import (
+    DEADLINE_JOB_ID,
+    FILE_INDEX_JOB_ID,
+    FINANCE_CATEGORIZE_JOB_ID,
+    MAIL_JOB_ID,
+    Job,
+)
 
 
 @pytest.fixture
@@ -102,18 +108,21 @@ def test_serve_with_mail_accounts_polls_and_stops_scheduler(
     captured, scheduler = _capture_jobs(monkeypatch)
     assert main(["serve"]) == 0
     assert started == ["127.0.0.1"]
-    assert [(job.id, job.minutes) for job in captured[0]] == [(MAIL_JOB_ID, 5)]
+    assert [(job.id, job.minutes) for job in captured[0]] == [
+        (MAIL_JOB_ID, 5),
+        (FINANCE_CATEGORIZE_JOB_ID, 15),
+    ]
     assert scheduler.shutdowns == [False]
 
 
-def test_serve_without_accounts_starts_no_jobs(
+def test_serve_without_accounts_only_categorises_finance(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     started = _serve_env(monkeypatch, tmp_path)
     captured, _ = _capture_jobs(monkeypatch)
     assert main(["serve"]) == 0
     assert started == ["127.0.0.1"]
-    assert captured == [[]]
+    assert [(job.id, job.minutes) for job in captured[0]] == [(FINANCE_CATEGORIZE_JOB_ID, 15)]
 
 
 def test_serve_with_workspace_registers_jobs(
@@ -131,6 +140,7 @@ def test_serve_with_workspace_registers_jobs(
     assert [(job.id, job.minutes) for job in captured[0]] == [
         (DEADLINE_JOB_ID, 60),
         (FILE_INDEX_JOB_ID, 30),
+        (FINANCE_CATEGORIZE_JOB_ID, 15),
     ]
 
 

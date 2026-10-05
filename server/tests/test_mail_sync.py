@@ -266,3 +266,30 @@ def test_sync_logs_contain_no_mail_content(caplog: pytest.LogCaptureFixture) -> 
     text = "\n".join(r.getMessage() for r in caplog.records)
     for secret in (SECRET_SUBJECT, SECRET_BODY, SECRET_FROM, SECRET_NAME, ACCOUNT, "example."):
         assert secret not in text
+
+
+def test_on_new_hook_runs_for_new_messages_only_and_is_guarded(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    seen: list[str] = []
+
+    def hook(msg: MailMessage) -> None:
+        seen.append(msg.id)
+        if msg.id == "m1":
+            raise RuntimeError("private text")
+
+    db = Database(":memory:")
+    clock = FakeClock()
+    store = MailStore(db, FieldCipher(KEY), KEY, clock)
+    api = FakeGmailApi(ACCOUNT)
+    sync = MailSync(store, lambda _a: api, Recorder(), clock, 7, on_new=hook)
+    api.add_message("m0")
+    api.add_message("m1")
+    with caplog.at_level(logging.WARNING):
+        sync.sync_account(ACCOUNT)
+    assert sorted(seen) == ["m0", "m1"]
+    assert "private text" not in caplog.text and "RuntimeError" in caplog.text
+    sync.sync_account(ACCOUNT)  # nothing new: the hook stays quiet
+    api.add_message("m2")
+    sync.sync_account(ACCOUNT)
+    assert sorted(seen) == ["m0", "m1", "m2"]

@@ -5,7 +5,7 @@ PersonalAi is a private agent with read access to mail, calendar, files and fina
 ## Assets
 
 - Mail, calendar, Classroom, Drive and local file contents.
-- Bank SMS, ledger rows and Groww holdings.
+- Bank SMS, bank alert mail, ledger rows and account balances.
 - Personal identifiers: PAN, Aadhaar, card and account numbers, UPI IDs, phone numbers, OTPs and passwords.
 - Secrets: the device tokens, the per-device approval keys, the NVIDIA API key, OAuth refresh tokens and the database key.
 - The ability to cause side effects (send mail, change calendar, share files).
@@ -25,6 +25,8 @@ PersonalAi is a private agent with read access to mail, calendar, files and fina
 | Stolen disk or database file | Message bodies, redaction maps, action payloads, previews and results are AES-256-GCM encrypted per column, with the table, column and row id as associated data so ciphertexts cannot be swapped. The key is in the OS keyring. | `agent/store/crypto.py`, `agent/store/db.py` |
 | Plaintext secrets | Secrets live only in the OS keyring. Startup refuses a fail, null or plaintext backend; only an allowlist of OS-backed backends is accepted. Settings never read secrets from the environment. | `agent/store/keystore.py`, `agent/config.py` |
 | Tampering with the audit trail | The audit log is append-only (SQL triggers abort UPDATE and DELETE) and hash-chained, so a modified or inserted row fails `verify()`. Entries carry short codes, never payloads or PII. | `agent/store/db.py`, `agent/core/audit.py` |
+| Finance data | Bank SMS arrive only from the paired phone (`POST /sms`, device token). Non-bank senders and anything that looks like an OTP or PIN are dropped with no body or sender kept; only an idempotency hash is stored. Amounts, balances, counterparties and masked accounts are AES-GCM encrypted per row; accounts, counterparties and references are indexed by keyed HMAC. The LLM tools `spend_summary`, `balances` and `transactions` return aggregates only (totals, counts, groups, day-level dates), never rows, references or raw SMS. The local categoriser sends Ollama only the redacted counterparty, direction and channel. | `agent/finance/`, `agent/api/finance.py` |
+| Forged bank alert mail | Alert mails are read only from known bank domains (exact or subdomain match) and never from SPAM or TRASH. A forged mail that passes Gmail's filters could still add a ledger row, or set a balance until the next bank SMS replaces it. Email-only rows are marked as such (`from_email`) so the app can show where a figure came from. | `agent/finance/email_alerts.py`, `agent/finance/ingest.py` |
 | Log or notification leakage | Logs carry ids, counts and exception type names only. Push notifications (M5) carry no content. | all modules |
 | Repo leakage (the repo is public) | `.gitignore` excludes `.env`, `*.db` and token files. Test fixtures are synthetic (example.com, made-up numbers). gitleaks runs in CI. Tests use an in-memory keyring and never touch a real one. | `.gitignore`, `tests/conftest.py`, CI |
 

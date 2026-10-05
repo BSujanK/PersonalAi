@@ -1,4 +1,4 @@
-"""Background jobs: mail sync, Classroom deadline proposals and the local file index."""
+"""Background jobs: mail sync, deadline proposals, the file index and finance categorising."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ log = logging.getLogger(__name__)
 MAIL_JOB_ID = "mail_poll"
 DEADLINE_JOB_ID = "deadline_proposals"
 FILE_INDEX_JOB_ID = "file_index"
+FINANCE_CATEGORIZE_JOB_ID = "finance_categorize"
 
 
 @dataclass(frozen=True)

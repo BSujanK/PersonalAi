@@ -45,7 +45,7 @@ def test_forbidden_tool_names(name: str) -> None:
         ToolRegistry().register(_tool(name))
 
 
-@pytest.mark.parametrize("name", ["groww_get_holdings", "list_orders_in_mail", "read_mail"])
+@pytest.mark.parametrize("name", ["spend_summary", "list_orders_in_mail", "read_mail"])
 def test_allowed_tool_names(name: str) -> None:
     ToolRegistry().register(_tool(name))
 
