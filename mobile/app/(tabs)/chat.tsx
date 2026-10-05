@@ -12,7 +12,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button, colors, ErrorText } from '../../src/components/ui';
-import { chat } from '../../src/lib/api';
+import {
+  chat,
+  chatStream,
+  OfflineError,
+  StreamUnsupportedError,
+  type ChatReply,
+} from '../../src/lib/api';
 import { errorMessage } from '../../src/lib/format';
 
 interface Message {
@@ -30,8 +36,24 @@ export default function Chat() {
   const conversationId = useRef<string | null>(null);
   const nextId = useRef(0);
 
-  function append(from: Message['from'], text: string) {
-    setMessages((prev) => [...prev, { id: nextId.current++, from, text }]);
+  function append(from: Message['from'], text: string): number {
+    const id = nextId.current++;
+    setMessages((prev) => [...prev, { id, from, text }]);
+    return id;
+  }
+
+  function setText(id: number, update: (text: string) => string) {
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, text: update(m.text) } : m)));
+  }
+
+  function remove(id: number) {
+    setMessages((prev) => prev.filter((m) => m.id !== id));
+  }
+
+  function accept(id: number, result: ChatReply) {
+    conversationId.current = result.conversation_id;
+    setPending(result.pending_action_ids.length);
+    setText(id, () => result.reply);
   }
 
   async function send() {
@@ -41,13 +63,37 @@ export default function Chat() {
     setError(null);
     setBusy(true);
     append('me', text);
+    const bubble = append('agent', '');
+    // Set once the server has accepted the turn (its first event), so it may already be running.
+    let started = false;
     try {
-      const result = await chat(text, conversationId.current);
-      conversationId.current = result.conversation_id;
-      setPending(result.pending_action_ids.length);
-      append('agent', result.reply);
+      const result = await chatStream(text, conversationId.current, {
+        onStart: () => {
+          started = true;
+        },
+        onToken: (chunk) => {
+          started = true;
+          setText(bubble, (current) => current + chunk);
+        },
+        onReset: () => setText(bubble, () => ''),
+      });
+      accept(bubble, result);
     } catch (e) {
-      setError(errorMessage(e));
+      // Fall back to the plain call only when the server never accepted the stream: after that it
+      // may have already run the turn, so resending could repeat it.
+      const canFall =
+        !started && (e instanceof StreamUnsupportedError || e instanceof OfflineError);
+      if (canFall) {
+        try {
+          accept(bubble, await chat(text, conversationId.current));
+        } catch (fallbackError) {
+          remove(bubble);
+          setError(errorMessage(fallbackError));
+        }
+      } else {
+        remove(bubble);
+        setError(errorMessage(e));
+      }
     } finally {
       setBusy(false);
     }
@@ -67,7 +113,7 @@ export default function Chat() {
           renderItem={({ item }) => (
             <View style={[styles.bubble, item.from === 'me' ? styles.mine : styles.theirs]}>
               <Text selectable style={item.from === 'me' ? styles.mineText : styles.theirText}>
-                {item.text}
+                {item.text || (item.from === 'agent' ? '…' : '')}
               </Text>
             </View>
           )}

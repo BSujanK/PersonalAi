@@ -8,7 +8,7 @@ from typing import Any
 from agent.config import Settings
 from agent.core.llm import ChatMessage, LLMResponse, ToolCall
 from agent.core.loop import STEP_LIMIT_REPLY, AgentLoop, wrap_untrusted
-from agent.core.redact import RedactionMap, Redactor, from_model
+from agent.core.redact import Redacted, RedactionMap, Redactor, from_model
 from agent.core.tools import Tool, ToolKind
 from agent.store.models import ActionStatus
 from tests.support import Env, make_env
@@ -187,3 +187,123 @@ def test_history_is_replayed_to_the_model() -> None:
     _loop(env, llm).run("c1", history, "now", RedactionMap())
     roles = [m.role for m in llm.received[0]]
     assert roles == ["system", "user", "user"]
+
+
+class StreamingFakeLLM:
+    """Scripted streaming model: each step is (content chunks, tool calls); implements both APIs."""
+
+    def __init__(self, *steps: tuple[list[str], list[ToolCall]]) -> None:
+        self._steps = list(steps)
+        self.stream_calls = 0
+
+    def _next(self) -> tuple[list[str], list[ToolCall]]:
+        return self._steps.pop(0) if len(self._steps) > 1 else self._steps[0]
+
+    def complete(
+        self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]
+    ) -> LLMResponse:
+        chunks, calls = self._next()
+        return LLMResponse(from_model("".join(chunks)) if chunks else None, calls)
+
+    def stream_complete(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[dict[str, Any]],
+        on_delta: Callable[[Redacted], None],
+        on_reset: Callable[[], None],
+    ) -> LLMResponse:
+        self.stream_calls += 1
+        chunks, calls = self._next()
+        for chunk in chunks:
+            on_delta(from_model(chunk))
+        return LLMResponse(from_model("".join(chunks)) if chunks else None, calls)
+
+
+def _tool_call(name: str, args: dict[str, Any]) -> ToolCall:
+    return ToolCall("call_1", name, from_model(json.dumps(args)))
+
+
+def test_streaming_rehydrates_split_placeholder_and_matches_plain_run() -> None:
+    env = make_env()
+    llm = StreamingFakeLLM((["Mail to ⟨EMAIL_SE", "LF_1", "⟩ sent."], []))
+    texts: list[str] = []
+    result = _loop(env, llm).run(
+        "c1", [], f"Email {OWNER}", RedactionMap(), on_text=texts.append, on_reset=lambda: None
+    )
+    assert llm.stream_calls == 1
+    assert "".join(texts) == result.reply == f"Mail to {OWNER} sent."
+    assert all("⟨" not in t for t in texts)
+    plain = _loop(env, StreamingFakeLLM((["Mail to ⟨EMAIL_SELF_1⟩ sent."], []))).run(
+        "c1", [], f"Email {OWNER}", RedactionMap()
+    )
+    assert plain.reply == result.reply
+
+
+def test_streaming_resets_text_before_tool_call_and_never_streams_tool_output() -> None:
+    env = make_env(mail_body="TOOL-SECRET-BODY")
+    llm = StreamingFakeLLM(
+        (["Let me check."], [_tool_call("read_mail", {})]),
+        (["All ", "done."], []),
+    )
+    events: list[str] = []
+    result = _loop(env, llm).run(
+        "c1",
+        [],
+        "read",
+        RedactionMap(),
+        on_text=lambda t: events.append(f"t:{t}"),
+        on_reset=lambda: events.append("reset"),
+    )
+    assert events == ["t:Let me check.", "reset", "t:All ", "t:done."]
+    assert result.reply == "All done."
+    assert not any("TOOL-SECRET" in e for e in events)
+
+
+def test_streaming_tool_step_without_text_emits_no_reset() -> None:
+    env = make_env()
+    llm = StreamingFakeLLM(([], [_tool_call("read_mail", {})]), (["ok"], []))
+    events: list[str] = []
+    _loop(env, llm).run(
+        "c1", [], "r", RedactionMap(), on_text=events.append, on_reset=lambda: events.append("R")
+    )
+    assert events == ["ok"]
+
+
+def test_streaming_inner_reset_clears_held_fragment_and_forwards() -> None:
+    class ResettingLLM(StreamingFakeLLM):
+        def stream_complete(
+            self,
+            messages: Sequence[ChatMessage],
+            tools: Sequence[dict[str, Any]],
+            on_delta: Callable[[Redacted], None],
+            on_reset: Callable[[], None],
+        ) -> LLMResponse:
+            on_delta(from_model("abc ⟨EMAIL"))
+            on_reset()
+            on_delta(from_model("fresh"))
+            return LLMResponse(from_model("fresh"), [])
+
+    events: list[str] = []
+    result = _loop(make_env(), ResettingLLM(([], []))).run(
+        "c1", [], "hi", RedactionMap(), on_text=events.append, on_reset=lambda: events.append("R")
+    )
+    assert events == ["abc ", "R", "fresh"]
+    assert result.reply == "fresh"
+
+
+def test_non_streaming_llm_emits_full_rehydrated_reply_once() -> None:
+    env = make_env()
+    llm = FakeLLM(say("Hi ⟨EMAIL_SELF_1⟩!"))
+    texts: list[str] = []
+    result = _loop(env, llm).run(
+        "c1", [], f"Email {OWNER}", RedactionMap(), on_text=texts.append, on_reset=lambda: None
+    )
+    assert texts == [f"Hi {OWNER}!"] and result.reply == texts[0]
+
+
+def test_non_streaming_llm_tool_step_emits_nothing() -> None:
+    env = make_env()
+    llm = FakeLLM(call("read_mail", {}), say("ok"))
+    texts: list[str] = []
+    _loop(env, llm).run("c1", [], "r", RedactionMap(), on_text=texts.append)
+    assert texts == ["ok"]

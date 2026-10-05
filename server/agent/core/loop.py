@@ -6,15 +6,16 @@ import json
 import logging
 import re
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from agent.config import Settings
 from agent.core import policy
 from agent.core.approvals import ApprovalEngine
-from agent.core.llm import ChatMessage, LLMClient, ToolCall
+from agent.core.llm import ChatMessage, LLMClient, LLMResponse, StreamingLLMClient, ToolCall
 from agent.core.policy import Decision
-from agent.core.redact import RedactionMap, Redactor, from_model
+from agent.core.redact import Redacted, RedactionMap, Redactor, StreamRehydrator, from_model
 from agent.core.tools import ToolRegistry
 
 log = logging.getLogger(__name__)
@@ -87,20 +88,72 @@ class AgentLoop:
         history: list[ChatMessage],
         user_text: str,
         rmap: RedactionMap,
+        *,
+        on_text: Callable[[str], None] | None = None,
+        on_reset: Callable[[], None] | None = None,
     ) -> LoopResult:
         system = ChatMessage("system", from_model(SYSTEM_PROMPT))
         new: list[ChatMessage] = [ChatMessage("user", self._redactor.redact(user_text, rmap))]
         pending_ids: list[str] = []
+        tools = self._registry.schemas()
         for _ in range(self._settings.max_agent_steps):
-            response = self._llm.complete([system, *history, *new], self._registry.schemas())
+            if on_text is None:
+                response = self._llm.complete([system, *history, *new], tools)
+                emitted = False
+            else:
+                response, emitted = self._streamed_step(
+                    [system, *history, *new], tools, rmap, on_text, on_reset
+                )
             content = response.content if response.content is not None else from_model("")
             new.append(ChatMessage("assistant", content, tool_calls=response.tool_calls or None))
             if not response.tool_calls:
                 reply = Redactor.rehydrate(content.text, rmap)
                 return LoopResult(reply, new, pending_ids)
+            if emitted and on_reset is not None:
+                on_reset()  # text shown before a tool call is not part of the final answer
             for call in response.tool_calls:
                 new.append(self._handle_call(call, conversation_id, rmap, pending_ids))
         return LoopResult(STEP_LIMIT_REPLY, new, pending_ids)
+
+    def _streamed_step(
+        self,
+        messages: list[ChatMessage],
+        tools: list[dict[str, Any]],
+        rmap: RedactionMap,
+        on_text: Callable[[str], None],
+        on_reset: Callable[[], None] | None,
+    ) -> tuple[LLMResponse, bool]:
+        """One model call that streams safe text; returns the response and whether any was shown."""
+        rehydrator = StreamRehydrator(rmap)
+        emitted = False
+
+        def emit(text: str) -> None:
+            nonlocal emitted
+            if text:
+                emitted = True
+                on_text(text)
+
+        if not isinstance(self._llm, StreamingLLMClient):
+            response = self._llm.complete(messages, tools)
+            if not response.tool_calls and response.content is not None:
+                emit(Redactor.rehydrate(response.content.text, rmap))
+            return response, emitted
+
+        def on_delta(delta: Redacted) -> None:
+            emit(rehydrator.feed(delta.text))
+
+        def reset() -> None:
+            nonlocal emitted
+            rehydrator.reset()
+            if emitted:
+                emitted = False
+                if on_reset is not None:
+                    on_reset()
+
+        response = self._llm.stream_complete(messages, tools, on_delta, reset)
+        if not response.tool_calls:
+            emit(rehydrator.flush())
+        return response, emitted
 
     def _tool_message(self, call: ToolCall, text: str) -> ChatMessage:
         return ChatMessage("tool", from_model(text), tool_call_id=call.id)

@@ -17,6 +17,7 @@ from agent.finance.services import FinanceServices
 from agent.finance.sms_parsers.common import known_senders
 from agent.finance.summary import Period, format_inr, local_tz, resolve_period, spend_summary
 from agent.store.models import Device
+from agent.store.sync_status import SMS_INGEST, record_ok
 
 router = APIRouter()
 
@@ -69,6 +70,7 @@ def ingest_sms(
                 f"ignored={result.ignored} unparsed={result.unparsed}"
             ),
         )
+        record_ok(request.app.state.db, SMS_INGEST, request.app.state.clock)
     return {
         "accepted": result.accepted,
         "duplicates": result.duplicates,

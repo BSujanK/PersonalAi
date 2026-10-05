@@ -17,9 +17,55 @@ Tests mock every external API and use an in-memory keyring, so they need no netw
 
 ## Go-live guide (M7): Windows laptop and Android phone
 
-Do these steps in order on the laptop (PowerShell, as your normal user, not as admin unless a step says so) and the phone. Each step ends with a check. Stop at the first check that fails.
+The short path is three things you do by hand, then two commands. Run PowerShell as your normal user (not as admin).
 
-### 1. Laptop prerequisites
+### Before the wizard
+
+1. **Laptop tools.** Install [Python 3.12+](https://www.python.org/downloads/windows/), [uv](https://docs.astral.sh/uv/getting-started/installation/) (`winget install --id=astral-sh.uv -e`), Git, [Ollama](https://ollama.com/download) and [Tailscale](https://tailscale.com/download/windows). Sign in to Tailscale and, in the admin console, choose **Disable key expiry** for the laptop. Clone the repo, for example to `C:\Users\you\PersonalAi`.
+2. **Phone.** Install Tailscale from the Play Store, sign in with the same account and turn on **Always-on VPN** for it. Build and sideload the APK ([A8](#a8-build-and-install-the-android-app)), enrol a fingerprint, and set the app and Tailscale to **Battery: Unrestricted**.
+3. **Accounts you create in a browser.** The wizard cannot do these for you:
+   - a Google Cloud OAuth **Desktop** client, published **In production** ([A3](#a3-google-cloud-oauth-production-mode), items 1 to 5); keep the downloaded client JSON at hand;
+   - an NVIDIA API key from [build.nvidia.com](https://build.nvidia.com/) (starts with `nvapi-`).
+
+### Run the wizard
+
+From `server\`:
+
+```powershell
+uv run python -m agent setup
+```
+
+It follows the appendix below in order and asks before every change. Each step checks whether it is already done and skips it, so you can stop at any point (Ctrl+C) and run it again to continue; `--redo STEP` repeats one step (`prereqs`, `nvidia_key`, `models`, `ollama`, `google`, `profile`, `network`, `task`, `power`, `pair`). The steps:
+
+1. checks Python and uv, runs `uv sync`;
+2. asks for the NVIDIA key with hidden input and stores it in Windows Credential Manager only;
+3. lists the models your key can use, offers to run `scripts/eval_models.py` on the ones you pick, then sets `PERSONALAI_MODEL_PRIMARY`, `_FALLBACK` and `_LONG` from your choice ([A4a](#a4a-choose-the-nvidia-models) explains how to choose);
+4. pulls the Ollama models and sets `OLLAMA_CONTEXT_LENGTH` and `PERSONALAI_LOCAL_CONTEXT_TOKENS` to the same value (quit Ollama from the tray and start it again afterwards);
+5. signs in each Google account you enter, with the services you choose (a browser opens), and adds it to the `PERSONALAI_*_ACCOUNTS` variables; delete the client JSON afterwards;
+6. asks for your addresses, VIP senders, college domains and readable folders;
+7. finds the laptop's Tailscale `100.x.y.z` address and sets `PERSONALAI_BIND_HOSTS` to `127.0.0.1,100.x.y.z`;
+8. installs and starts the "PersonalAi agent" scheduled task;
+9. checks the power settings and shows the `powercfg` commands for you to run yourself (it never changes them);
+10. opens a pairing window and shows the QR code to scan in the app (**Settings > Pair**);
+11. finishes by running `agent doctor`.
+
+Every value is written as a Windows **user** environment variable (no file in the repo), and every secret goes only to Credential Manager. Open a new PowerShell window afterwards so it sees the variables.
+
+### Check everything
+
+```powershell
+uv run python -m agent doctor
+```
+
+It prints a pass/fail line per prerequisite, with the exact command that fixes each failure: Python and uv, the keyring backend, the NVIDIA key and that the configured models exist, Ollama and its context length, each Google account's granted services, the bind addresses and Tailscale, the database, its key and the audit chain, the scheduled task, power settings, a paired phone, and the last mail, SMS and Classroom sync times. It exits with 0 only when every required check passes (the sync times are informational). `--json` prints the same as JSON. It never prints keys, tokens, mail or SMS. Run it again whenever something seems off.
+
+Then go through the first sync checks in [A12](#a12-first-sync-checks).
+
+## Appendix: manual go-live steps
+
+These are the steps the wizard automates, kept for reference and for fixing one thing by hand. Do them in order on the laptop and the phone. Each step ends with a check. Stop at the first check that fails.
+
+### A1. Laptop prerequisites
 
 1. Install [Python 3.12+](https://www.python.org/downloads/windows/), [uv](https://docs.astral.sh/uv/getting-started/installation/) and Git, then clone the repo, for example to `C:\Users\you\PersonalAi`.
 2. In `server\`, run `uv sync`.
@@ -29,15 +75,15 @@ Do these steps in order on the laptop (PowerShell, as your normal user, not as a
    ```
    It must print `WinVaultKeyring` (possibly inside a `ChainerBackend`). The server refuses to start on any other backend; there is no plaintext fallback.
 
-### 2. Tailscale
+### A2. Tailscale
 
 1. Install [Tailscale](https://tailscale.com/download/windows) on the laptop and sign in.
 2. In the Tailscale admin console, open the laptop's machine menu and choose **Disable key expiry**, so the laptop does not drop off the tailnet after 180 days.
 3. Note the laptop's address: `tailscale ip -4` (a `100.x.y.z` address; it stays the same for this machine).
 4. Install Tailscale on the phone from the Play Store and sign in with the same account. In Android **Settings > Network > VPN > Tailscale**, turning on **Always-on VPN** keeps the phone connected.
-5. Check: from the phone's browser, `http://100.x.y.z:8765` will answer later, once the server runs (step 7).
+5. Check: from the phone's browser, `http://100.x.y.z:8765` will answer later, once the server runs (step A7).
 
-### 3. Google Cloud OAuth (production mode)
+### A3. Google Cloud OAuth (production mode)
 
 1. At [console.cloud.google.com](https://console.cloud.google.com/), create a project, for example `personalai`.
 2. **APIs & Services > Library**: enable the Gmail API, Google Calendar API, Google Classroom API and Google Drive API.
@@ -54,7 +100,7 @@ Do these steps in order on the laptop (PowerShell, as your normal user, not as a
 8. If the college Workspace admin blocks third-party apps (the sign-in shows "access blocked" or "admin_policy_enforced"), set up forwarding from the college mailbox to your personal Gmail instead, and leave the college account out of every `PERSONALAI_*_ACCOUNTS` variable. Classroom is then unavailable.
 9. Check: the script prints the account and the services it authorised, with no error.
 
-### 4. NVIDIA API key
+### A4. NVIDIA API key
 
 1. At [build.nvidia.com](https://build.nvidia.com/), sign in and generate an API key (it starts with `nvapi-`).
 2. Store it in the keyring. The command prompts for the value without echoing it; never put the key on the command line, in a file or in an environment variable:
@@ -63,7 +109,7 @@ Do these steps in order on the laptop (PowerShell, as your normal user, not as a
    ```
 3. Choose the models (next section), set `PERSONALAI_MODEL_PRIMARY`, then check: `uv run python scripts/check_nvidia.py` prints `OK: <model> reachable and tool calling works`. It sends one fixed synthetic prompt, nothing personal. `--model ID` checks another model without changing the variable.
 
-### 4a. Choose the NVIDIA models
+### A4a. Choose the NVIDIA models
 
 No model is built in: the server will not chat until `PERSONALAI_MODEL_PRIMARY` is set. The catalogue changes often, so pick from what your key can use today.
 
@@ -91,23 +137,29 @@ No model is built in: the server will not chat until `PERSONALAI_MODEL_PRIMARY` 
    ```
 4. Re-run the evaluation when NVIDIA retires a model or adds a new one, and after changing the system prompt or tools.
 
-**How requests are routed.** A long request goes to the long model, everything else to the primary. If that model errors or is rate limited, the request moves to the fallback model and then to local Ollama. Every route receives only redacted text. The server log records which route and model answered each request (never its content), for example `llm served route=fallback model=vendor/model-b`.
+**How requests are routed.** A long request goes to the long model, everything else to the primary. If that model errors or is rate limited, the request moves to the fallback model and then to local Ollama, but only when the request fits in `PERSONALAI_LOCAL_CONTEXT_TOKENS`. Chat replies stream to the app as they are generated; if a model fails mid-reply, the app clears the partial text and the next route answers. Every route receives only redacted text. The server log records which route and model answered each request (never its content), for example `llm served route=fallback model=vendor/model-b`.
 
-### 5. Ollama (local classifier and fallback)
+### A5. Ollama (local classifier and fallback)
 
 1. Install [Ollama for Windows](https://ollama.com/download) and let it run at startup (the default).
 2. `ollama pull qwen2.5:3b`
 3. Do not set `OLLAMA_HOST`; Ollama must stay on `127.0.0.1:11434`. The server refuses a non-loopback Ollama address.
-4. Check: `ollama run qwen2.5:3b "say ok"` answers.
+4. Give Ollama a context window that fits the agent's prompts, and tell the server the same number. Prompts estimated larger than `PERSONALAI_LOCAL_CONTEXT_TOKENS` are never sent to Ollama (they fail with "llm unavailable" instead of being silently cut, which would drop the system prompt):
+   ```powershell
+   [Environment]::SetEnvironmentVariable("OLLAMA_CONTEXT_LENGTH", "8192", "User")
+   [Environment]::SetEnvironmentVariable("PERSONALAI_LOCAL_CONTEXT_TOKENS", "8192", "User")
+   ```
+   Quit Ollama from the tray icon and start it again so it reads the value.
+5. Check: `ollama run qwen2.5:3b "say ok"` answers.
 
-### 6. Configuration
+### A6. Configuration
 
 Set your user environment variables once (they hold no secrets). Replace the examples with your values; see [Configuration](#configuration) for every variable.
 
 ```powershell
 $vars = @{
   PERSONALAI_BIND_HOSTS        = "127.0.0.1,100.x.y.z"   # loopback plus the laptop's Tailscale IP
-  PERSONALAI_MODEL_PRIMARY     = "vendor/model-a"        # from step 4a
+  PERSONALAI_MODEL_PRIMARY     = "vendor/model-a"        # from step A4a
   PERSONALAI_OWNER_EMAILS      = "you@example.com,you@college.example.edu"
   PERSONALAI_MAIL_ACCOUNTS     = "you@example.com,you@college.example.edu"
   PERSONALAI_CALENDAR_ACCOUNTS = "you@example.com"
@@ -121,7 +173,7 @@ foreach ($k in $vars.Keys) { [Environment]::SetEnvironmentVariable($k, $vars[$k]
 
 Open a new PowerShell window afterwards so it sees the variables. The server refuses `0.0.0.0`, `::`, LAN addresses such as `192.168.x.x`, and anything else outside loopback and Tailscale.
 
-### 7. First run (in a terminal)
+### A7. First run (in a terminal)
 
 1. From `server\`: `uv run python -m agent serve`. It prints nothing on success and keeps running. If it prints `refused: ...`, fix what it names.
 2. Windows Firewall may ask about Python. If the phone cannot reach the server later, add an inbound rule that only allows the tailnet (run PowerShell as admin once):
@@ -130,9 +182,9 @@ Open a new PowerShell window afterwards so it sees the variables. The server ref
    ```
    Never allow it for all addresses.
 3. Check: `curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8765/today` prints `401` (the route exists and needs a device token).
-4. Stop it with Ctrl+C once the phone is paired and step 11 passes; step 9 makes it start on its own.
+4. Stop it with Ctrl+C once the phone is paired and step A11 passes; step A9 makes it start on its own.
 
-### 8. Build and install the Android app
+### A8. Build and install the Android app
 
 The CI `android` job builds a **debug** APK on every PR (artifact `personalai-debug-apk`). That APK proves the native code compiles, but a debug build loads its JavaScript from a dev server, so do not install it as your daily app. Build a release-style APK instead, one of two ways:
 
@@ -146,22 +198,22 @@ On the phone:
 1. Enrol a fingerprint or face unlock (**Settings > Security**) if you have not. Pairing fails without one; there is no fallback.
 2. **Settings > Apps > PersonalAi > Battery**: set **Unrestricted**, so SMS upload and background sync are not killed. Do the same for Tailscale.
 
-### 9. Start the server at logon (Task Scheduler)
+### A9. Start the server at logon (Task Scheduler)
 
 1. From `server\`: `powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1`. It registers the task "PersonalAi agent" for your user: it starts one minute after logon (so Tailscale has its address), restarts every minute if the server exits, keeps running on battery, and runs hidden. It needs no admin rights and stores no secrets.
-2. `Start-ScheduledTask -TaskName "PersonalAi agent"`, then repeat the check from step 7.3.
-3. Check after a reboot: log in, wait two minutes, repeat step 7.3. The task runs only while you are logged in, because the keys are in your user's Credential Manager.
+2. `Start-ScheduledTask -TaskName "PersonalAi agent"`, then repeat the check from step A7.3.
+3. Check after a reboot: log in, wait two minutes, repeat step A7.3. The task runs only while you are logged in, because the keys are in your user's Credential Manager.
 
-### 10. Power settings
+### A10. Power settings
 
 The server only answers while the laptop is awake.
 
 1. **Settings > System > Power & battery > Screen, sleep & hibernate timeouts**: when plugged in, set **Make my device sleep after** to **Never**. Or, in PowerShell: `powercfg /change standby-timeout-ac 0` and `powercfg /change hibernate-timeout-ac 0`.
-2. **Control Panel > Power Options > Choose what closing the lid does**: **When I close the lid, plugged in: Do nothing**.
+2. **Control Panel > Power Options > Choose what closing the lid does**: **When I close the lid, plugged in: Do nothing**. Or: `powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0`, then `powercfg /setactive SCHEME_CURRENT`.
 3. **Device Manager > Network adapters > your Wi-Fi adapter > Properties > Power Management**: untick **Allow the computer to turn off this device to save power**.
 4. On battery, keep Windows defaults; the phone simply queues SMS and retries until the laptop is back.
 
-### 11. Pair the phone
+### A11. Pair the phone
 
 1. With the server running, from `server\`: `uv run python -m agent pair`. It prints a QR code and a one-time code valid for 5 minutes.
 2. In the app: **Settings > Pair**, scan the QR (or type `http://100.x.y.z:8765` and the code). The app refuses any address outside the tailnet.
@@ -169,11 +221,11 @@ The server only answers while the laptop is awake.
 4. Check: the Today screen loads.
 5. If you paired before (a test phone, an older install), list devices with `uv run python -m agent devices` and revoke the old ones with `uv run python -m agent revoke --device ID`.
 
-### 12. First sync checks
+### A12. First sync checks
 
 Go through these once; they are the end-to-end acceptance list from `docs/PLAN.md`.
 
-- [ ] `scripts/check_nvidia.py` passed (step 4).
+- [ ] `scripts/check_nvidia.py` passed (step A4).
 - [ ] Mail: within `PERSONALAI_MAIL_POLL_MINUTES` of starting, the digest in the app covers the last 7 days, and the important/normal split looks right.
 - [ ] Calendar and Classroom: upcoming Classroom deadlines appear as pending approvals; approving one creates the event.
 - [ ] Ask "Remind me at 7am": an approval appears on the phone, the fingerprint prompt follows, and the alarm is set in the clock app (open the app after approving).
@@ -193,7 +245,7 @@ uv run python -m agent restore --in D:\backups\personalai-2026-10-05.paibak     
 
 - The passphrase is prompted for (twice for a backup), at least 12 characters, and never taken from the command line or environment. Without it the backup cannot be opened, so keep it in a password manager, not on the laptop.
 - Format: AES-256-GCM with a key derived from the passphrase by scrypt; the header is authenticated too, so any change to the file makes it fail to open. A backup never overwrites an existing file.
-- The backup does **not** hold the phone pairing, approval keys, Google tokens or the NVIDIA key. After restoring on a new laptop, redo steps 3 (sign-in only), 4 and 11.
+- The backup does **not** hold the phone pairing, approval keys, Google tokens or the NVIDIA key. After restoring on a new laptop, redo steps A3 (sign-in only), A4 and A11 (or `agent setup --redo google --redo nvidia_key --redo pair`).
 - `restore` refuses to replace an existing database, or a different `db_key` in the keyring, unless you add `--force`. With `--force` the old database is renamed to `agent.db.pre-restore-<timestamp>` and the old key is kept in the keyring as `db_key.pre-restore-<timestamp>`; nothing is deleted.
 - Stop the scheduled task before restoring (`Stop-ScheduledTask -TaskName "PersonalAi agent"`) and start it again afterwards.
 - Suggested habit: a backup each week to an external drive or a cloud folder; the file is safe to store there because it is encrypted.
@@ -205,10 +257,11 @@ uv run python -m agent restore --in D:\backups\personalai-2026-10-05.paibak     
 | `PERSONALAI_BIND_HOSTS` | Comma-separated bind IPs (loopback or Tailscale only) | `127.0.0.1` |
 | `PERSONALAI_PORT` | Port | `8765` |
 | `PERSONALAI_DB_PATH` | SQLite file | `~/.personalai/agent.db` |
-| `PERSONALAI_MODEL_PRIMARY` | NVIDIA Build model for normal requests (required for chat; see step 4a) | none |
+| `PERSONALAI_MODEL_PRIMARY` | NVIDIA Build model for normal requests (required for chat; see step A4a) | none |
 | `PERSONALAI_MODEL_FALLBACK` | Model used when the primary (or long) model errors or is rate limited | none |
 | `PERSONALAI_MODEL_LONG` | Model for requests longer than `PERSONALAI_LONG_CONTEXT_TOKENS` | none (primary) |
 | `PERSONALAI_LONG_CONTEXT_TOKENS` | Estimated size (characters / 4) above which the long model is used | `32000` |
+| `PERSONALAI_LOCAL_CONTEXT_TOKENS` | Ollama's context window; larger prompts skip the local fallback instead of being truncated. Set `OLLAMA_CONTEXT_LENGTH` to the same value | `8192` |
 | `PERSONALAI_OWNER_EMAILS` | Your addresses, masked before the cloud | none |
 | `PERSONALAI_MAIL_ACCOUNTS` | Comma-separated Gmail addresses to sync (empty turns mail off); also masked before the cloud | none |
 | `PERSONALAI_VIP_SENDERS` | Comma-separated senders always classified important | none |

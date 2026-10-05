@@ -342,4 +342,50 @@ class Redactor:
         return obj
 
 
-__all__ = ["JSON", "Redacted", "RedactionMap", "Redactor", "from_model"]
+# A partial placeholder: ``⟨``, then letters/underscores, optionally ending in ``_`` plus digits.
+_PLACEHOLDER_PREFIX_RE = re.compile(f"{_OPEN}(?:[A-Z_]*|[A-Z_]*_\\d+)")
+_MAX_PLACEHOLDER_LEN = 48
+
+
+class StreamRehydrator:
+    """Rehydrates streamed model text without ever emitting half of a placeholder.
+
+    ``feed`` returns the text that is safe to show so far. A trailing fragment that could still
+    grow into a placeholder is held back until it completes or turns out not to be one, so for any
+    chunking ``"".join(feed(c) ...) + flush()`` equals ``Redactor.rehydrate`` of the whole text.
+    """
+
+    def __init__(self, rmap: RedactionMap) -> None:
+        self._rmap = rmap
+        self._held = ""
+
+    def feed(self, chunk: str) -> str:
+        text = self._held + chunk
+        self._held = ""
+        start = text.rfind(_OPEN)
+        if (
+            start >= 0
+            and _CLOSE not in text[start:]
+            and len(text) - start <= _MAX_PLACEHOLDER_LEN
+            and _PLACEHOLDER_PREFIX_RE.fullmatch(text, start)
+        ):
+            self._held = text[start:]
+            text = text[:start]
+        return Redactor.rehydrate(text, self._rmap)
+
+    def flush(self) -> str:
+        text, self._held = self._held, ""
+        return Redactor.rehydrate(text, self._rmap)
+
+    def reset(self) -> None:
+        self._held = ""
+
+
+__all__ = [
+    "JSON",
+    "Redacted",
+    "RedactionMap",
+    "Redactor",
+    "StreamRehydrator",
+    "from_model",
+]

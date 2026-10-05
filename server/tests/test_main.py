@@ -219,3 +219,19 @@ def test_serve_refuses_non_loopback_ollama_when_mail_enabled(
         ),
     )
     assert main(["serve"]) == 2
+
+
+def test_doctor_and_setup_subcommands_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    import agent.main as main_module
+
+    seen: list[object] = []
+    monkeypatch.setattr(
+        main_module, "run_doctor", lambda *a, **kw: seen.append(("doctor", kw["as_json"])) or 0
+    )
+    monkeypatch.setattr(main_module, "assert_secure_backend", lambda: None)
+    monkeypatch.setattr(
+        main_module, "run_setup", lambda *a, **kw: seen.append(("setup", list(kw["redo"]))) or 0
+    )
+    assert main_module.main(["doctor", "--json"]) == 0
+    assert main_module.main(["setup", "--redo", "pair", "--redo", "power"]) == 0
+    assert seen == [("doctor", True), ("setup", ["pair", "power"])]

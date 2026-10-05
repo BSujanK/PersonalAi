@@ -411,3 +411,217 @@ def test_persistent_rate_limit_raises_rate_limited_after_retries() -> None:
 def test_ollama_url_must_be_loopback(url: str) -> None:
     with pytest.raises(ValueError, match="loopback"):
         build_default_client(Settings(ollama_base_url=url), KeyStore())
+
+
+def test_local_route_skipped_when_estimate_exceeds_limit(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    messages = _msgs("x" * 400)
+    estimate = estimate_tokens(messages, [])
+    up = _Upstream(**{"prim-model": 503})
+    caplog.set_level(logging.INFO, logger="agent.core.llm")
+    with pytest.raises(LLMUnavailable, match="all routes failed"):
+        _routed(up, local_context_tokens=estimate - 1).complete(messages, [])
+    assert set(up.models) == {"prim-model"}  # the Ollama model never receives a request
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    assert f"llm local route skipped est_tokens={estimate} limit={estimate - 1}" in logged
+
+
+def test_local_route_serves_when_estimate_at_limit() -> None:
+    messages = _msgs("x" * 400)
+    estimate = estimate_tokens(messages, [])
+    up = _Upstream(**{"prim-model": 503})
+    out = _routed(up, local_context_tokens=estimate).complete(messages, [])
+    assert out.route == "local"
+
+
+def _sse_body(*events: dict[str, Any]) -> bytes:
+    lines = [f"data: {json.dumps(e)}\n\n" for e in events] + ["data: [DONE]\n\n"]
+    return "".join(lines).encode()
+
+
+def _delta(delta: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": "c1",
+        "object": "chat.completion.chunk",
+        "created": 0,
+        "model": "m",
+        "choices": [{"index": 0, "delta": delta, "finish_reason": None}],
+    }
+
+
+def _sse_response(*events: dict[str, Any]) -> httpx.Response:
+    return httpx.Response(
+        200, content=_sse_body(*events), headers={"content-type": "text/event-stream"}
+    )
+
+
+def _stream(client: Any, text: str = "hi") -> tuple[Any, list[str], list[int]]:
+    deltas: list[str] = []
+    resets: list[int] = []
+    response = client.stream_complete(
+        _msgs(text), [], lambda d: deltas.append(d.text), lambda: resets.append(1)
+    )
+    return response, deltas, resets
+
+
+def test_stream_accumulates_content_and_tool_calls() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return _sse_response(
+            _delta({"role": "assistant", "content": ""}),
+            _delta({"content": "Hel"}),
+            _delta({"content": "lo"}),
+            _delta(
+                {
+                    "tool_calls": [
+                        {"index": 0, "id": "t1", "type": "function",
+                         "function": {"name": "read_mail", "arguments": '{"a"'}},
+                        {"index": 1, "id": "t2", "type": "function",
+                         "function": {"name": "other", "arguments": ""}},
+                    ]
+                }
+            ),
+            _delta({"tool_calls": [{"index": 0, "function": {"arguments": ": 1}"}}]}),
+            {"id": "c1", "object": "chat.completion.chunk", "created": 0, "model": "m",
+             "choices": []},
+        )  # fmt: skip
+
+    response, deltas, resets = _stream(_client(handler))
+    assert seen[0]["stream"] is True
+    assert deltas == ["Hel", "lo"]
+    assert resets == []
+    assert response.content is not None and response.content.text == "Hello"
+    assert [(c.id, c.name, c.arguments.text) for c in response.tool_calls] == [
+        ("t1", "read_mail", '{"a": 1}'),
+        ("t2", "other", ""),
+    ]
+
+
+def test_stream_without_content_returns_none() -> None:
+    client = _client(lambda _r: _sse_response(_delta({"role": "assistant"})))
+    response, deltas, _ = _stream(client)
+    assert response.content is None and response.tool_calls == [] and deltas == []
+
+
+def test_stream_refuses_plain_str_before_network() -> None:
+    def handler(_r: httpx.Request) -> httpx.Response:
+        raise AssertionError("network touched")
+
+    bad = [ChatMessage("user", "raw")]  # type: ignore[arg-type]
+    with pytest.raises(UnredactedPayloadError):
+        _client(handler).stream_complete(bad, [], lambda _d: None, lambda: None)
+
+
+def test_stream_retries_before_anything_is_emitted() -> None:
+    calls: list[int] = []
+
+    def handler(_r: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        if len(calls) < 3:
+            return httpx.Response(503, json={"error": {}})
+        return _sse_response(_delta({"content": "ok"}))
+
+    sleeps: list[float] = []
+    response, deltas, _ = _stream(_client(handler, sleeps))
+    assert len(calls) == 3 and sleeps == [1.0, 2.0]
+    assert deltas == ["ok"] and response.content.text == "ok"
+
+
+def test_stream_429_without_retry_raises_rate_limited() -> None:
+    client = _client(lambda _r: httpx.Response(429, json={"error": {}}), retry_rate_limit=False)
+    with pytest.raises(LLMRateLimited):
+        _stream(client)
+
+
+def test_stream_4xx_is_not_retried() -> None:
+    calls: list[int] = []
+
+    def handler(_r: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(400, json={"error": {}})
+
+    with pytest.raises(LLMUnavailable, match="rejected"):
+        _stream(_client(handler))
+    assert len(calls) == 1
+
+
+class _BrokenBody(httpx.SyncByteStream):
+    def __init__(self, first: bytes) -> None:
+        self._first = first
+
+    def __iter__(self) -> Any:
+        yield self._first
+        raise httpx.ReadError("boom")
+
+
+def test_stream_failure_after_emit_is_not_retried() -> None:
+    calls: list[int] = []
+    first = f"data: {json.dumps(_delta({'content': 'par'}))}\n\n".encode()
+
+    def handler(_r: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(
+            200, stream=_BrokenBody(first), headers={"content-type": "text/event-stream"}
+        )
+
+    deltas: list[str] = []
+    with pytest.raises(LLMUnavailable, match="stream interrupted"):
+        _client(handler).stream_complete(
+            _msgs("hi"), [], lambda d: deltas.append(d.text), lambda: None
+        )
+    assert deltas == ["par"] and len(calls) == 1
+
+
+def test_stream_failure_before_emit_is_retried() -> None:
+    calls: list[int] = []
+
+    def handler(_r: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(
+                200, stream=_BrokenBody(b": keepalive\n\n"),
+                headers={"content-type": "text/event-stream"},
+            )  # fmt: skip
+        return _sse_response(_delta({"content": "ok"}))
+
+    _, deltas, _ = _stream(_client(handler))
+    assert len(calls) == 2 and deltas == ["ok"]
+
+
+def test_router_stream_serves_from_primary() -> None:
+    def handler(_r: httpx.Request) -> httpx.Response:
+        return _sse_response(_delta({"content": "a"}), _delta({"content": "b"}))
+
+    response, deltas, _ = _stream(_routed(handler))
+    assert deltas == ["a", "b"] and response.route == "primary"
+
+
+def test_router_stream_resets_and_falls_back_after_partial_output() -> None:
+    first = f"data: {json.dumps(_delta({'content': 'par'}))}\n\n".encode()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if json.loads(request.content)["model"] == "prim-model":
+            return httpx.Response(
+                200, stream=_BrokenBody(first), headers={"content-type": "text/event-stream"}
+            )
+        return _sse_response(_delta({"content": "full"}))
+
+    events: list[str] = []
+    response = _routed(handler, model_fallback="fb-model").stream_complete(
+        _msgs("hi"), [], lambda d: events.append(d.text), lambda: events.append("<reset>")
+    )
+    assert events == ["par", "<reset>", "full"]
+    assert response.route == "fallback"
+
+
+def test_router_stream_skips_local_over_limit_and_raises() -> None:
+    messages = _msgs("x" * 400)
+    up = _Upstream(**{"prim-model": 503})
+    with pytest.raises(LLMUnavailable, match="all routes failed"):
+        _routed(up, local_context_tokens=1).stream_complete(
+            messages, [], lambda _d: None, lambda: None
+        )
+    assert set(up.models) == {"prim-model"}
