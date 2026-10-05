@@ -61,11 +61,18 @@ const makeStyles = (p: Palette) => ({
     color: p.text,
     padding: 12,
   },
-  table: { borderWidth: 1, borderColor: p.border, borderRadius: 10, overflow: 'hidden' as const },
+  table: {
+    minWidth: '100%' as const,
+    borderWidth: 1,
+    borderColor: p.border,
+    borderRadius: 10,
+    overflow: 'hidden' as const,
+  },
   row: { flexDirection: 'row' as const },
   rowHead: { backgroundColor: p.muted },
   cell: {
-    width: 120,
+    flex: 1,
+    minWidth: 104,
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRightWidth: 1,
@@ -187,7 +194,12 @@ function renderTable(node: MdNode, styles: Styles, key: string): ReactNode {
     }
   }
   return (
-    <ScrollView key={key} horizontal showsHorizontalScrollIndicator={false}>
+    <ScrollView
+      key={key}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ minWidth: '100%' }}
+    >
       <View style={styles.table}>
         {rows.map((row, r) => (
           <View key={`r${r}`} style={[styles.row, row.head && styles.rowHead]}>
