@@ -30,7 +30,7 @@ The repo `github.com/BSujanK/PersonalAi` is **public and empty**. The build runs
 ### Security model (the core of this project)
 1. **Writes are gated in code, not by prompt.** Every tool is registered as `READ` or `WRITE`. The LLM can only call a WRITE tool to *propose* it: this creates a `PendingAction` holding the exact payload and a human-readable preview (e.g. the full email text, recipients, event details). Execution happens only from `/approvals/{id}/approve`, which requires:
    - the phone's paired device token,
-   - a fresh biometric check on the phone,
+   - an HMAC signature over (action_id, payload_hash, nonce, decision), made with an approval key that the phone can only read after a biometric unlock (`expo-secure-store` with `requireAuthentication`). A device token alone can never approve. See CLAUDE.md rule 1,
    - a match on the payload hash and a one-time nonce,
    - an action less than 15 minutes old.
 
@@ -42,7 +42,7 @@ The repo `github.com/BSujanK/PersonalAi` is **public and empty**. The build runs
    - the user's own email addresses.
 
    Each value becomes a stable placeholder (`⟨ACCT_1⟩`). The map stays local: the model's answers are re-hydrated before display, and tool arguments are re-hydrated before execution. Finance questions are answered from local SQL aggregates, so raw ledger rows are never sent.
-4. **Network.** agentd binds only to `127.0.0.1` and the Tailscale `100.x` address, never `0.0.0.0`. Requests also need a per-device bearer token from QR pairing, stored in Android Keystore via `expo-secure-store`. Push notifications (Expo/FCM) carry no content ("1 approval pending"). The app pulls details over Tailscale.
+4. **Network.** agentd binds only to loopback or Tailscale addresses (`127.0.0.0/8`, `::1`, `100.64.0.0/10`, `fd7a:115c:a1e0::/48`), validated with `ipaddress` at startup. It refuses `0.0.0.0`, `::` and LAN IPs. Requests also need a per-device bearer token from QR pairing, stored in Android Keystore via `expo-secure-store`. Push notifications (Expo/FCM) carry no content ("1 approval pending"). The app pulls details over Tailscale.
 5. **Data at rest.** OAuth refresh tokens, the NVIDIA key, the Groww token and the DB key live in Windows Credential Manager (`keyring`, DPAPI). Mail bodies, SMS and finance rows are encrypted per column. The audit log of every proposal, approval and execution is append-only.
 6. **Public repo hygiene.** `.gitignore` excludes data, `.env`, tokens and `*.db`. A gitleaks pre-commit hook and a CI secret scan run on every push. Test fixtures are synthetic only, never real mails or SMS.
 
@@ -98,7 +98,7 @@ PersonalAi/
 
 ## Build phases (cloud session; one PR per phase, CI green before merge)
 - **M0 Seed.** Done from the local session after approval: push `docs/PLAN.md` (this plan), `CLAUDE.md`, `.claude/agents/`, `.gitignore`, and an empty CI to `main`.
-- **M1 Core.** Store, crypto, redaction (heavy tests), LLM client (mocked), tool registry, policy, approval engine, audit, chat API, pairing/auth.
+- **M1 Core.** Store, crypto, redaction (heavy tests), LLM client (mocked), tool registry, policy, approval engine with HMAC-signed approvals, audit, chat API, pairing/auth (issues device token + approval key), and bind-address allowlist. Tests use an in-memory keyring fixture; production refuses fail/plaintext keyring backends.
 - **M2 Mail.** Gmail connector (mock API in tests), sync, rules, Ollama classifier, digest, feedback loop.
 - **M3 Calendar, Classroom, Drive, files.** Classroom deadlines become proposed calendar events.
 - **M4 Finance.** `/sms` ingest, bank parsers with a fixture corpus, ledger, categorize, Groww read-only wrapper, summary tools.
@@ -126,7 +126,7 @@ The cloud session has no access to his accounts, laptop or phone. M1–M6 are bu
   - every WRITE tool returns a PendingAction and never executes without a valid approve call (hash/nonce/expiry tests);
   - SMS parsers reach ≥95% field accuracy on fixtures;
   - the classifier is evaluated on labelled fixtures.
-- **Security:** a test asserts that outbound LLM payloads contain no unredacted fixture PII. Injection fixtures cannot trigger a write. The server refuses to start if it is configured to bind `0.0.0.0`.
+- **Security:** a test asserts that outbound LLM payloads contain no unredacted fixture PII. Injection fixtures cannot trigger a write. The server refuses to start on `0.0.0.0`, `::` or any non-loopback, non-Tailscale address. Approvals with a missing or invalid signature, a reused nonce, a changed payload or an expired action are all rejected.
 - **End-to-end (M7, on the laptop):**
   - `scripts/check_nvidia.py` passes the tool-call smoke test.
   - Gmail sync pulls the last 7 days, and the digest looks right to him.
