@@ -27,7 +27,7 @@ PersonalAi is a private agent with read access to mail, calendar, files and fina
 | Tampering with the audit trail | The audit log is append-only (SQL triggers abort UPDATE and DELETE) and hash-chained, so a modified or inserted row fails `verify()`. Entries carry short codes, never payloads or PII. | `agent/store/db.py`, `agent/core/audit.py` |
 | Finance data | Bank SMS arrive only from the paired phone (`POST /sms`, device token). Non-bank senders and anything that looks like an OTP or PIN are dropped with no body or sender kept; only an idempotency hash is stored. Amounts, balances, counterparties and masked accounts are AES-GCM encrypted per row; accounts, counterparties and references are indexed by keyed HMAC. The LLM tools `spend_summary`, `balances` and `transactions` return aggregates only (totals, counts, groups, day-level dates), never rows, references or raw SMS. The local categoriser sends Ollama only the redacted counterparty, direction and channel. | `agent/finance/`, `agent/api/finance.py` |
 | Forged bank alert mail | Alert mails are read only from known bank domains (exact or subdomain match) and never from SPAM or TRASH. A forged mail that passes Gmail's filters could still add a ledger row, or set a balance until the next bank SMS replaces it. Email-only rows are marked as such (`from_email`) so the app can show where a figure came from. | `agent/finance/email_alerts.py`, `agent/finance/ingest.py` |
-| Log or notification leakage | Logs carry ids, counts and exception type names only. Push notifications (M5) carry no content. | all modules |
+| Log or notification leakage | Logs carry ids, counts and exception type names only. Push notifications carry only a count ("1 approval pending") and are off unless `PERSONALAI_PUSH=expo`; the app then fetches details over Tailscale. | all modules, `agent/phone/push.py` |
 | Repo leakage (the repo is public) | `.gitignore` excludes `.env`, `*.db` and token files. Test fixtures are synthetic (example.com, made-up numbers). gitleaks runs in CI. Tests use an in-memory keyring and never touch a real one. | `.gitignore`, `tests/conftest.py`, CI |
 
 ## Approval signature scheme
@@ -72,8 +72,19 @@ The server accepts only if all of these hold: the decision is valid; the action 
 - **Untrusted content.** Event descriptions, Classroom posts, Drive files and local files are returned to the model inside `<untrusted_data>` and pass through redaction like mail.
 - **Background jobs** log only job names, counts and exception type names, since exception text can carry paths or addresses.
 
+## Phone app and phone actions (M5)
+
+- **Pairing.** `python -m agent pair` prints a terminal QR of `{"v":1,"url","code"}`, where the URL is the first Tailscale bind address (or `--url`). The app accepts only Tailscale hosts (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`, `*.ts.net`), so a forged QR cannot point it, or its bank SMS, at another server (`mobile/src/lib/serverUrl.ts`).
+- **Secrets on the phone.** The device token is in `expo-secure-store` (Android Keystore, this device only). The approval key is stored with `requireAuthentication: true`; pairing refuses to finish if biometrics are not available, and there is no unauthenticated fallback. The key is read once per decision, used to sign, and zeroed (`mobile/src/lib/secureKeys.ts`). The app blocks Android backups.
+- **Signing.** `mobile/src/lib/approvalSignature.ts` builds the same message as `policy.signature_message` and signs it with `@noble/hashes`. `shared/test-vectors/approval-signature.json` is checked by both the server and the app tests, so the two sides cannot drift.
+- **Phone actions.** `phone_set_alarm`, `phone_set_timer` and `phone_reminder` are WRITE tools. Their executor only queues a command (parameters AES-GCM encrypted); the app fetches queued commands, validates them again, and fires `SET_ALARM`/`SET_TIMER` intents or a local notification. Commands expire (alarms after 24 hours, timers when they would have rung, reminders at their time) and can be acknowledged once.
+- **Bank SMS.** The phone filters by bank sender ID before anything is stored or sent; other SMS never leave the native receiver. Filtered SMS wait in an app-private queue until `POST /sms` succeeds.
+- **Push.** Expo's push service sees only the device push token and the count text. Push tokens live in the server keyring.
+
 ## Known limits
 
 - Anything the owner approves is trusted. The approval preview must show the full content (recipients, text) so the owner can spot an injected action.
 - Redaction is pattern-based and deliberately over-redacts; free-text names and addresses are not masked.
 - The pairing code and device token travel over the Tailscale tunnel; protect the laptop session itself.
+- The app talks plain HTTP inside the Tailscale (WireGuard) tunnel, so Android cleartext traffic is enabled; the host check above limits it to Tailscale peers.
+- A pairing whose biometric step is cancelled leaves an unused device row on the server; it has no stored approval key on the phone and can be revoked.

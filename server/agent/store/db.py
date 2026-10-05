@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS devices (
@@ -185,6 +185,16 @@ CREATE TABLE IF NOT EXISTS finance_category_rules (
     counterparty_hash TEXT PRIMARY KEY,
     category TEXT NOT NULL,
     created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS device_commands (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('set_alarm', 'set_timer', 'reminder')),
+    params_enc BLOB NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('queued', 'done', 'failed', 'expired')),
+    acked_at TEXT,
+    acked_by_device TEXT
 );
 -- Holds keyed hashes of words, never plaintext; rowid = local_files.id.
 CREATE VIRTUAL TABLE IF NOT EXISTS local_files_fts USING fts5(tokens);
