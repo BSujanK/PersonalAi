@@ -186,10 +186,14 @@ Open a new PowerShell window afterwards so it sees the variables. The server ref
 
 ### A8. Build and install the Android app
 
-The CI `android` job builds a **debug** APK on every PR (artifact `personalai-debug-apk`). That APK proves the native code compiles, but a debug build loads its JavaScript from a dev server, so do not install it as your daily app. Build a release-style APK instead, one of two ways:
+The CI `android` job builds a standalone **release** APK on every PR and push to `main` (artifact `personalai-apk`). It bundles the app's JavaScript, so it runs without a dev server. It is signed with Expo's template debug keystore, so each new build installs over the last one as an update. To get it: GitHub > **Actions** > the latest green run on `main` > **Artifacts** > `personalai-apk` (sign in to GitHub first). Chrome may flag the zip as dangerous because it contains an APK; choose **Download dangerous file**. Unzip it to get the `.apk`.
 
-- **EAS (recommended, no Android SDK needed):** from `mobile\`, `npm ci`, then `npx eas-cli login` and `npx eas-cli build -p android --profile preview`. EAS creates and keeps the signing key for you. Download the APK from the link it prints. For push, see [Optional push](#optional-push) before building.
-- **Local Gradle:** install Android Studio (it brings the SDK) and JDK 17. From `mobile\`: `npm ci`, `npx expo prebuild --platform android`, then in `mobile\android` run `.\gradlew assembleRelease`. Create your own release keystore first (`keytool -genkeypair -v -keystore personalai.jks -keyalg RSA -keysize 2048 -validity 10000 -alias personalai`), keep it outside the repo, and configure it in `android\app\build.gradle` `signingConfigs.release`. The APK is in `android\app\build\outputs\apk\release\`.
+Later, to sign with your own key instead of the shared template key, build it one of these ways:
+
+- **EAS (no Android SDK needed):** from `mobile\`, `npm ci`, then `npx eas-cli login` and `npx eas-cli build -p android --profile preview`. EAS creates and keeps the signing key for you. Download the APK from the link it prints. For push, see [Optional push](#optional-push) before building.
+- **Local Gradle:** install Android Studio (it brings the SDK) and JDK 17. From `mobile\`: `npm ci`, `npx expo prebuild --platform android`, then in `mobilendroid` run `.\gradlew assembleRelease`. Create your own release keystore first (`keytool -genkeypair -v -keystore personalai.jks -keyalg RSA -keysize 2048 -validity 10000 -alias personalai`), keep it outside the repo, and configure it in `androidppuild.gradle` `signingConfigs.release`. The APK is in `androidppuild\outputspkelease\`.
+
+Switching signing keys means uninstalling the old app first, which also means pairing again.
 
 Sideload it: copy the APK to the phone and open it (allow **Install unknown apps** for the Files app when asked), or `adb install path\to\app.apk` with USB debugging on.
 
@@ -346,4 +350,4 @@ Polling every 30 seconds while the app is open works with no setup. For push not
 
 ### Checks
 
-`cd mobile && npm ci && npx tsc --noEmit && npx eslint . && npx jest --ci`. The Kotlin SMS module (`mobile/modules/bank-sms`) is compiled by the CI `android` job (Expo prebuild plus Gradle `assembleDebug`); its runtime behaviour (SMS receiver, alarms, push) still has to be checked on the phone.
+`cd mobile && npm ci && npx tsc --noEmit && npx eslint . && npx jest --ci`. The Kotlin SMS module (`mobile/modules/bank-sms`) is compiled by the CI `android` job (Expo prebuild plus Gradle `assembleRelease`); its runtime behaviour (SMS receiver, alarms, push) still has to be checked on the phone.

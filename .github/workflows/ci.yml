@@ -83,12 +83,16 @@ jobs:
         run: |
           npm ci
           npx expo prebuild --platform android --no-install --clean
-      - name: Assemble debug APK
+      # Release, not debug: a debug build is an Expo dev-client shell that loads JS from a Metro
+      # server and cannot run on its own. The release APK bundles the JS. Expo's template signs
+      # release with the template debug keystore, so it sideloads and updates in place; no
+      # signing secrets are involved.
+      - name: Assemble release APK
         working-directory: mobile/android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: personalai-debug-apk
-          path: mobile/android/app/build/outputs/apk/debug/*.apk
+          name: personalai-apk
+          path: mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
