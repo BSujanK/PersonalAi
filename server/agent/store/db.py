@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS devices (
@@ -68,6 +68,55 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at TEXT NOT NULL,
     role TEXT NOT NULL,
     content_enc BLOB NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS messages_conv_seq ON messages(conversation_id, seq);
+CREATE TABLE IF NOT EXISTS mail_accounts (
+    account TEXT PRIMARY KEY,
+    history_id TEXT,
+    last_sync_at TEXT
+);
+CREATE TABLE IF NOT EXISTS mail_messages (
+    account TEXT NOT NULL,
+    id TEXT NOT NULL,
+    thread_id TEXT NOT NULL,
+    history_id TEXT NOT NULL,
+    internal_date INTEGER NOT NULL,
+    from_hash TEXT NOT NULL,
+    from_enc BLOB NOT NULL,
+    to_enc BLOB NOT NULL,
+    subject_enc BLOB NOT NULL,
+    snippet_enc BLOB NOT NULL,
+    body_enc BLOB NOT NULL,
+    label_ids TEXT NOT NULL,
+    list_unsubscribe INTEGER NOT NULL DEFAULT 0,
+    category TEXT CHECK (category IN ('important', 'normal', 'promo', 'spam')),
+    category_source TEXT CHECK (category_source IN
+        ('sender_rule', 'gmail', 'rule', 'llm', 'feedback')),
+    reason TEXT,
+    reason_enc BLOB,
+    deleted INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (account, id)
+);
+CREATE INDEX IF NOT EXISTS mail_messages_date ON mail_messages(account, internal_date);
+CREATE TABLE IF NOT EXISTS mail_replied (
+    account TEXT NOT NULL,
+    addr_hash TEXT NOT NULL,
+    PRIMARY KEY (account, addr_hash)
+);
+CREATE TABLE IF NOT EXISTS sender_rules (
+    sender_hash TEXT PRIMARY KEY,
+    sender_enc BLOB NOT NULL,
+    category TEXT NOT NULL CHECK (category IN ('important', 'normal', 'promo', 'spam')),
+    created_at TEXT NOT NULL,
+    source TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mail_feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    old_category TEXT,
+    new_category TEXT NOT NULL CHECK (new_category IN ('important', 'normal', 'promo', 'spam')),
+    created_at TEXT NOT NULL
 );
 """
 

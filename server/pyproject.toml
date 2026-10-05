@@ -11,6 +11,10 @@ dependencies = [
     "httpx",
     "cryptography",
     "keyring>=25",
+    "google-api-python-client",
+    "google-auth",
+    "google-auth-oauthlib",
+    "apscheduler>=3.10,<4",
 ]
 
 [dependency-groups]
@@ -39,3 +43,7 @@ files = ["agent"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[[tool.mypy.overrides]]
+module = ["googleapiclient.*", "google_auth_oauthlib.*", "apscheduler.*"]
+ignore_missing_imports = true

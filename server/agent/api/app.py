@@ -13,6 +13,7 @@ from agent.core.approvals import ApprovalEngine
 from agent.core.audit import AuditLog
 from agent.core.clock import Clock, utcnow
 from agent.core.llm import LLMClient
+from agent.core.locks import KeyedLocks
 from agent.core.loop import AgentLoop
 from agent.core.redact import Redactor
 from agent.core.tools import ToolRegistry
@@ -34,7 +35,7 @@ def create_app(
     cipher = FieldCipher(keystore.get_or_create_bytes("db_key"))
     audit = AuditLog(db, clock)
     approvals = ApprovalEngine(db, cipher, registry, audit, keystore, clock)
-    redactor = Redactor(settings.owner_emails)
+    redactor = Redactor(settings.redaction_emails)
     app.state.settings = settings
     app.state.db = db
     app.state.keystore = keystore
@@ -42,6 +43,7 @@ def create_app(
     app.state.cipher = cipher
     app.state.audit = audit
     app.state.approvals = approvals
+    app.state.chat_locks = KeyedLocks()
     app.state.loop = AgentLoop(llm, registry, redactor, approvals, settings)
 
     # /pair is the only route without the device-token dependency.
