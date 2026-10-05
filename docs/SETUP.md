@@ -191,7 +191,8 @@ The CI `android` job builds a standalone **release** APK on every PR and push to
 Later, to sign with your own key instead of the shared template key, build it one of these ways:
 
 - **EAS (no Android SDK needed):** from `mobile\`, `npm ci`, then `npx eas-cli login` and `npx eas-cli build -p android --profile preview`. EAS creates and keeps the signing key for you. Download the APK from the link it prints. For push, see [Optional push](#optional-push) before building.
-- **Local Gradle:** install Android Studio (it brings the SDK) and JDK 17. From `mobile\`: `npm ci`, `npx expo prebuild --platform android`, then in `mobilendroid` run `.\gradlew assembleRelease`. Create your own release keystore first (`keytool -genkeypair -v -keystore personalai.jks -keyalg RSA -keysize 2048 -validity 10000 -alias personalai`), keep it outside the repo, and configure it in `androidppuild.gradle` `signingConfigs.release`. The APK is in `androidppuild\outputspkelease\`.
+- **Local Gradle:** install Android Studio (it brings the SDK) and JDK 17. From `mobile\`: `npm ci`, `npx expo prebuild --platform android`, then in `mobile\android` run `.\gradlew assembleRelease`. Create your own release keystore first (`keytool -genkeypair -v -keystore personalai.jks -keyalg RSA -keysize 2048 -validity 10000 -alias personalai`), keep it outside the repo, and configure it in `android\app\build.gradle` `signingConfigs.release`. The APK is in `android\app\build\outputs\apk\release\`.
+elease\`.
 
 Switching signing keys means uninstalling the old app first, which also means pairing again.
 
