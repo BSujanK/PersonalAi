@@ -10,8 +10,8 @@ from typing import Any, Literal, get_args
 from agent.core.llm import (
     ChatMessage,
     LLMClient,
+    LLMNotConfigured,
     LLMUnavailable,
-    MissingApiKeyError,
 )
 from agent.core.loop import wrap_untrusted
 from agent.core.redact import RedactionMap, Redactor, from_model
@@ -114,7 +114,7 @@ class FinanceCategorizer:
             if decided is None:
                 try:
                     decided = self._by_llm(txn)
-                except (LLMUnavailable, MissingApiKeyError) as exc:
+                except (LLMUnavailable, LLMNotConfigured) as exc:
                     log.warning("finance categoriser model unavailable: %s", type(exc).__name__)
                     break
             if decided is not None and self._store.set_category(txn.id, *decided):

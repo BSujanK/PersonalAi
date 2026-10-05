@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -10,12 +11,15 @@ import pytest
 from agent.config import Settings
 from agent.core.llm import (
     ChatMessage,
-    FallbackClient,
+    LLMNotConfigured,
+    LLMRateLimited,
     LLMUnavailable,
     MissingApiKeyError,
+    MissingModelError,
     OpenAICompatClient,
     UnredactedPayloadError,
     build_default_client,
+    estimate_tokens,
 )
 from agent.core.redact import RedactionMap, Redactor, from_model
 from agent.store.keystore import KeyStore
@@ -118,18 +122,6 @@ def test_client_error_is_not_retried() -> None:
     assert sleeps == []
 
 
-def test_fallback_used_when_primary_unavailable() -> None:
-    def down(_r: httpx.Request) -> httpx.Response:
-        return httpx.Response(503, json={"error": {}})
-
-    def ok(_r: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=_completion("from fallback"))
-
-    client = FallbackClient(_client(down), _client(ok))
-    out = client.complete(_msgs("hello"), [])
-    assert out.content is not None and out.content.text == "from fallback"
-
-
 def test_plain_str_content_is_refused_and_no_request_is_made() -> None:
     calls = []
 
@@ -205,34 +197,212 @@ def test_tool_and_assistant_messages_serialised() -> None:
     assert sent[1]["tool_call_id"] == "c1"
 
 
-def test_default_client_missing_key_fails_at_chat_time_only() -> None:
-    client = build_default_client(Settings(), KeyStore())  # no error at build time
-    with pytest.raises(MissingApiKeyError):
-        client.complete(_msgs("hello"), [])
-
-
-def test_default_client_uses_keystore_key_and_ollama_fallback() -> None:
+def _routed(
+    handler: Handler,
+    sleeps: list[float] | None = None,
+    *,
+    key: bool = True,
+    **overrides: Any,
+) -> Any:
     ks = KeyStore()
-    ks.set("nvidia_api_key", "nvapi-test")
-    auth: list[str] = []
-    urls: list[str] = []
+    if key:
+        ks.set("nvidia_api_key", "nvapi-test")
+    record = sleeps if sleeps is not None else []
+    settings = Settings(**{"model_primary": "prim-model", **overrides})
+    return build_default_client(
+        settings, ks, http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        sleep=record.append,
+    )  # fmt: skip
+
+
+class _Upstream:
+    """Mock server: per-model status codes, records the models requested."""
+
+    def __init__(self, **status: int) -> None:
+        self.status = status
+        self.models: list[str] = []
+        self.auth: list[str] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        model = json.loads(request.content)["model"]
+        self.models.append(model)
+        self.auth.append(request.headers["authorization"])
+        code = self.status.get(model, 200)
+        if code == 200:
+            return httpx.Response(200, json=_completion(f"from {model}"))
+        return httpx.Response(code, json={"error": {}})
+
+
+def test_short_input_uses_primary_and_logs_no_content(caplog: pytest.LogCaptureFixture) -> None:
+    up = _Upstream()
+    caplog.set_level(logging.INFO, logger="agent.core.llm")
+    out = _routed(up, model_long="long-model").complete(_msgs("secret words here"), [])
+    assert up.models == ["prim-model"]
+    assert out.route == "primary"
+    assert out.content is not None and out.content.text == "from prim-model"
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    assert "route=primary" in logged and "model=prim-model" in logged
+    assert "secret words" not in logged and "nvapi-test" not in logged
+
+
+def test_long_input_uses_long_model_when_configured() -> None:
+    up = _Upstream()
+    out = _routed(up, model_long="long-model", long_context_tokens=10).complete(
+        _msgs("x" * 400), []
+    )
+    assert up.models == ["long-model"]
+    assert out.route == "long"
+
+
+def test_long_input_without_long_model_stays_primary() -> None:
+    up = _Upstream()
+    out = _routed(up, long_context_tokens=10).complete(_msgs("x" * 400), [])
+    assert up.models == ["prim-model"]
+    assert out.route == "primary"
+
+
+def test_threshold_boundary_estimate_equal_stays_primary() -> None:
+    messages = _msgs("x" * 40)
+    estimate = estimate_tokens(messages, [])
+    up = _Upstream()
+    _routed(up, model_long="long-model", long_context_tokens=estimate).complete(messages, [])
+    assert up.models == ["prim-model"]
+    up = _Upstream()
+    _routed(up, model_long="long-model", long_context_tokens=estimate - 1).complete(messages, [])
+    assert up.models == ["long-model"]
+
+
+def test_estimate_tokens_counts_messages_tool_calls_and_tools() -> None:
+    from agent.core.llm import ToolCall
+
+    messages = [
+        ChatMessage("user", from_model("abcd")),
+        ChatMessage(
+            "assistant", from_model(""), tool_calls=[ToolCall("1", "ab", from_model("cdef"))]
+        ),
+    ]
+    tools = [{"a": 1}]
+    chars = 4 + 0 + 2 + 4 + len(json.dumps(tools))
+    assert estimate_tokens(messages, tools) == -(-chars // 4)
+
+
+def test_primary_429_fails_over_to_fallback_without_sleeping() -> None:
+    up = _Upstream(**{"prim-model": 429})
+    sleeps: list[float] = []
+    out = _routed(up, sleeps, model_fallback="fb-model").complete(_msgs("hello"), [])
+    assert up.models == ["prim-model", "fb-model"]
+    assert sleeps == []
+    assert out.route == "fallback"
+
+
+def test_primary_503_exhausts_retries_then_fallback() -> None:
+    up = _Upstream(**{"prim-model": 503})
+    sleeps: list[float] = []
+    out = _routed(up, sleeps, model_fallback="fb-model").complete(_msgs("hello"), [])
+    assert up.models == ["prim-model"] * 4 + ["fb-model"]
+    assert sleeps == [1.0, 2.0, 4.0]
+    assert out.route == "fallback"
+
+
+def test_primary_and_fallback_down_uses_local_ollama() -> None:
+    ports: list[int | None] = []
+    up = _Upstream(**{"prim-model": 503, "fb-model": 503})
 
     def handler(request: httpx.Request) -> httpx.Response:
-        urls.append(request.url.host)
-        auth.append(request.headers["authorization"])
-        if request.url.port == 11434:
-            return httpx.Response(200, json=_completion("local"))
-        return httpx.Response(503, json={"error": {}})
+        ports.append(request.url.port)
+        return up(request)
 
-    client = build_default_client(
-        Settings(), ks, http_client=httpx.Client(transport=httpx.MockTransport(handler)),
-        sleep=lambda _s: None,
-    )  # fmt: skip
-    out = client.complete(_msgs("hello"), [])
-    assert out.content is not None and out.content.text == "local"
-    assert auth[0] == "Bearer nvapi-test"
-    assert auth[-1] == "Bearer ollama"
-    assert urls[0] == "integrate.api.nvidia.com"
+    out = _routed(handler, model_fallback="fb-model").complete(_msgs("hello"), [])
+    assert out.route == "local"
+    assert ports[-1] == 11434
+    assert up.auth[-1] == "Bearer ollama"
+    assert up.auth[0] == "Bearer nvapi-test"
+
+
+def test_no_fallback_primary_429_is_retried_then_local() -> None:
+    up = _Upstream(**{"prim-model": 429})
+    sleeps: list[float] = []
+    out = _routed(up, sleeps).complete(_msgs("hello"), [])
+    assert up.models[:4] == ["prim-model"] * 4
+    assert sleeps == [1.0, 2.0, 4.0]
+    assert out.route == "local"
+
+
+def test_everything_down_raises_unavailable() -> None:
+    up = _Upstream(**{"prim-model": 503, "fb-model": 503, "qwen2.5:3b": 503})
+    with pytest.raises(LLMUnavailable, match="all routes failed"):
+        _routed(up, model_fallback="fb-model").complete(_msgs("hello"), [])
+
+
+def test_fallback_equal_to_primary_is_skipped() -> None:
+    up = _Upstream(**{"prim-model": 429})
+    sleeps: list[float] = []
+    out = _routed(up, sleeps, model_fallback="prim-model").complete(_msgs("hello"), [])
+    assert up.models.count("prim-model") == 4  # retried with backoff, no duplicate hop
+    assert sleeps == [1.0, 2.0, 4.0]
+    assert out.route == "local"
+
+
+def test_missing_primary_model_fails_at_chat_time_only() -> None:
+    calls: list[int] = []
+
+    def handler(_r: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(200, json=_completion())
+
+    client = _routed(handler, model_primary="")  # no error at build time
+    with pytest.raises(MissingModelError, match="PERSONALAI_MODEL_PRIMARY"):
+        client.complete(_msgs("hello"), [])
+    assert calls == []
+    assert issubclass(MissingModelError, LLMNotConfigured)
+
+
+def test_default_client_missing_key_fails_at_chat_time_only() -> None:
+    calls: list[int] = []
+
+    def handler(_r: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(200, json=_completion())
+
+    client = _routed(handler, key=False)  # no error at build time
+    with pytest.raises(MissingApiKeyError):
+        client.complete(_msgs("hello"), [])
+    assert calls == []
+
+
+def test_router_refuses_plain_str_before_any_route() -> None:
+    calls: list[int] = []
+
+    def handler(_r: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(200, json=_completion())
+
+    bad = ChatMessage("user", "raw 4111111111111111")  # type: ignore[arg-type]
+    with pytest.raises(UnredactedPayloadError):
+        _routed(handler, model_fallback="fb-model").complete([bad], [])
+    assert calls == []
+
+
+def test_rate_limit_without_retry_raises_immediately() -> None:
+    sleeps: list[float] = []
+
+    def handler(_r: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, json={"error": {}})
+
+    with pytest.raises(LLMRateLimited):
+        _client(handler, sleeps, retry_rate_limit=False).complete(_msgs("hello"), [])
+    assert sleeps == []
+
+
+def test_persistent_rate_limit_raises_rate_limited_after_retries() -> None:
+    sleeps: list[float] = []
+
+    def handler(_r: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, json={"error": {}})
+
+    with pytest.raises(LLMRateLimited):
+        _client(handler, sleeps, max_retries=2).complete(_msgs("hello"), [])
+    assert sleeps == [1.0, 2.0]
 
 
 @pytest.mark.parametrize(

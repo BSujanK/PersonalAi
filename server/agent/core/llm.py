@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 import logging
+import math
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
 
@@ -26,8 +28,20 @@ class LLMUnavailable(RuntimeError):
     """The model could not be reached after retries (or rejected the request)."""
 
 
-class MissingApiKeyError(RuntimeError):
+class LLMRateLimited(LLMUnavailable):
+    """The model answered 429 (and, if retries were allowed, kept doing so)."""
+
+
+class LLMNotConfigured(RuntimeError):
+    """The cloud model cannot be used until the owner finishes configuring it."""
+
+
+class MissingApiKeyError(LLMNotConfigured):
     """No NVIDIA API key is stored in the keyring."""
+
+
+class MissingModelError(LLMNotConfigured):
+    """No primary model id is configured."""
 
 
 class UnredactedPayloadError(TypeError):
@@ -53,6 +67,7 @@ class ChatMessage:
 class LLMResponse:
     content: Redacted | None
     tool_calls: list[ToolCall]
+    route: str | None = None  # name of the route that served this response
 
 
 class LLMClient(Protocol):
@@ -86,6 +101,17 @@ def _to_wire(messages: Sequence[ChatMessage]) -> list[dict[str, Any]]:
     return wire
 
 
+def estimate_tokens(messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]) -> int:
+    """Rough prompt size (ceil of chars / 4); only ever reads ``Redacted`` text."""
+    chars = 0
+    for item in _to_wire(messages):
+        chars += len(item["content"])
+        for call in item.get("tool_calls", ()):
+            chars += len(call["function"]["name"]) + len(call["function"]["arguments"])
+    chars += len(json.dumps(list(tools)))
+    return math.ceil(chars / 4)
+
+
 class OpenAICompatClient:
     def __init__(
         self,
@@ -97,6 +123,7 @@ class OpenAICompatClient:
         max_retries: int = 3,
         sleep: Callable[[float], None] = time.sleep,
         timeout: float = 60,
+        retry_rate_limit: bool = True,
     ) -> None:
         self._client = openai.OpenAI(
             base_url=base_url,
@@ -108,6 +135,7 @@ class OpenAICompatClient:
         self._model = model
         self._max_retries = max_retries
         self._sleep = sleep
+        self._retry_rate_limit = retry_rate_limit
 
     def complete(
         self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]
@@ -131,13 +159,22 @@ class OpenAICompatClient:
         for attempt in range(self._max_retries + 1):
             try:
                 return self._client.chat.completions.create(**kwargs)
-            except (openai.RateLimitError, openai.APIConnectionError) as exc:
+            except openai.RateLimitError as exc:
+                if not self._retry_rate_limit:
+                    raise LLMRateLimited("rate limited (429)") from None
                 reason = type(exc).__name__
+                rate_limited = True
+            except openai.APIConnectionError as exc:
+                reason = type(exc).__name__
+                rate_limited = False
             except openai.APIStatusError as exc:
                 if exc.status_code < 500:
                     raise LLMUnavailable(f"request rejected ({exc.status_code})") from None
                 reason = f"http_{exc.status_code}"
+                rate_limited = False
             if attempt == self._max_retries:
+                if rate_limited:
+                    raise LLMRateLimited(f"retries exhausted ({reason})")
                 raise LLMUnavailable(f"retries exhausted ({reason})")
             log.warning("llm retry %d after %s", attempt + 1, reason)
             self._sleep(delay)
@@ -145,23 +182,12 @@ class OpenAICompatClient:
         raise AssertionError("unreachable")  # pragma: no cover
 
 
-class FallbackClient:
-    def __init__(self, primary: LLMClient, fallback: LLMClient) -> None:
-        self._primary = primary
-        self._fallback = fallback
+class ModelRouter:
+    """Routes each call across primary/long, fallback and local models.
 
-    def complete(
-        self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]
-    ) -> LLMResponse:
-        try:
-            return self._primary.complete(messages, tools)
-        except LLMUnavailable:
-            log.warning("primary llm unavailable, using fallback")
-            return self._fallback.complete(messages, tools)
-
-
-class _KeyedClient:
-    """Fetches the API key at call time so a missing key fails at chat time, not at startup."""
+    The model ids and the API key are read at call time, so a missing model or key fails at chat
+    time rather than at startup, and neither falls back to Ollama.
+    """
 
     def __init__(
         self,
@@ -178,17 +204,63 @@ class _KeyedClient:
     def complete(
         self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]
     ) -> LLMResponse:
+        settings = self._settings
+        estimate = estimate_tokens(messages, tools)  # guard runs before any route
+        if not settings.model_primary:
+            raise MissingModelError("PERSONALAI_MODEL_PRIMARY is not set")
         key = self._keystore.get("nvidia_api_key")
         if not key:
             raise MissingApiKeyError("nvidia_api_key is not set in the keyring")
-        client = OpenAICompatClient(
-            self._settings.nvidia_base_url,
-            key,
-            self._settings.nvidia_model,
+
+        first = "primary"
+        if settings.model_long and estimate > settings.long_context_tokens:
+            first = "long"
+        cloud = [(first, settings.model_long if first == "long" else settings.model_primary)]
+        if settings.model_fallback and settings.model_fallback != cloud[0][1]:
+            cloud.append(("fallback", settings.model_fallback))
+
+        chain: list[tuple[str, OpenAICompatClient, str]] = []
+        for index, (name, model) in enumerate(cloud):
+            client = OpenAICompatClient(
+                settings.nvidia_base_url,
+                key,
+                model,
+                http_client=self._http_client,
+                sleep=self._sleep,
+                retry_rate_limit=index == len(cloud) - 1,
+            )
+            chain.append((name, client, model))
+        local = OpenAICompatClient(
+            settings.ollama_base_url,
+            "ollama",
+            settings.ollama_model,
             http_client=self._http_client,
             sleep=self._sleep,
         )
-        return client.complete(messages, tools)
+        chain.append(("local", local, settings.ollama_model))
+
+        for hops, (name, client, model) in enumerate(chain):
+            try:
+                response = client.complete(messages, tools)
+            except LLMUnavailable as exc:
+                if hops + 1 < len(chain):
+                    log.warning(
+                        "llm route=%s model=%s failed (%s), trying %s",
+                        name,
+                        model,
+                        type(exc).__name__,
+                        chain[hops + 1][0],
+                    )
+                continue
+            log.info(
+                "llm served route=%s model=%s est_tokens=%d hops=%d",
+                name,
+                model,
+                estimate,
+                hops,
+            )
+            return replace(response, route=name)
+        raise LLMUnavailable("all routes failed")
 
 
 def require_loopback(url: str) -> None:
@@ -209,12 +281,4 @@ def build_default_client(
     sleep: Callable[[float], None] = time.sleep,
 ) -> LLMClient:
     require_loopback(settings.ollama_base_url)
-    primary = _KeyedClient(settings, keystore, http_client, sleep)
-    fallback = OpenAICompatClient(
-        settings.ollama_base_url,
-        "ollama",
-        settings.ollama_model,
-        http_client=http_client,
-        sleep=sleep,
-    )
-    return FallbackClient(primary, fallback)
+    return ModelRouter(settings, keystore, http_client, sleep)

@@ -14,7 +14,7 @@ from agent.api.app import create_app
 from agent.api.pair import open_pairing_window
 from agent.config import Settings
 from agent.connectors.gmail import GmailApi
-from agent.core.llm import LLMUnavailable
+from agent.core.llm import LLMUnavailable, MissingModelError
 from agent.core.policy import expected_signature, signature_message
 from agent.mail.services import MailServices
 from agent.mail.store import MailStore
@@ -324,6 +324,17 @@ def test_chat_llm_unavailable_is_503() -> None:
     resp = api.client.post("/chat", headers=headers, json={"message": "hi"})
     assert resp.status_code == 503
     assert resp.json() == {"detail": "llm unavailable"}
+
+
+def test_chat_llm_not_configured_is_503() -> None:
+    def unconfigured(_m: Any) -> Any:
+        raise MissingModelError("PERSONALAI_MODEL_PRIMARY is not set")
+
+    api = _api(FakeLLM(unconfigured))
+    headers = _auth(_pair(api))
+    resp = api.client.post("/chat", headers=headers, json={"message": "hi"})
+    assert resp.status_code == 503
+    assert resp.json() == {"detail": "llm not configured"}
 
 
 @pytest.mark.parametrize("path", ["/approvals", "/health"])

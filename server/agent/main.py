@@ -6,6 +6,7 @@ import argparse
 import getpass
 import ipaddress
 import json
+import logging
 import sys
 import threading
 from collections.abc import Callable, Sequence
@@ -113,7 +114,18 @@ def _background_jobs(
     return jobs
 
 
+def _configure_logging() -> None:
+    """INFO for the agent's own loggers (counts and routes only, never content), to stderr."""
+    logger = logging.getLogger("agent")
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+        logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+
 def _serve(settings: Settings) -> int:
+    _configure_logging()
     registry = ToolRegistry()
     mail: MailServices | None = None
     try:

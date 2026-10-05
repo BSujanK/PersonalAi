@@ -27,13 +27,26 @@ def _push_mode(value: str) -> str:
     return mode
 
 
+def _positive_int(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError:
+        number = 0
+    if number <= 0:
+        raise ValueError("PERSONALAI_LONG_CONTEXT_TOKENS must be a positive integer")
+    return number
+
+
 @dataclass(frozen=True)
 class Settings:
     bind_hosts: tuple[str, ...] = ("127.0.0.1",)
     port: int = 8765
     db_path: Path = Path.home() / ".personalai" / "agent.db"
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
-    nvidia_model: str = "meta/llama-3.3-70b-instruct"
+    model_primary: str = ""
+    model_fallback: str = ""
+    model_long: str = ""
+    long_context_tokens: int = 32000
     ollama_base_url: str = "http://127.0.0.1:11434/v1"
     ollama_model: str = "qwen2.5:3b"
     owner_emails: tuple[str, ...] = ()
@@ -96,7 +109,12 @@ class Settings:
             db_path=Path(e["PERSONALAI_DB_PATH"])
             if "PERSONALAI_DB_PATH" in e
             else defaults.db_path,
-            nvidia_model=e.get("PERSONALAI_NVIDIA_MODEL", defaults.nvidia_model),
+            model_primary=e.get("PERSONALAI_MODEL_PRIMARY", defaults.model_primary).strip(),
+            model_fallback=e.get("PERSONALAI_MODEL_FALLBACK", defaults.model_fallback).strip(),
+            model_long=e.get("PERSONALAI_MODEL_LONG", defaults.model_long).strip(),
+            long_context_tokens=_positive_int(
+                e.get("PERSONALAI_LONG_CONTEXT_TOKENS", str(defaults.long_context_tokens))
+            ),
             owner_emails=_split(e.get("PERSONALAI_OWNER_EMAILS", "")),
             mail_accounts=_split(e.get("PERSONALAI_MAIL_ACCOUNTS", "")),
             vip_senders=_split(e.get("PERSONALAI_VIP_SENDERS", "")),

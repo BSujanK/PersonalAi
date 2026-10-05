@@ -61,7 +61,37 @@ Do these steps in order on the laptop (PowerShell, as your normal user, not as a
    ```powershell
    uv run python -m keyring set PersonalAi nvidia_api_key
    ```
-3. Check: `uv run python scripts/check_nvidia.py` prints `OK: <model> reachable and tool calling works`. It sends one fixed synthetic prompt, nothing personal.
+3. Choose the models (next section), set `PERSONALAI_MODEL_PRIMARY`, then check: `uv run python scripts/check_nvidia.py` prints `OK: <model> reachable and tool calling works`. It sends one fixed synthetic prompt, nothing personal. `--model ID` checks another model without changing the variable.
+
+### 4a. Choose the NVIDIA models
+
+No model is built in: the server will not chat until `PERSONALAI_MODEL_PRIMARY` is set. The catalogue changes often, so pick from what your key can use today.
+
+1. List the models your key can call (`GET /v1/models`; the key is read from the keyring, never typed):
+   ```powershell
+   uv run python scripts/eval_models.py --list-models
+   ```
+   Pick three to five instruct models that the model card says support tool (function) calling, plus one with a long context window.
+2. Run the evaluation on them (from `server\`):
+   ```powershell
+   uv run python scripts/eval_models.py vendor/model-a vendor/model-b vendor/model-c
+   ```
+   It runs about 40 synthetic scenarios per model through the real agent loop, tools and redaction over fake accounts: tool choice and arguments, multi-step tasks, refusing instructions planted inside mail, files, Classroom and SMS, copying masked placeholders such as `⟨PHONE_1⟩` exactly, and plain answers. Only synthetic data is sent, and nothing reaches your real accounts. The table shows, per model, the pass rate (overall and per category), p50 and p95 latency per model call, the number of 429 (rate limit) responses and errors, followed by the IDs of failed scenarios.
+   - The trial tier allows about 40 requests a minute, and each model makes roughly 80 to 120 calls. Add `--rpm 30` to pace the calls if the 429 column is high, and evaluate a few models per run. `--only injection,placeholder` or `--limit 10` give a quick pass; `--json results.json` saves the numbers.
+3. Set the variables from the results:
+   - `PERSONALAI_MODEL_PRIMARY`: the model with the best pass rate that has **no injection failures** and acceptable p95 latency. Injection and placeholder failures matter more than a slightly lower overall score.
+   - `PERSONALAI_MODEL_FALLBACK`: the runner-up, ideally from a different vendor so one outage or rate limit does not take out both. Optional.
+   - `PERSONALAI_MODEL_LONG`: a model with a large context window that also passed the injection scenarios, used when a request is longer than `PERSONALAI_LONG_CONTEXT_TOKENS`. Optional; without it long requests go to the primary.
+   - `PERSONALAI_LONG_CONTEXT_TOKENS`: a bit below the primary model's context window, for example `24000` for a 32k model (the default is `32000`). The size is estimated as characters divided by four.
+   ```powershell
+   [Environment]::SetEnvironmentVariable("PERSONALAI_MODEL_PRIMARY", "vendor/model-a", "User")
+   [Environment]::SetEnvironmentVariable("PERSONALAI_MODEL_FALLBACK", "vendor/model-b", "User")
+   [Environment]::SetEnvironmentVariable("PERSONALAI_MODEL_LONG", "vendor/model-c", "User")
+   [Environment]::SetEnvironmentVariable("PERSONALAI_LONG_CONTEXT_TOKENS", "24000", "User")
+   ```
+4. Re-run the evaluation when NVIDIA retires a model or adds a new one, and after changing the system prompt or tools.
+
+**How requests are routed.** A long request goes to the long model, everything else to the primary. If that model errors or is rate limited, the request moves to the fallback model and then to local Ollama. Every route receives only redacted text. The server log records which route and model answered each request (never its content), for example `llm served route=fallback model=vendor/model-b`.
 
 ### 5. Ollama (local classifier and fallback)
 
@@ -77,6 +107,7 @@ Set your user environment variables once (they hold no secrets). Replace the exa
 ```powershell
 $vars = @{
   PERSONALAI_BIND_HOSTS        = "127.0.0.1,100.x.y.z"   # loopback plus the laptop's Tailscale IP
+  PERSONALAI_MODEL_PRIMARY     = "vendor/model-a"        # from step 4a
   PERSONALAI_OWNER_EMAILS      = "you@example.com,you@college.example.edu"
   PERSONALAI_MAIL_ACCOUNTS     = "you@example.com,you@college.example.edu"
   PERSONALAI_CALENDAR_ACCOUNTS = "you@example.com"
@@ -174,7 +205,10 @@ uv run python -m agent restore --in D:\backups\personalai-2026-10-05.paibak     
 | `PERSONALAI_BIND_HOSTS` | Comma-separated bind IPs (loopback or Tailscale only) | `127.0.0.1` |
 | `PERSONALAI_PORT` | Port | `8765` |
 | `PERSONALAI_DB_PATH` | SQLite file | `~/.personalai/agent.db` |
-| `PERSONALAI_NVIDIA_MODEL` | Model id on NVIDIA Build | `meta/llama-3.3-70b-instruct` |
+| `PERSONALAI_MODEL_PRIMARY` | NVIDIA Build model for normal requests (required for chat; see step 4a) | none |
+| `PERSONALAI_MODEL_FALLBACK` | Model used when the primary (or long) model errors or is rate limited | none |
+| `PERSONALAI_MODEL_LONG` | Model for requests longer than `PERSONALAI_LONG_CONTEXT_TOKENS` | none (primary) |
+| `PERSONALAI_LONG_CONTEXT_TOKENS` | Estimated size (characters / 4) above which the long model is used | `32000` |
 | `PERSONALAI_OWNER_EMAILS` | Your addresses, masked before the cloud | none |
 | `PERSONALAI_MAIL_ACCOUNTS` | Comma-separated Gmail addresses to sync (empty turns mail off); also masked before the cloud | none |
 | `PERSONALAI_VIP_SENDERS` | Comma-separated senders always classified important | none |

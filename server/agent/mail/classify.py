@@ -11,8 +11,8 @@ from agent.connectors.gmail import MailMessage
 from agent.core.llm import (
     ChatMessage,
     LLMClient,
+    LLMNotConfigured,
     LLMUnavailable,
-    MissingApiKeyError,
     OpenAICompatClient,
     require_loopback,
 )
@@ -121,7 +121,7 @@ class MailClassifier:
         )
         try:
             response = self._llm.complete(messages, [])
-        except (LLMUnavailable, MissingApiKeyError) as exc:
+        except (LLMUnavailable, LLMNotConfigured) as exc:
             log.warning("classifier model unavailable: %s", type(exc).__name__)
             return "normal", "rule", "llm_unavailable", None
         parsed = _parse_reply(response.content.text) if response.content else None

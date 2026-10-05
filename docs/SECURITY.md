@@ -97,3 +97,10 @@ The server accepts only if all of these hold: the decision is valid; the action 
 - **Backups** (`agent backup`/`agent restore`) are AES-256-GCM with a scrypt-derived key from a prompted passphrase; the header is authenticated. They carry the database and `db_key` only, never device, Google or NVIDIA secrets.
 - **Tests.** `tests/test_injection_suite.py` runs every untrusted source against every WRITE tool and checks that only one visible pending action results and nothing executes without a valid signature. `tests/test_e2e_security.py` covers route auth, unsafe binds and keyrings, outbound PII across every READ tool, and log content.
 - **CI** compiles the Android app (including the Kotlin SMS module) and narrows the gitleaks allowlist to the one synthetic test key.
+
+## Model routing
+
+- **Every route is redacted.** The router in `agent/core/llm.py` checks that every message is `Redacted` before choosing a route, so the primary, long, fallback and local Ollama routes all receive the same masked text. Ollama must be a loopback IP literal.
+- **No built-in model.** Model IDs come only from `PERSONALAI_MODEL_*`. A missing model or key stops chat with "llm not configured" rather than silently sending requests elsewhere.
+- **Logs** name the route and model that answered, an estimated token count and the failure class on failover, never message content.
+- **`scripts/eval_models.py`** reads the NVIDIA key from the keyring only and sends only synthetic fixtures through the real redacting loop. It is never run in CI; CI tests it with a fake client.
