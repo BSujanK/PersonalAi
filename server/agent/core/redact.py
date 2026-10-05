@@ -96,6 +96,7 @@ class RedactionMap:
         return rmap
 
 
+_LONG_DIGITS = re.compile(r"\d{9,}")
 _PLACEHOLDER_RE = re.compile(f"{_OPEN}([A-Z_]+)_(\\d+){_CLOSE}")
 
 Span = tuple[int, int]
@@ -287,14 +288,34 @@ class Redactor:
         return Redacted(self._redact_str(text, rmap), _token=_TOKEN)
 
     def redact_obj(self, obj: JSON, rmap: RedactionMap) -> JSON:
-        """Redact string values recursively; dict keys are left untouched."""
+        """Redact string values recursively; dict keys are left untouched.
+
+        Integers and floats with a 9+ digit run are redacted as their string form so a numeric
+        account number cannot slip through as a JSON number.
+        """
         if isinstance(obj, str):
             return self._redact_str(obj, rmap)
+        if isinstance(obj, int | float) and not isinstance(obj, bool):
+            as_text = str(obj)
+            return self._redact_str(as_text, rmap) if _LONG_DIGITS.search(as_text) else obj
         if isinstance(obj, list):
             return [self.redact_obj(item, rmap) for item in obj]
         if isinstance(obj, dict):
             return {key: self.redact_obj(value, rmap) for key, value in obj.items()}
         return obj
+
+    def redact_structured(
+        self, obj: object, rmap: RedactionMap, wrap: Callable[[str], str] = _plain
+    ) -> Redacted:
+        """Redact a tool result and serialise it to JSON text, then apply ``wrap`` to that text.
+
+        Redaction runs on the raw string leaves before serialisation, so JSON escapes such as
+        ``\\n`` cannot defeat the boundary checks of the patterns. ``wrap`` must only add
+        framing around the already-redacted text.
+        """
+        normalised: JSON = json.loads(json.dumps(obj, default=str))
+        text = json.dumps(self.redact_obj(normalised, rmap), ensure_ascii=False)
+        return Redacted(wrap(text), _token=_TOKEN)
 
     @staticmethod
     def rehydrate(text: str, rmap: RedactionMap) -> str:

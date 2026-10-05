@@ -58,10 +58,19 @@ class KeyStore:
         with contextlib.suppress(keyring.errors.PasswordDeleteError):
             keyring.delete_password(SERVICE, name)
 
-    def get_or_create_bytes(self, name: str, n: int = 32) -> bytes:
+    def get_bytes(self, name: str) -> bytes | None:
         existing = self.get(name)
-        if existing is not None:
-            return base64.urlsafe_b64decode(existing + "=" * (-len(existing) % 4))
-        value = secrets.token_bytes(n)
+        if existing is None:
+            return None
+        return base64.urlsafe_b64decode(existing + "=" * (-len(existing) % 4))
+
+    def set_bytes(self, name: str, value: bytes) -> None:
         self.set(name, base64.urlsafe_b64encode(value).decode("ascii"))
+
+    def get_or_create_bytes(self, name: str, n: int = 32) -> bytes:
+        existing = self.get_bytes(name)
+        if existing is not None:
+            return existing
+        value = secrets.token_bytes(n)
+        self.set_bytes(name, value)
         return value

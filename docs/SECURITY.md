@@ -1,0 +1,55 @@
+# Security model
+
+PersonalAi is a private agent with read access to mail, calendar, files and finances. This document lists what it protects, who it defends against, and which code enforces each defence. The binding rules live in `CLAUDE.md`.
+
+## Assets
+
+- Mail, calendar, Classroom, Drive and local file contents.
+- Bank SMS, ledger rows and Groww holdings.
+- Personal identifiers: PAN, Aadhaar, card and account numbers, UPI IDs, phone numbers, OTPs and passwords.
+- Secrets: the device tokens, the per-device approval keys, the NVIDIA API key, OAuth refresh tokens and the database key.
+- The ability to cause side effects (send mail, change calendar, share files).
+
+## Adversaries and mitigations
+
+| Adversary | Mitigation | Code |
+|---|---|---|
+| Network attacker | The server binds only to loopback or Tailscale addresses. Each configured address is parsed with `ipaddress` and checked against `127.0.0.0/8`, `::1/128`, `100.64.0.0/10` and `fd7a:115c:a1e0::/48`. `0.0.0.0`, `::`, LAN IPs, hostnames and scoped addresses are refused at startup. Every route except `POST /pair` needs a device bearer token. API docs are disabled. | `agent/core/netguard.py`, `agent/main.py`, `agent/api/auth.py`, `agent/api/app.py` |
+| Malicious LAN host | Same as above: the service is not reachable on LAN interfaces. Pairing works only during a short window opened from the laptop (`pair` command), is single use, and closes after 5 wrong codes. Failures all return the same 403. | `agent/api/pair.py` |
+| Prompt injection via mail, files, SMS or Classroom | Untrusted tool output is wrapped in `<untrusted_data>` tags (and the tags inside it are neutralised), and the system prompt says it is data. More importantly, the model cannot execute anything with side effects: every WRITE tool call only creates a pending action. v1 has no arbitrary-URL fetch tool. | `agent/core/loop.py`, `agent/core/tools.py`, `agent/core/approvals.py` |
+| Model or loop bug trying to write directly | The registry has no method that runs a WRITE tool. The only way to get an executor is `executor_for_approved`, used by `ApprovalEngine` after a verified approval. Tool names that look like broker order APIs are refused at registration. | `agent/core/tools.py`, `agent/core/policy.py` |
+| Stolen unlocked device token | The token alone can never approve. An approval needs an HMAC made with the approval key, which the phone can only read after a biometric unlock. See the signature scheme below. | `agent/core/policy.py`, `agent/core/approvals.py` |
+| Stolen phone (locked) | The approval key is stored with `requireAuthentication: true` in `expo-secure-store`, so it is unreadable without the owner's biometrics. A device can be revoked on the laptop (`devices.revoked`). | `agent/api/auth.py`, `agent/api/pair.py` |
+| Replay or tampering of an approval | The signature covers action id, payload hash, one-time nonce and decision. The server recomputes the payload hash from the stored payload, compares in constant time, updates status with `WHERE status = 'pending' AND nonce = ?` inside one transaction, and refuses actions older than 15 minutes. The executor runs with the stored payload, never the request. | `agent/core/policy.py`, `agent/core/approvals.py` |
+| Sensitive data reaching the cloud LLM | Every string sent to the model is a `Redacted` value that only `agent/core/redact.py` can create. The LLM client refuses anything else at runtime, before any HTTP request. Tool results are redacted before serialisation, including numeric account numbers. Placeholders are stable per conversation and rehydrated locally. Input cannot forge a placeholder (`⟨`/`⟩` are neutralised). | `agent/core/redact.py`, `agent/core/llm.py` |
+| Stolen disk or database file | Message bodies, redaction maps, action payloads, previews and results are AES-256-GCM encrypted per column, with the table, column and row id as associated data so ciphertexts cannot be swapped. The key is in the OS keyring. | `agent/store/crypto.py`, `agent/store/db.py` |
+| Plaintext secrets | Secrets live only in the OS keyring. Startup refuses a fail, null or plaintext backend; only an allowlist of OS-backed backends is accepted. Settings never read secrets from the environment. | `agent/store/keystore.py`, `agent/config.py` |
+| Tampering with the audit trail | The audit log is append-only (SQL triggers abort UPDATE and DELETE) and hash-chained, so a modified or inserted row fails `verify()`. Entries carry short codes, never payloads or PII. | `agent/store/db.py`, `agent/core/audit.py` |
+| Log or notification leakage | Logs carry ids, counts and exception type names only. Push notifications (M5) carry no content. | all modules |
+| Repo leakage (the repo is public) | `.gitignore` excludes `.env`, `*.db` and token files. Test fixtures are synthetic (example.com, made-up numbers). gitleaks runs in CI. Tests use an in-memory keyring and never touch a real one. | `.gitignore`, `tests/conftest.py`, CI |
+
+## Approval signature scheme
+
+At pairing the server creates a 32-byte random approval key for the device, stores it in the keyring under `approval_key:{device_id}`, and returns it once (base64url, no padding). The phone keeps it in `expo-secure-store` with `requireAuthentication: true`.
+
+To approve or reject an action the phone sends `POST /approvals/{id}/approve` or `/reject` with the device bearer token and:
+
+```json
+{"payload_hash": "<hex sha256>", "nonce": "<nonce>", "sig": "<64 lowercase hex>"}
+```
+
+where
+
+```
+sig = hex(HMAC-SHA256(approval_key, f"{action_id}|{payload_hash}|{nonce}|{decision}"))
+```
+
+and `decision` is `approve` or `reject` (it comes from the path). `payload_hash` is the SHA-256 hex of `json.dumps({"tool": name, "args": args}, sort_keys=True, separators=(",", ":"), ensure_ascii=False)` encoded as UTF-8. The phone reads `payload_hash` and `nonce` from `GET /approvals`.
+
+The server accepts only if all of these hold: the decision is valid; the action is still pending; it is at most 15 minutes old (and not more than 30 seconds in the future); the stored payload still hashes to the stored hash; the request hash and nonce match the stored ones; and the signature is 64 lowercase hex characters equal to the expected value. All comparisons use `hmac.compare_digest`. Failures return a short reason code and are audited as `approval_denied`.
+
+## Known limits
+
+- Anything the owner approves is trusted. The approval preview must show the full content (recipients, text) so the owner can spot an injected action.
+- Redaction is pattern-based and deliberately over-redacts; free-text names and addresses are not masked.
+- The pairing code and device token travel over the Tailscale tunnel; protect the laptop session itself.
