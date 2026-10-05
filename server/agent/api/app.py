@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, FastAPI
 
 from agent.api import approvals as approvals_routes
 from agent.api import chat as chat_routes
+from agent.api import mail as mail_routes
 from agent.api import pair as pair_routes
 from agent.api.auth import require_device
 from agent.config import Settings
@@ -17,6 +18,7 @@ from agent.core.locks import KeyedLocks
 from agent.core.loop import AgentLoop
 from agent.core.redact import Redactor
 from agent.core.tools import ToolRegistry
+from agent.mail.services import MailServices
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.keystore import KeyStore
@@ -30,6 +32,7 @@ def create_app(
     llm: LLMClient,
     registry: ToolRegistry,
     clock: Clock = utcnow,
+    mail: MailServices | None = None,
 ) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     cipher = FieldCipher(keystore.get_or_create_bytes("db_key"))
@@ -51,6 +54,9 @@ def create_app(
     protected = [Depends(require_device)]
     app.include_router(chat_routes.router, dependencies=protected)
     app.include_router(approvals_routes.router, dependencies=protected)
+    if mail is not None:
+        app.state.mail = mail
+        app.include_router(mail_routes.router, dependencies=protected)
 
     health = APIRouter(dependencies=protected)
 
