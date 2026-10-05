@@ -121,11 +121,33 @@ def _optional_text(args: dict[str, Any], name: str) -> str | None:
 
 
 _TEXT_PROPS: dict[str, Any] = {
-    "summary": {"type": "string", "minLength": 1, "maxLength": 200},
-    "start": {"type": "string", "description": "ISO date, or ISO datetime with UTC offset"},
-    "end": {"type": "string", "description": "Same form as start; a date end is exclusive"},
-    "description": {"type": "string", "maxLength": 2000},
-    "location": {"type": "string", "maxLength": 200},
+    "summary": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "description": "The event title, short and specific, such as Midterm exam.",
+    },
+    "start": {
+        "type": "string",
+        "description": (
+            "When it starts: an ISO datetime with the owner's UTC offset, such as "
+            "2026-10-14T10:00:00+05:30, or an ISO date such as 2026-10-14 for an all-day event."
+        ),
+    },
+    "end": {
+        "type": "string",
+        "description": (
+            "When it ends, in the same form as start and after it. If the source gives no end "
+            "time, use one hour after start; for an all-day event use the next day's date "
+            "(the end date is exclusive)."
+        ),
+    },
+    "description": {
+        "type": "string",
+        "maxLength": 2000,
+        "description": "Optional notes, for example where the date came from.",
+    },
+    "location": {"type": "string", "maxLength": 200, "description": "Optional place or room."},
 }
 
 
@@ -152,14 +174,36 @@ def register_calendar_tools(
     registry.register(
         Tool(
             name="calendar_events",
-            description="List upcoming calendar events, from one account or all of them.",
+            description=(
+                "List the owner's upcoming calendar events, soonest first, from one account or "
+                "all of them. Use it to see what is already planned, or to check for an existing "
+                "event before proposing a new one. Each event has id, account, summary, start, "
+                "end and all_day."
+            ),
             parameters={
                 "type": "object",
                 "properties": {
-                    "account": {"type": "string"},
-                    "days": {"type": "integer", "minimum": 1, "maximum": 31},
-                    "query": {"type": "string", "maxLength": 100},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                    "account": {
+                        "type": "string",
+                        "description": "Only this calendar account; leave it out for all.",
+                    },
+                    "days": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 31,
+                        "description": "How many days ahead to look (default 7).",
+                    },
+                    "query": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "description": "One or two keywords to match in the event text.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50,
+                        "description": "Maximum number of events (default 20).",
+                    },
                 },
                 "additionalProperties": False,
             },
@@ -209,12 +253,24 @@ def register_calendar_tools(
         Tool(
             name="calendar_create_event",
             description=(
-                "Create an event on the owner's own calendar. No guests are ever invited. "
-                "Requires the owner's approval."
+                "Propose a new event on the owner's own calendar, for example an exam found in "
+                "a mail or a Classroom post: first find the date with the read tools, then call "
+                "this with that date. No guests are ever invited, and nothing is added until the "
+                "owner approves it on their phone. For a Classroom assignment deadline prefer "
+                "calendar_add_deadline."
             ),
             parameters={
                 "type": "object",
-                "properties": {"account": {"type": "string"}, **_TEXT_PROPS},
+                "properties": {
+                    "account": {
+                        "type": "string",
+                        "description": (
+                            "The calendar account to add it to: copy an account value from an "
+                            "earlier tool result (a calendar, mail or Classroom result)."
+                        ),
+                    },
+                    **_TEXT_PROPS,
+                },
                 "required": ["account", "summary", "start", "end"],
                 "additionalProperties": False,
             },

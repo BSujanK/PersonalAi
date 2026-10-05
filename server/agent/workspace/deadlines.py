@@ -114,19 +114,52 @@ def register_deadline_tool(
         Tool(
             name=TOOL_NAME,
             description=(
-                "Add a Classroom assignment deadline to the owner's calendar. No guests are "
-                "invited. Requires the owner's approval."
+                "Put a Classroom assignment's due date on the owner's calendar (no guests are "
+                "invited; requires the owner's approval). Use it after classroom_coursework "
+                "found the assignment, copying that item's values: classroom_account is its "
+                "account, plus its course_id, coursework_id (its id), title, course (its course "
+                "name) and due. calendar_account is the calendar to add it to, one of the "
+                "calendar accounts. For anything that did not come from Classroom, use "
+                "calendar_create_event instead."
             ),
             parameters={
                 "type": "object",
                 "properties": {
-                    "calendar_account": {"type": "string"},
-                    "classroom_account": {"type": "string"},
-                    "course_id": {"type": "string"},
-                    "coursework_id": {"type": "string"},
-                    "title": {"type": "string", "minLength": 1, "maxLength": 200},
-                    "course": {"type": "string", "minLength": 1, "maxLength": 200},
-                    "due": {"type": "string", "description": "ISO datetime with offset, or date"},
+                    "calendar_account": {
+                        "type": "string",
+                        "description": "The calendar account the event is added to.",
+                    },
+                    "classroom_account": {
+                        "type": "string",
+                        "description": "The account field of the classroom_coursework item.",
+                    },
+                    "course_id": {
+                        "type": "string",
+                        "description": "The course_id field of the classroom_coursework item.",
+                    },
+                    "coursework_id": {
+                        "type": "string",
+                        "description": "The id field of the classroom_coursework item.",
+                    },
+                    "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "The assignment title, copied from the item.",
+                    },
+                    "course": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "The course name, copied from the item's course field.",
+                    },
+                    "due": {
+                        "type": "string",
+                        "description": (
+                            "The due field of the item, unchanged: an ISO datetime with offset, "
+                            "or an ISO date for an all-day deadline."
+                        ),
+                    },
                 },
                 "required": [
                     "calendar_account",

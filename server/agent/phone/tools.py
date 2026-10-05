@@ -110,10 +110,16 @@ def register_phone_tools(registry: ToolRegistry, queue: CommandQueue, clock: Clo
     for name, description, properties, required, run, preview in (
         (
             "phone_set_alarm",
-            "Set an alarm on the owner's phone (requires approval). hour is 0-23 local time; "
-            "days optionally repeats it on weekdays, 1 = Sunday ... 7 = Saturday.",
+            "Set a clock alarm on the owner's phone (requires approval). hour is 0-23 local time; "
+            "days optionally repeats it on weekdays, 1 = Sunday ... 7 = Saturday. For a "
+            "reminder with text use phone_reminder instead.",
             {
-                "hour": {"type": "integer", "minimum": 0, "maximum": 23},
+                "hour": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 23,
+                    "description": "Hour in 24-hour local time (6:30 pm is 18).",
+                },
                 "minute": {"type": "integer", "minimum": 0, "maximum": 59},
                 "label": label_prop,
                 "days": {
@@ -139,11 +145,27 @@ def register_phone_tools(registry: ToolRegistry, queue: CommandQueue, clock: Clo
         ),
         (
             "phone_reminder",
-            "Schedule a reminder notification on the owner's phone (requires approval). "
-            "at is an ISO 8601 datetime with an explicit UTC offset.",
+            "Schedule a one-off reminder notification on the owner's phone (requires approval). "
+            "Use it for 'remind me ... to ...' requests, including reminders about a date found "
+            "in mail or Classroom, e.g. the evening before an exam. Not for alarms or timers.",
             {
-                "at": {"type": "string"},
-                "text": {"type": "string", "maxLength": 200},
+                "at": {
+                    "type": "string",
+                    "description": (
+                        "When the reminder fires: ISO 8601 datetime with the owner's UTC offset, "
+                        "such as 2026-10-13T18:00:00+05:30. If the owner gave a time with an "
+                        "offset, copy it unchanged; for 'tomorrow 9am' work from the current "
+                        "date and time. It must be in the future."
+                    ),
+                },
+                "text": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": (
+                        "What to remind about, as a short imperative such as Submit the lab "
+                        "record. Leave the time out of it."
+                    ),
+                },
             },
             ["at", "text"],
             reminder_run,

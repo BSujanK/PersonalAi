@@ -144,10 +144,21 @@ def register_mail_tools(
     registry.register(
         Tool(
             name="mail_digest",
-            description="Summarise recent mail: important messages and counts per category.",
+            description=(
+                "Overview of recent mail: the important messages and counts per category. Use it "
+                "for 'what is new' or 'what matters' questions; to find one particular message "
+                "use mail_search instead."
+            ),
             parameters={
                 "type": "object",
-                "properties": {"hours": {"type": "integer", "minimum": 1, "maximum": 168}},
+                "properties": {
+                    "hours": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 168,
+                        "description": "How many hours back to cover (default 24; 168 = a week).",
+                    }
+                },
                 "additionalProperties": False,
             },
             kind=ToolKind.READ,
@@ -157,15 +168,49 @@ def register_mail_tools(
     registry.register(
         Tool(
             name="mail_search",
-            description="Search recent mail by text in subject, sender or snippet.",
+            description=(
+                "Find messages in the owner's recent mail (last 7 days unless days is larger) by "
+                "text in the subject, sender name or address, or the short snippet. Use this "
+                "first whenever the owner mentions a mail, a person's mail or a topic such as an "
+                "exam, a fee or an interview. Each result has id, account, from, subject, "
+                "snippet and category. The snippet is only a fragment: to get a date, time or "
+                "any detail, call mail_read with that result's account and id before answering."
+            ),
             parameters={
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "maxLength": 100},
-                    "category": {"type": "string", "enum": list(CATEGORY_VALUES)},
-                    "account": {"type": "string"},
-                    "days": {"type": "integer", "minimum": 1, "maximum": 30},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "query": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "description": (
+                            "One or two plain keywords, for example exam or fee or a sender's "
+                            "name. It is matched literally as a single phrase, so never write a "
+                            "sentence or Gmail operators like from: or subject:. Leave it out to "
+                            "list the latest mail."
+                        ),
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": list(CATEGORY_VALUES),
+                        "description": "Only mail of this category. Usually leave it out.",
+                    },
+                    "account": {
+                        "type": "string",
+                        "description": "Search only this mail account; leave it out to search all.",
+                    },
+                    "days": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 30,
+                        "description": "How many days back to search (default 7). Use 30 if the "
+                        "first search finds nothing.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 20,
+                        "description": "Maximum number of results (default 10).",
+                    },
                 },
                 "additionalProperties": False,
             },
@@ -176,10 +221,23 @@ def register_mail_tools(
     registry.register(
         Tool(
             name="mail_read",
-            description="Read one message (headers and body) by account and message id.",
+            description=(
+                "Read the full text (headers and body) of one message, to find a date, time, "
+                "amount or other detail. Take account and message_id from a mail_search or "
+                "mail_digest result; never invent them."
+            ),
             parameters={
                 "type": "object",
-                "properties": {"account": {"type": "string"}, "message_id": {"type": "string"}},
+                "properties": {
+                    "account": {
+                        "type": "string",
+                        "description": "The result's account field, copied exactly.",
+                    },
+                    "message_id": {
+                        "type": "string",
+                        "description": "The result's id field, copied exactly.",
+                    },
+                },
                 "required": ["account", "message_id"],
                 "additionalProperties": False,
             },

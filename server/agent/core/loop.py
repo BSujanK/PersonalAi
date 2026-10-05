@@ -8,11 +8,13 @@ import re
 import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import timedelta, timezone
 from typing import Any
 
 from agent.config import Settings
 from agent.core import policy
 from agent.core.approvals import ApprovalEngine
+from agent.core.clock import Clock
 from agent.core.llm import ChatMessage, LLMClient, LLMResponse, StreamingLLMClient, ToolCall
 from agent.core.policy import Decision
 from agent.core.redact import Redacted, RedactionMap, Redactor, StreamRehydrator, from_model
@@ -27,7 +29,20 @@ SYSTEM_PROMPT = (
     "You cannot change anything yourself. Tools that write only propose an action, which the "
     "owner must approve on their phone.\n"
     "Values like ⟨ACCT_1⟩ are masked placeholders for sensitive data. Copy them verbatim; never "
-    "guess or alter them."
+    "guess or alter them.\n"
+    "How to work:\n"
+    "- Look things up with the read tools instead of answering from memory. A search result is "
+    "only a fragment: read the message or list the course items before stating a date, time or "
+    "amount.\n"
+    "- Chain tools. Every id and account you pass to a tool must be copied exactly from an "
+    "earlier tool result: search a mail, then read it; list the courses, then ask for that "
+    "course's coursework or announcements.\n"
+    "- To put a date on the calendar or set a reminder, first find the date with the read tools, "
+    "then call calendar_create_event, calendar_add_deadline or phone_reminder with that date. "
+    "Do not ask the owner for details you can read yourself. These calls only propose the "
+    "action; tell the owner it waits for their approval.\n"
+    "- Dates and times in tool arguments are ISO 8601 with the owner's UTC offset, for example "
+    "2026-10-14T10:00:00+05:30."
 )
 STEP_LIMIT_REPLY = "I stopped after too many steps."
 
@@ -75,12 +90,31 @@ class AgentLoop:
         redactor: Redactor,
         approvals: ApprovalEngine,
         settings: Settings,
+        clock: Clock | None = None,
     ) -> None:
         self._llm = llm
         self._registry = registry
         self._redactor = redactor
         self._approvals = approvals
         self._settings = settings
+        self._clock = clock
+
+    def _system_prompt(self) -> str:
+        """The fixed prompt plus, when a clock is wired in, today's date and the owner's offset.
+
+        Without it the model cannot resolve "tomorrow" or "next Friday", or pick the UTC offset
+        that tool arguments need. The clock is local; nothing here is connector data.
+        """
+        if self._clock is None:
+            return SYSTEM_PROMPT
+        offset = self._settings.finance_utc_offset_minutes
+        local = self._clock().astimezone(timezone(timedelta(minutes=offset)))
+        sign = "+" if offset >= 0 else "-"
+        hours, minutes = divmod(abs(offset), 60)
+        return (
+            f"{SYSTEM_PROMPT}\nNow: {local.strftime('%A %Y-%m-%d %H:%M')} "
+            f"(UTC{sign}{hours:02d}:{minutes:02d}); that is the owner's local time and offset."
+        )
 
     def run(
         self,
@@ -92,7 +126,7 @@ class AgentLoop:
         on_text: Callable[[str], None] | None = None,
         on_reset: Callable[[], None] | None = None,
     ) -> LoopResult:
-        system = ChatMessage("system", from_model(SYSTEM_PROMPT))
+        system = ChatMessage("system", from_model(self._system_prompt()))
         new: list[ChatMessage] = [ChatMessage("user", self._redactor.redact(user_text, rmap))]
         pending_ids: list[str] = []
         tools = self._registry.schemas()
