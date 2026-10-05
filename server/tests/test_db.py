@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -43,3 +44,31 @@ def test_settings_from_env() -> None:
     assert s.port == 9000
     assert s.owner_emails == ("me@example.com",)
     assert Settings.from_env({}).bind_hosts == ("127.0.0.1",)
+
+
+def test_mail_settings_from_env() -> None:
+    s = Settings.from_env(
+        {
+            "PERSONALAI_OWNER_EMAILS": "Me@example.com",
+            "PERSONALAI_MAIL_ACCOUNTS": "me@example.com, college@example.edu",
+            "PERSONALAI_VIP_SENDERS": "mentor@example.org",
+            "PERSONALAI_COLLEGE_DOMAINS": "college.example.edu",
+            "PERSONALAI_MAIL_POLL_MINUTES": "10",
+            "PERSONALAI_CLASSIFIER_MODEL": "tiny",
+        }
+    )
+    assert s.mail_accounts == ("me@example.com", "college@example.edu")
+    assert s.vip_senders == ("mentor@example.org",)
+    assert s.college_domains == ("college.example.edu",)
+    assert (s.mail_poll_minutes, s.mail_initial_days, s.classifier_model) == (10, 7, "tiny")
+    assert s.redaction_emails == ("me@example.com", "college@example.edu")
+    assert Settings().mail_accounts == ()
+
+
+def test_messages_conversation_seq_is_unique() -> None:
+    db = Database(":memory:")
+    db.execute("INSERT INTO conversations (id, created_at) VALUES ('c', 't')")
+    row = "INSERT INTO messages VALUES (?, 'c', 1, 't', 'user', x'00')"
+    db.execute(row, ("a",))
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(row, ("b",))

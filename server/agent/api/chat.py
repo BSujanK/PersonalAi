@@ -82,23 +82,18 @@ def _load_history(
     return history, rmap
 
 
-@router.post("/chat")
-def chat(body: ChatRequest, request: Request) -> ChatResponse:
-    state = request.app.state
+def _run_turn(state: Any, body: ChatRequest, conversation_id: str, *, is_new: bool) -> ChatResponse:
+    """Load history, run the loop and persist. The caller holds the conversation lock."""
     db: Database = state.db
     cipher: FieldCipher = state.cipher
-    if body.conversation_id is None:
-        conversation_id = uuid.uuid4().hex
+    if is_new:
         history: list[ChatMessage] = []
         rmap = RedactionMap()
-        is_new = True
     else:
-        conversation_id = body.conversation_id
         loaded = _load_history(db, cipher, conversation_id)
         if loaded is None:
             raise HTTPException(status_code=404, detail="conversation not found")
         history, rmap = loaded
-        is_new = False
     try:
         result = state.loop.run(conversation_id, history, body.message, rmap)
     except LLMUnavailable:
@@ -139,3 +134,13 @@ def chat(body: ChatRequest, request: Request) -> ChatResponse:
         reply=result.reply,
         pending_action_ids=result.pending_action_ids,
     )
+
+
+@router.post("/chat")
+def chat(body: ChatRequest, request: Request) -> ChatResponse:
+    state = request.app.state
+    is_new = body.conversation_id is None
+    conversation_id = uuid.uuid4().hex if body.conversation_id is None else body.conversation_id
+    # Turns of one conversation are serialised so seq numbers and history never interleave.
+    with state.chat_locks.hold(conversation_id):
+        return _run_turn(state, body, conversation_id, is_new=is_new)

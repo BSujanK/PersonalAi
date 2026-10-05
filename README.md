@@ -8,4 +8,4 @@ A private, self-hosted personal AI agent. It reads mail, calendar, Google Classr
 
 See [`docs/PLAN.md`](docs/PLAN.md) for the design and build phases.
 
-> Status: under construction (phase M1 — core).
+> Status: under construction (phase M2 — mail).

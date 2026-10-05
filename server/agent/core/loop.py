@@ -104,7 +104,10 @@ class AgentLoop:
         if decision is Decision.DENY or tool is None:
             return self._tool_message(call, f"error: {reason}")
         if decision is Decision.PROPOSE_WRITE:
-            action = self._approvals.propose(call.name, args, conversation_id)
+            try:
+                action = self._approvals.propose(call.name, args, conversation_id)
+            except ValueError:  # the tool's preview rejected the arguments; nothing is stored
+                return self._tool_message(call, "error: invalid arguments")
             pending_ids.append(action.id)
             status = json.dumps({"status": "pending_approval", "action_id": action.id})
             return self._tool_message(call, status)

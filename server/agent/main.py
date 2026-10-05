@@ -12,10 +12,19 @@ import uvicorn
 from agent.api.app import create_app
 from agent.api.pair import open_pairing_window
 from agent.config import Settings
+from agent.connectors.gmail_google import build_gmail_api
 from agent.core.clock import utcnow
 from agent.core.llm import build_default_client
 from agent.core.netguard import UnsafeBindAddress, validate_bind_hosts
+from agent.core.redact import Redactor
 from agent.core.tools import ToolRegistry
+from agent.mail.classify import MailClassifier, build_classifier_llm
+from agent.mail.services import MailServices, cached_api_factory
+from agent.mail.store import MailStore
+from agent.mail.sync import MailSync
+from agent.mail.tools import register_mail_tools
+from agent.scheduler import start_mail_polling
+from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.keystore import InsecureKeyringError, KeyStore, assert_secure_backend
 
@@ -27,16 +36,41 @@ def _refuse(message: str) -> int:
     return EXIT_REFUSED
 
 
+def _setup_mail(
+    settings: Settings, db: Database, keystore: KeyStore, registry: ToolRegistry
+) -> MailServices:
+    db_key = keystore.get_or_create_bytes("db_key")
+    store = MailStore(db, FieldCipher(db_key), db_key)
+    api_for = cached_api_factory(
+        settings.mail_accounts, lambda account: build_gmail_api(account, keystore)
+    )
+    classifier = MailClassifier(
+        store, build_classifier_llm(settings), Redactor(settings.redaction_emails), settings
+    )
+    sync = MailSync(store, api_for, classifier, utcnow, settings.mail_initial_days)
+    register_mail_tools(registry, store, api_for, utcnow)
+    return MailServices(store, sync, api_for)
+
+
 def _serve(settings: Settings) -> int:
+    registry = ToolRegistry()
+    mail: MailServices | None = None
     try:
         assert_secure_backend()
         hosts = validate_bind_hosts(settings.bind_hosts)
         db = Database(settings.db_path)
         keystore = KeyStore()
         llm = build_default_client(settings, keystore)
+        if settings.mail_accounts:
+            mail = _setup_mail(settings, db, keystore, registry)
     except (InsecureKeyringError, UnsafeBindAddress, ValueError) as exc:
         return _refuse(str(exc))
-    app = create_app(settings, db=db, keystore=keystore, llm=llm, registry=ToolRegistry())
+    app = create_app(settings, db=db, keystore=keystore, llm=llm, registry=registry, mail=mail)
+    scheduler = (
+        start_mail_polling(mail.sync, settings.mail_accounts, settings.mail_poll_minutes)
+        if mail is not None
+        else None
+    )
     servers = [
         uvicorn.Server(
             uvicorn.Config(
@@ -57,6 +91,8 @@ def _serve(settings: Settings) -> int:
     try:
         servers[0].run()
     finally:
+        if scheduler is not None:
+            scheduler.shutdown(wait=False)
         for server in servers:
             server.should_exit = True
         for thread in threads:

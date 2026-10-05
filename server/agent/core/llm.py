@@ -191,7 +191,8 @@ class _KeyedClient:
         return client.complete(messages, tools)
 
 
-def _require_loopback(url: str) -> None:
+def require_loopback(url: str) -> None:
+    """Refuse any Ollama base URL whose host is not a loopback IP literal."""
     host = urlparse(url).hostname or ""
     try:
         addr = ipaddress.ip_address(host)
@@ -207,7 +208,7 @@ def build_default_client(
     http_client: httpx.Client | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> LLMClient:
-    _require_loopback(settings.ollama_base_url)
+    require_loopback(settings.ollama_base_url)
     primary = _KeyedClient(settings, keystore, http_client, sleep)
     fallback = OpenAICompatClient(
         settings.ollama_base_url,

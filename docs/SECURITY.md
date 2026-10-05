@@ -48,6 +48,17 @@ and `decision` is `approve` or `reject` (it comes from the path). `payload_hash`
 
 The server accepts only if all of these hold: the decision is valid; the action is still pending; it is at most 15 minutes old (and not more than 30 seconds in the future); the stored payload still hashes to the stored hash; the request hash and nonce match the stored ones; and the signature is 64 lowercase hex characters equal to the expected value. All comparisons use `hmac.compare_digest`. Failures return a short reason code and are audited as `approval_denied`.
 
+## Mail (M2)
+
+- **Scope.** The Gmail connector requests only `https://www.googleapis.com/auth/gmail.modify`. There is no send scope and no tool that sends mail. Mail changes are limited to archive, label and trash.
+- **Trash, not delete.** `mail_trash` moves messages to Gmail's trash, which is recoverable. No tool performs a permanent delete, and the tools carry no such name or code path.
+- **Writes need approval.** `mail_archive`, `mail_trash` and `mail_label` are WRITE tools. A model call only creates a pending action whose preview lists every message (sender, subject, account). The executor runs after a signed approval and re-validates the stored payload (item shape, at most 100 items, label allowlist) before touching Gmail.
+- **Prompt injection can only mis-rank, not act.** Mail is untrusted data. The worst an injected mail can do is influence its own category or make the model propose a write, which still needs the owner's biometric approval. The classifier has no tools. Category feedback (`POST /mail/feedback`) is a human-only endpoint; no tool exposes it.
+- **Classifier is local.** Mail is classified by rules, then by the local Ollama model (`PERSONALAI_CLASSIFIER_MODEL`). The classifier URL must be a loopback IP literal; the NVIDIA endpoint is never used for classification. Text sent to it is still redacted and wrapped as untrusted.
+- **Encrypted at rest.** Sender, recipients, subject, snippet, body and the model's free-text reason are AES-256-GCM encrypted per column, with the table, column, account and message id as associated data. The only sender index is a keyed hash (`HMAC-SHA256`, with a subkey derived from the database key), so addresses cannot be recovered from the file and the hash cannot be recomputed without the key.
+- **Credentials.** The OAuth client and each account's refresh token are stored only in the OS keyring. Refreshed tokens are written back to the keyring, never to disk.
+- **Logs.** Sync logs carry message ids, counts and exception type names only. Accounts are logged by position, never by address.
+
 ## Known limits
 
 - Anything the owner approves is trusted. The approval preview must show the full content (recipients, text) so the owner can spot an injected action.

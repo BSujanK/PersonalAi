@@ -62,3 +62,71 @@ def test_pair_prints_code(
     out = capsys.readouterr().out
     assert "Pairing code: " in out
     assert "http://127.0.0.1:8765/pair" in out
+
+
+class _FakeScheduler:
+    def __init__(self) -> None:
+        self.shutdowns: list[bool] = []
+
+    def shutdown(self, wait: bool = True) -> None:
+        self.shutdowns.append(wait)
+
+
+def _serve_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[str]:
+    started: list[str] = []
+    monkeypatch.setenv("PERSONALAI_DB_PATH", str(tmp_path / "agent.db"))
+    monkeypatch.setenv("PERSONALAI_BIND_HOSTS", "127.0.0.1")
+    monkeypatch.setattr(main_module, "assert_secure_backend", lambda: None)
+    monkeypatch.setattr(uvicorn.Server, "run", lambda self: started.append(self.config.host))
+    return started
+
+
+def test_serve_with_mail_accounts_polls_and_stops_scheduler(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    started = _serve_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("PERSONALAI_MAIL_ACCOUNTS", "me@example.com,second@example.org")
+    scheduler = _FakeScheduler()
+    polled: list[tuple[tuple[str, ...], int]] = []
+
+    def fake_start(sync: object, accounts: tuple[str, ...], minutes: int) -> _FakeScheduler:
+        polled.append((tuple(accounts), minutes))
+        return scheduler
+
+    monkeypatch.setattr(main_module, "start_mail_polling", fake_start)
+    assert main(["serve"]) == 0
+    assert started == ["127.0.0.1"]
+    assert polled == [(("me@example.com", "second@example.org"), 5)]
+    assert scheduler.shutdowns == [False]
+
+
+def test_serve_without_mail_accounts_disables_mail(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    started = _serve_env(monkeypatch, tmp_path)
+
+    def must_not_start(*_a: object) -> None:
+        raise AssertionError("mail polling must be off")
+
+    monkeypatch.setattr(main_module, "start_mail_polling", must_not_start)
+    assert main(["serve"]) == 0
+    assert started == ["127.0.0.1"]
+
+
+def test_serve_refuses_non_loopback_ollama_when_mail_enabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _serve_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("PERSONALAI_MAIL_ACCOUNTS", "me@example.com")
+    monkeypatch.setattr(
+        main_module.Settings,
+        "from_env",
+        classmethod(
+            lambda cls, env=None: cls(
+                db_path=tmp_path / "agent.db",
+                mail_accounts=("me@example.com",),
+                ollama_base_url="http://192.168.1.5:11434/v1",
+            )
+        ),
+    )
+    assert main(["serve"]) == 2

@@ -13,10 +13,16 @@ from fastapi.testclient import TestClient
 from agent.api.app import create_app
 from agent.api.pair import open_pairing_window
 from agent.config import Settings
+from agent.connectors.gmail import GmailApi
 from agent.core.llm import LLMUnavailable
 from agent.core.policy import expected_signature, signature_message
+from agent.mail.services import MailServices
+from agent.mail.store import MailStore
+from agent.mail.sync import MailSync
+from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.keystore import KeyStore
+from tests.fakes_gmail import FakeGmailApi
 from tests.support import FakeClock, make_registry
 from tests.test_loop import FakeLLM, call, say
 
@@ -32,17 +38,30 @@ class Api:
     executed: list[dict[str, Any]]
 
 
+def _mail_services(db: Database, clock: FakeClock, keystore: KeyStore) -> MailServices:
+    key = keystore.get_or_create_bytes("db_key")
+    store = MailStore(db, FieldCipher(key), key, clock)
+    api = FakeGmailApi()
+
+    def api_for(_account: str) -> GmailApi:
+        return api
+
+    return MailServices(store, MailSync(store, api_for, None, clock, 7), api_for)
+
+
 def _api(llm: FakeLLM | None = None) -> Api:
     db = Database(":memory:")
     clock = FakeClock()
+    keystore = KeyStore()
     executed: list[dict[str, Any]] = []
     app = create_app(
         Settings(owner_emails=("me@example.com",)),
         db=db,
-        keystore=KeyStore(),
+        keystore=keystore,
         llm=llm or FakeLLM(say("hello")),
         registry=make_registry(executed),
         clock=clock,
+        mail=_mail_services(db, clock, keystore),
     )
     return Api(app, TestClient(app), db, clock, executed)
 
@@ -93,6 +112,8 @@ def test_every_route_except_pair_requires_a_device_token() -> None:
     routes = _routes(api.app)
     assert ("POST", "/pair") in routes
     assert len(routes) >= 7
+    assert ("GET", "/mail/digest") in routes
+    assert ("POST", "/mail/feedback") in routes
     for method, path in routes:
         if (method, path) == ("POST", "/pair"):
             continue

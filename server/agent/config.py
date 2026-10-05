@@ -22,8 +22,19 @@ class Settings:
     ollama_base_url: str = "http://127.0.0.1:11434/v1"
     ollama_model: str = "qwen2.5:3b"
     owner_emails: tuple[str, ...] = ()
+    mail_accounts: tuple[str, ...] = ()
+    vip_senders: tuple[str, ...] = ()
+    college_domains: tuple[str, ...] = ()
+    mail_poll_minutes: int = 5
+    mail_initial_days: int = 7
+    classifier_model: str = "qwen2.5:3b"
     pairing_window_seconds: int = 300
     max_agent_steps: int = 6
+
+    @property
+    def redaction_emails(self) -> tuple[str, ...]:
+        """Every address the owner uses, lower-cased and de-duplicated."""
+        return tuple(dict.fromkeys(a.lower() for a in (*self.owner_emails, *self.mail_accounts)))
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -39,4 +50,14 @@ class Settings:
             else defaults.db_path,
             nvidia_model=e.get("PERSONALAI_NVIDIA_MODEL", defaults.nvidia_model),
             owner_emails=_split(e.get("PERSONALAI_OWNER_EMAILS", "")),
+            mail_accounts=_split(e.get("PERSONALAI_MAIL_ACCOUNTS", "")),
+            vip_senders=_split(e.get("PERSONALAI_VIP_SENDERS", "")),
+            college_domains=_split(e.get("PERSONALAI_COLLEGE_DOMAINS", "")),
+            mail_poll_minutes=int(
+                e.get("PERSONALAI_MAIL_POLL_MINUTES", defaults.mail_poll_minutes)
+            ),
+            mail_initial_days=int(
+                e.get("PERSONALAI_MAIL_INITIAL_DAYS", defaults.mail_initial_days)
+            ),
+            classifier_model=e.get("PERSONALAI_CLASSIFIER_MODEL", defaults.classifier_model),
         )
