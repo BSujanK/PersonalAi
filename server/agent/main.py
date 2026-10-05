@@ -28,6 +28,9 @@ from agent.core.netguard import UnsafeBindAddress, validate_bind_hosts
 from agent.core.redact import Redactor
 from agent.core.tools import ToolRegistry
 from agent.finance.services import FinanceServices, setup_finance
+from agent.golive.doctor import run_doctor
+from agent.golive.setup import STEP_IDS, ConsolePrompter, run_setup
+from agent.golive.system import RealSystem
 from agent.mail.classify import MailClassifier, build_classifier_llm
 from agent.mail.services import MailServices, cached_api_factory
 from agent.mail.store import MailStore
@@ -46,9 +49,11 @@ from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.devices import list_devices, revoke_devices
 from agent.store.keystore import InsecureKeyringError, KeyStore, assert_secure_backend
+from agent.store.sync_status import CLASSROOM, record_ok
 from agent.workspace.services import WorkspaceServices, deadline_proposer, setup_workspace
 
 EXIT_REFUSED = 2
+SERVER_DIR = Path(__file__).resolve().parents[1]
 
 
 def _refuse(message: str) -> int:
@@ -103,7 +108,13 @@ def _background_jobs(
         )
     proposer = deadline_proposer(settings, db, approvals, workspace, utcnow)
     if proposer is not None:
-        jobs.append(Job(DEADLINE_JOB_ID, proposer.run, settings.deadline_poll_minutes))
+        run_proposer = proposer.run
+
+        def propose_and_record() -> None:
+            run_proposer()
+            record_ok(db, CLASSROOM, utcnow)
+
+        jobs.append(Job(DEADLINE_JOB_ID, propose_and_record, settings.deadline_poll_minutes))
     if workspace.file_index is not None:
         jobs.append(
             Job(FILE_INDEX_JOB_ID, workspace.file_index.refresh, settings.file_index_minutes)
@@ -279,6 +290,35 @@ def _restore(
     return 0
 
 
+def _doctor(settings: Settings, as_json: bool) -> int:
+    return run_doctor(
+        settings, RealSystem(), KeyStore(), as_json=as_json, out=sys.stdout, clock=utcnow
+    )
+
+
+def _setup(redo: list[str]) -> int:
+    try:
+        assert_secure_backend()
+    except InsecureKeyringError as exc:
+        return _refuse(str(exc))
+
+    def fresh_settings() -> Settings:
+        return Settings.from_env()  # the wizard updates this process's environment as it goes
+
+    def open_pairing() -> None:
+        _pair(fresh_settings(), None)
+
+    return run_setup(
+        RealSystem(),
+        ConsolePrompter(),
+        KeyStore(),
+        server_dir=SERVER_DIR,
+        run_doctor=lambda: _doctor(fresh_settings(), as_json=False),
+        open_pairing=open_pairing,
+        redo=redo,
+    )
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -311,11 +351,23 @@ def main(
         action="store_true",
         help="replace an existing database (kept aside as .pre-restore-<timestamp>) and db_key",
     )
+    doctor = sub.add_parser("doctor", help="check every go-live prerequisite (read-only)")
+    doctor.add_argument("--json", action="store_true", help="print the results as JSON")
+    setup = sub.add_parser(
+        "setup", help="interactive go-live wizard (Windows); asks before every change"
+    )
+    setup.add_argument(
+        "--redo", action="append", default=[], choices=STEP_IDS, help="re-run a step (repeatable)"
+    )
     args = parser.parse_args(argv)
+    if args.command == "setup":
+        return _setup(args.redo)
     try:
         settings = Settings.from_env()
     except ValueError as exc:
         return _refuse(f"invalid configuration: {exc}")
+    if args.command == "doctor":
+        return _doctor(settings, args.json)
     if args.command == "pair":
         return _pair(settings, args.url)
     if args.command == "devices":

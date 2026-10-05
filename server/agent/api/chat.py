@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
+import queue
+import threading
 import uuid
+from collections.abc import Callable, Iterator
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from agent.core.llm import ChatMessage, LLMNotConfigured, LLMUnavailable, ToolCall
@@ -14,6 +19,7 @@ from agent.core.redact import RedactionMap, from_model
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 
+log = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -82,7 +88,19 @@ def _load_history(
     return history, rmap
 
 
-def _run_turn(state: Any, body: ChatRequest, conversation_id: str, *, is_new: bool) -> ChatResponse:
+class _UnknownConversation(Exception):
+    pass
+
+
+def _execute_turn(
+    state: Any,
+    body: ChatRequest,
+    conversation_id: str,
+    *,
+    is_new: bool,
+    on_text: Callable[[str], None] | None = None,
+    on_reset: Callable[[], None] | None = None,
+) -> ChatResponse:
     """Load history, run the loop and persist. The caller holds the conversation lock."""
     db: Database = state.db
     cipher: FieldCipher = state.cipher
@@ -92,14 +110,11 @@ def _run_turn(state: Any, body: ChatRequest, conversation_id: str, *, is_new: bo
     else:
         loaded = _load_history(db, cipher, conversation_id)
         if loaded is None:
-            raise HTTPException(status_code=404, detail="conversation not found")
+            raise _UnknownConversation
         history, rmap = loaded
-    try:
-        result = state.loop.run(conversation_id, history, body.message, rmap)
-    except LLMUnavailable:
-        raise HTTPException(status_code=503, detail="llm unavailable") from None
-    except LLMNotConfigured:
-        raise HTTPException(status_code=503, detail="llm not configured") from None
+    result = state.loop.run(
+        conversation_id, history, body.message, rmap, on_text=on_text, on_reset=on_reset
+    )
     now = state.clock().isoformat()
     with db.transaction():
         if is_new:
@@ -136,11 +151,78 @@ def _run_turn(state: Any, body: ChatRequest, conversation_id: str, *, is_new: bo
     )
 
 
-@router.post("/chat")
-def chat(body: ChatRequest, request: Request) -> ChatResponse:
+def _run_turn(state: Any, body: ChatRequest, conversation_id: str, *, is_new: bool) -> ChatResponse:
+    """JSON path of ``_execute_turn``. The caller holds the conversation lock."""
+    try:
+        return _execute_turn(state, body, conversation_id, is_new=is_new)
+    except _UnknownConversation:
+        raise HTTPException(status_code=404, detail="conversation not found") from None
+    except LLMUnavailable:
+        raise HTTPException(status_code=503, detail="llm unavailable") from None
+    except LLMNotConfigured:
+        raise HTTPException(status_code=503, detail="llm not configured") from None
+
+
+def _sse(event: str, data: dict[str, Any]) -> bytes:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n".encode()
+
+
+def _stream_turn(
+    state: Any, body: ChatRequest, conversation_id: str, *, is_new: bool
+) -> StreamingResponse:
+    """Run the turn in a worker thread that holds the conversation lock until it has persisted.
+
+    The worker finishes and persists even if the client disconnects mid-stream.
+    """
+    events: queue.Queue[bytes | None] = queue.Queue()
+
+    def work() -> None:
+        try:
+            with state.chat_locks.hold(conversation_id):
+                response = _execute_turn(
+                    state,
+                    body,
+                    conversation_id,
+                    is_new=is_new,
+                    on_text=lambda text: events.put(_sse("token", {"text": text})),
+                    on_reset=lambda: events.put(_sse("reset", {})),
+                )
+            events.put(_sse("done", response.model_dump()))
+        except LLMUnavailable:
+            events.put(_sse("error", {"detail": "llm unavailable"}))
+        except LLMNotConfigured:
+            events.put(_sse("error", {"detail": "llm not configured"}))
+        except Exception as exc:  # the client gets no exception text; type is enough to debug
+            log.error("chat stream failed: %s", type(exc).__name__)
+            events.put(_sse("error", {"detail": "internal error"}))
+        finally:
+            events.put(None)
+
+    threading.Thread(target=work, name="chat-stream", daemon=True).start()
+
+    def generate() -> Iterator[bytes]:
+        yield _sse("start", {"conversation_id": conversation_id})
+        while (item := events.get()) is not None:
+            yield item
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream; charset=utf-8",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/chat", response_model=ChatResponse)
+def chat(body: ChatRequest, request: Request) -> ChatResponse | StreamingResponse:
     state = request.app.state
     is_new = body.conversation_id is None
     conversation_id = uuid.uuid4().hex if body.conversation_id is None else body.conversation_id
+    if "text/event-stream" in request.headers.get("accept", "").lower():
+        if not is_new and not state.db.query(
+            "SELECT 1 FROM conversations WHERE id = ?", (conversation_id,)
+        ):
+            raise HTTPException(status_code=404, detail="conversation not found")
+        return _stream_turn(state, body, conversation_id, is_new=is_new)
     # Turns of one conversation are serialised so seq numbers and history never interleave.
     with state.chat_locks.hold(conversation_id):
         return _run_turn(state, body, conversation_id, is_new=is_new)

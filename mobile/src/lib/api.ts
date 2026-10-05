@@ -1,9 +1,11 @@
 // Typed client for the laptop agent. Every route except /pair sends the device bearer token.
 import { loadPairing } from './secureKeys';
+import { createSseParser } from './sse';
 import { normaliseServerUrl } from './serverUrl';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const HEALTH_TIMEOUT_MS = 5_000;
+const STREAM_INACTIVITY_MS = 60_000;
 
 export class ApiError extends Error {
   constructor(
@@ -20,6 +22,14 @@ export class OfflineError extends Error {
   constructor() {
     super('the agent is offline');
     this.name = 'OfflineError';
+  }
+}
+
+/** The agent answered /chat but not with a usable event stream; the plain call may still work. */
+export class StreamUnsupportedError extends Error {
+  constructor() {
+    super('the agent did not stream the reply');
+    this.name = 'StreamUnsupportedError';
   }
 }
 
@@ -199,16 +209,15 @@ async function errorDetail(response: Response): Promise<string> {
   return response.statusText || 'error';
 }
 
-async function call<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
+async function authContext(): Promise<{ baseUrl: string; headers: Record<string, string> }> {
   const pairing = await loadPairing();
   if (!pairing) throw new ApiError(401, 'not_paired');
-  return send<T>(
-    pairing.serverUrl,
-    method,
-    path,
-    { Authorization: `Bearer ${pairing.token}` },
-    options,
-  );
+  return { baseUrl: pairing.serverUrl, headers: { Authorization: `Bearer ${pairing.token}` } };
+}
+
+async function call<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
+  const { baseUrl, headers } = await authContext();
+  return send<T>(baseUrl, method, path, headers, options);
 }
 
 export interface PairResult {
@@ -241,6 +250,139 @@ export const health = () =>
 
 export const chat = (message: string, conversationId: string | null) =>
   call<ChatReply>('POST', '/chat', { body: { conversation_id: conversationId, message } });
+
+export interface ChatStreamHandlers {
+  onStart?: (conversationId: string) => void;
+  onToken: (text: string) => void;
+  /** Discard the reply text so far: the model moved on to tool calls or the server failed over. */
+  onReset: () => void;
+}
+
+export interface ChatStreamOptions {
+  signal?: AbortSignal;
+  inactivityMs?: number;
+}
+
+function parseJson(data: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(data);
+    return typeof parsed === 'object' && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Streamed variant of chat(). React Native's fetch cannot read a body incrementally, but its
+ * XMLHttpRequest exposes the growing responseText, so the SSE parser is fed from that.
+ * The timeout is on inactivity (no bytes), not total time, because replies stream for a while.
+ */
+export async function chatStream(
+  message: string,
+  conversationId: string | null,
+  handlers: ChatStreamHandlers,
+  { signal, inactivityMs = STREAM_INACTIVITY_MS }: ChatStreamOptions = {},
+): Promise<ChatReply> {
+  const { baseUrl, headers } = await authContext();
+  return new Promise<ChatReply>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let settled = false;
+    let seen = 0;
+    let checkedHeaders = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    function finish(outcome: () => void) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      outcome();
+      xhr.abort();
+    }
+    const fail = (error: Error) => finish(() => reject(error));
+    function onAbort() {
+      const error = new Error('aborted');
+      error.name = 'AbortError';
+      fail(error);
+    }
+    function armTimer() {
+      clearTimeout(timer);
+      timer = setTimeout(() => fail(new OfflineError()), inactivityMs);
+    }
+
+    const parser = createSseParser(({ event, data }) => {
+      const payload = parseJson(data);
+      if (!payload || settled) return;
+      if (event === 'start' && typeof payload.conversation_id === 'string') {
+        handlers.onStart?.(payload.conversation_id);
+      } else if (event === 'token' && typeof payload.text === 'string') {
+        handlers.onToken(payload.text);
+      } else if (event === 'reset') {
+        handlers.onReset();
+      } else if (event === 'done' && typeof payload.reply === 'string') {
+        finish(() => resolve(payload as unknown as ChatReply));
+      } else if (event === 'error') {
+        const detail = typeof payload.detail === 'string' ? payload.detail : 'error';
+        fail(new ApiError(503, detail));
+      }
+    });
+
+    function drain() {
+      if (settled) return;
+      armTimer();
+      if (xhr.readyState < 3) return;
+      if (xhr.status !== 200) return; // Error bodies are JSON: read them once the response ends.
+      if (!checkedHeaders) {
+        checkedHeaders = true;
+        const type = xhr.getResponseHeader('Content-Type') ?? '';
+        if (!type.toLowerCase().includes('text/event-stream')) {
+          fail(new StreamUnsupportedError());
+          return;
+        }
+      }
+      const text = xhr.responseText ?? '';
+      if (text.length > seen) {
+        const fresh = text.slice(seen);
+        seen = text.length;
+        parser.push(fresh);
+      }
+    }
+
+    xhr.onreadystatechange = drain;
+    xhr.onprogress = drain;
+    xhr.onerror = () => fail(new OfflineError());
+    xhr.ontimeout = () => fail(new OfflineError());
+    xhr.onabort = () => {
+      if (!settled) fail(new OfflineError());
+    };
+    xhr.onload = () => {
+      if (settled) return;
+      if (xhr.status !== 200) {
+        const body = parseJson(xhr.responseText ?? '');
+        const detail = typeof body?.detail === 'string' ? body.detail : xhr.statusText || 'error';
+        fail(new ApiError(xhr.status, detail));
+        return;
+      }
+      drain();
+      parser.end();
+      fail(new StreamUnsupportedError());
+    };
+
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener('abort', onAbort);
+    xhr.open('POST', `${baseUrl}/chat`);
+    xhr.setRequestHeader('Authorization', headers.Authorization);
+    xhr.setRequestHeader('Accept', 'text/event-stream');
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    armTimer();
+    xhr.send(JSON.stringify({ conversation_id: conversationId, message }));
+  });
+}
 
 export const listApprovals = () => call<Approval[]>('GET', '/approvals');
 

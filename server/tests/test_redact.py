@@ -8,7 +8,14 @@ from typing import Any
 
 import pytest
 
-from agent.core.redact import JSON, Redacted, RedactionMap, Redactor, from_model
+from agent.core.redact import (
+    JSON,
+    Redacted,
+    RedactionMap,
+    Redactor,
+    StreamRehydrator,
+    from_model,
+)
 
 CORPUS: list[dict[str, Any]] = json.loads(
     (Path(__file__).parent / "fixtures" / "pii_corpus.json").read_text(encoding="utf-8")
@@ -224,3 +231,76 @@ def test_redact_empty_and_plain() -> None:
 
 def test_no_owner_emails_configured() -> None:
     assert Redactor().redact("me@example.com", RedactionMap()).text == "me@example.com"
+
+
+def _stream_all(chunks: list[str], rmap: RedactionMap) -> list[str]:
+    rehydrator = StreamRehydrator(rmap)
+    pieces = [rehydrator.feed(c) for c in chunks]
+    pieces.append(rehydrator.flush())
+    return pieces
+
+
+def _email_map() -> tuple[RedactionMap, str]:
+    rmap = RedactionMap()
+    placeholder = Redactor(["me@example.com"]).redact("me@example.com", rmap).text
+    assert placeholder.startswith("⟨") and placeholder.endswith("⟩")
+    return rmap, placeholder
+
+
+def test_stream_placeholder_split_across_two_chunks() -> None:
+    rmap, ph = _email_map()
+    pieces = _stream_all(["mail ", ph[:3], ph[3:], " now"], rmap)
+    assert pieces[:2] == ["mail ", ""]
+    assert "".join(pieces) == "mail me@example.com now"
+
+
+def test_stream_placeholder_split_across_three_chunks_and_after_open() -> None:
+    rmap, ph = _email_map()
+    pieces = _stream_all(["⟨", ph[1:6], ph[6:], "!"], rmap)
+    assert pieces[:3] == ["", "", "me@example.com"]
+    assert "".join(pieces) == "me@example.com!"
+
+
+def test_stream_adjacent_placeholders() -> None:
+    rmap, ph = _email_map()
+    pieces = _stream_all([ph + ph[:4], ph[4:]], rmap)
+    assert "".join(pieces) == "me@example.com" + "me@example.com"
+
+
+def test_stream_unknown_placeholder_stays_literal() -> None:
+    assert "".join(_stream_all(["⟨ACCT_", "9⟩ ok"], RedactionMap())) == "⟨ACCT_9⟩ ok"
+
+
+def test_stream_lone_open_followed_by_lowercase_is_emitted_promptly() -> None:
+    rehydrator = StreamRehydrator(RedactionMap())
+    assert rehydrator.feed("a ⟨") == "a "
+    assert rehydrator.feed("hello") == "⟨hello"
+
+
+def test_stream_overlong_fragment_is_released() -> None:
+    rehydrator = StreamRehydrator(RedactionMap())
+    out = rehydrator.feed("⟨" + "A" * 60)
+    assert out == "⟨" + "A" * 60
+
+
+def test_stream_flush_emits_held_text_literally_and_reset_drops_it() -> None:
+    rehydrator = StreamRehydrator(RedactionMap())
+    assert rehydrator.feed("x ⟨EMAIL_") == "x "
+    assert rehydrator.flush() == "⟨EMAIL_"
+    assert rehydrator.flush() == ""
+    rehydrator.feed("⟨EM")
+    rehydrator.reset()
+    assert rehydrator.flush() == ""
+
+
+def test_stream_any_split_equals_rehydrate_and_never_leaks_partials() -> None:
+    rmap, ph = _email_map()
+    text = f"Hi ⟨ x {ph} and ⟨ACCT_7⟩, {ph}{ph} <b>⟨EMAIL_SELF⟩ ⟨ end ⟨EMAIL_SELF_"
+    expected = Redactor.rehydrate(text, rmap)
+    for i in range(len(text) + 1):
+        for j in range(i, len(text) + 1):
+            pieces = _stream_all([text[:i], text[i:j], text[j:]], rmap)
+            assert "".join(pieces) == expected
+            for piece in pieces[:-1]:  # nothing but the final flush may end mid-placeholder
+                assert ph not in piece
+                assert not re.search(r"⟨[A-Z_]*(?:_\d+)?$", piece)

@@ -9,7 +9,7 @@ import math
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, TypeVar, runtime_checkable
 from urllib.parse import urlparse
 
 import httpx
@@ -20,6 +20,9 @@ from agent.core.redact import Redacted, from_model
 from agent.store.keystore import KeyStore
 
 log = logging.getLogger(__name__)
+
+T = TypeVar("T")
+DeltaSink = Callable[[Redacted], None]
 
 Role = Literal["system", "user", "assistant", "tool"]
 
@@ -73,6 +76,17 @@ class LLMResponse:
 class LLMClient(Protocol):
     def complete(
         self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]
+    ) -> LLMResponse: ...
+
+
+@runtime_checkable
+class StreamingLLMClient(Protocol):
+    def stream_complete(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[dict[str, Any]],
+        on_delta: DeltaSink,
+        on_reset: Callable[[], None],
     ) -> LLMResponse: ...
 
 
@@ -140,11 +154,8 @@ class OpenAICompatClient:
     def complete(
         self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]
     ) -> LLMResponse:
-        wire = _to_wire(messages)  # guard runs before anything touches the network
-        kwargs: dict[str, Any] = {"model": self._model, "messages": wire}
-        if tools:
-            kwargs["tools"] = list(tools)
-        completion = self._create_with_retry(kwargs)
+        kwargs = self._kwargs(messages, tools)  # guard runs before anything touches the network
+        completion = self._with_retry(lambda: self._client.chat.completions.create(**kwargs))
         choice = completion.choices[0].message
         calls = [
             ToolCall(id=tc.id, name=tc.function.name, arguments=from_model(tc.function.arguments))
@@ -154,24 +165,82 @@ class OpenAICompatClient:
         content = from_model(choice.content) if choice.content else None
         return LLMResponse(content=content, tool_calls=calls)
 
-    def _create_with_retry(self, kwargs: dict[str, Any]) -> Any:
+    def stream_complete(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[dict[str, Any]],
+        on_delta: DeltaSink,
+        on_reset: Callable[[], None],  # unused: this client never retries after emitting
+    ) -> LLMResponse:
+        kwargs = self._kwargs(messages, tools)
+        kwargs["stream"] = True
+        emitted = False
+
+        def sink(delta: Redacted) -> None:
+            nonlocal emitted
+            emitted = True
+            on_delta(delta)
+
+        return self._with_retry(
+            lambda: self._stream_once(kwargs, sink), retryable=lambda: not emitted
+        )
+
+    def _kwargs(
+        self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]
+    ) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {"model": self._model, "messages": _to_wire(messages)}
+        if tools:
+            kwargs["tools"] = list(tools)
+        return kwargs
+
+    def _stream_once(self, kwargs: dict[str, Any], on_delta: DeltaSink) -> LLMResponse:
+        parts: list[str] = []
+        calls: dict[int, dict[str, str]] = {}
+        for chunk in self._client.chat.completions.create(**kwargs):
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if delta.content:
+                parts.append(delta.content)
+                on_delta(from_model(delta.content))
+            for tc in delta.tool_calls or []:
+                entry = calls.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
+                if tc.id:
+                    entry["id"] = tc.id
+                if tc.function is not None:
+                    if tc.function.name and not entry["name"]:
+                        entry["name"] = tc.function.name
+                    entry["arguments"] += tc.function.arguments or ""
+        tool_calls = [
+            ToolCall(id=e["id"], name=e["name"], arguments=from_model(e["arguments"]))
+            for _, e in sorted(calls.items())
+        ]
+        text = "".join(parts)
+        return LLMResponse(content=from_model(text) if text else None, tool_calls=tool_calls)
+
+    def _with_retry(
+        self, attempt_call: Callable[[], T], retryable: Callable[[], bool] = lambda: True
+    ) -> T:
         delay = 1.0
         for attempt in range(self._max_retries + 1):
             try:
-                return self._client.chat.completions.create(**kwargs)
-            except openai.RateLimitError as exc:
-                if not self._retry_rate_limit:
-                    raise LLMRateLimited("rate limited (429)") from None
-                reason = type(exc).__name__
-                rate_limited = True
-            except openai.APIConnectionError as exc:
-                reason = type(exc).__name__
-                rate_limited = False
-            except openai.APIStatusError as exc:
-                if exc.status_code < 500:
-                    raise LLMUnavailable(f"request rejected ({exc.status_code})") from None
-                reason = f"http_{exc.status_code}"
-                rate_limited = False
+                return attempt_call()
+            except (openai.APIError, httpx.HTTPError) as exc:
+                if not retryable():
+                    raise LLMUnavailable("stream interrupted") from None
+                if isinstance(exc, openai.RateLimitError):
+                    if not self._retry_rate_limit:
+                        raise LLMRateLimited("rate limited (429)") from None
+                    reason = type(exc).__name__
+                    rate_limited = True
+                elif isinstance(exc, openai.APIStatusError):
+                    if exc.status_code < 500:
+                        raise LLMUnavailable(f"request rejected ({exc.status_code})") from None
+                    reason = f"http_{exc.status_code}"
+                    rate_limited = False
+                else:
+                    reason = type(exc).__name__
+                    rate_limited = False
             if attempt == self._max_retries:
                 if rate_limited:
                     raise LLMRateLimited(f"retries exhausted ({reason})")
@@ -201,9 +270,9 @@ class ModelRouter:
         self._http_client = http_client
         self._sleep = sleep
 
-    def complete(
+    def _build_chain(
         self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]
-    ) -> LLMResponse:
+    ) -> tuple[list[tuple[str, OpenAICompatClient, str]], int]:
         settings = self._settings
         estimate = estimate_tokens(messages, tools)  # guard runs before any route
         if not settings.model_primary:
@@ -230,37 +299,80 @@ class ModelRouter:
                 retry_rate_limit=index == len(cloud) - 1,
             )
             chain.append((name, client, model))
-        local = OpenAICompatClient(
-            settings.ollama_base_url,
-            "ollama",
-            settings.ollama_model,
-            http_client=self._http_client,
-            sleep=self._sleep,
-        )
-        chain.append(("local", local, settings.ollama_model))
+        if estimate <= settings.local_context_tokens:
+            local = OpenAICompatClient(
+                settings.ollama_base_url,
+                "ollama",
+                settings.ollama_model,
+                http_client=self._http_client,
+                sleep=self._sleep,
+            )
+            chain.append(("local", local, settings.ollama_model))
+        else:
+            log.info(
+                "llm local route skipped est_tokens=%d limit=%d",
+                estimate,
+                settings.local_context_tokens,
+            )
+        return chain, estimate
 
+    def complete(
+        self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]
+    ) -> LLMResponse:
+        chain, estimate = self._build_chain(messages, tools)
         for hops, (name, client, model) in enumerate(chain):
             try:
                 response = client.complete(messages, tools)
             except LLMUnavailable as exc:
-                if hops + 1 < len(chain):
-                    log.warning(
-                        "llm route=%s model=%s failed (%s), trying %s",
-                        name,
-                        model,
-                        type(exc).__name__,
-                        chain[hops + 1][0],
-                    )
+                self._log_failure(chain, hops, exc)
                 continue
-            log.info(
-                "llm served route=%s model=%s est_tokens=%d hops=%d",
-                name,
-                model,
-                estimate,
-                hops,
-            )
+            self._log_served(name, model, estimate, hops)
             return replace(response, route=name)
         raise LLMUnavailable("all routes failed")
+
+    def stream_complete(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[dict[str, Any]],
+        on_delta: DeltaSink,
+        on_reset: Callable[[], None],
+    ) -> LLMResponse:
+        chain, estimate = self._build_chain(messages, tools)
+        for hops, (name, client, model) in enumerate(chain):
+            emitted = False
+
+            def sink(delta: Redacted) -> None:
+                nonlocal emitted
+                emitted = True
+                on_delta(delta)
+
+            try:
+                response = client.stream_complete(messages, tools, sink, on_reset)
+            except LLMUnavailable as exc:
+                if emitted:
+                    on_reset()  # the client discards what this route already showed
+                self._log_failure(chain, hops, exc)
+                continue
+            self._log_served(name, model, estimate, hops)
+            return replace(response, route=name)
+        raise LLMUnavailable("all routes failed")
+
+    @staticmethod
+    def _log_failure(
+        chain: list[tuple[str, OpenAICompatClient, str]], hops: int, exc: LLMUnavailable
+    ) -> None:
+        if hops + 1 < len(chain):
+            log.warning(
+                "llm route=%s model=%s failed (%s), trying %s",
+                chain[hops][0],
+                chain[hops][2],
+                type(exc).__name__,
+                chain[hops + 1][0],
+            )
+
+    @staticmethod
+    def _log_served(name: str, model: str, estimate: int, hops: int) -> None:
+        log.info("llm served route=%s model=%s est_tokens=%d hops=%d", name, model, estimate, hops)
 
 
 def require_loopback(url: str) -> None:

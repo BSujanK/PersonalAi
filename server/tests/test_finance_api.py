@@ -180,3 +180,12 @@ def test_category_correction_without_remember_and_errors() -> None:
         "/finance/category", json={"txn_id": txn_id, "category": "gold"}, headers=api.headers
     )
     assert invalid.status_code == 422
+
+
+def test_sms_batch_records_the_last_ingest_time() -> None:
+    from agent.store.sync_status import SMS_INGEST, last_ok
+
+    api = _api()
+    assert last_ok(api.env.db, SMS_INGEST) is None
+    _sms(api, _item())
+    assert last_ok(api.env.db, SMS_INGEST) == api.env.clock()

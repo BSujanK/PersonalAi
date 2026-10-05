@@ -27,13 +27,13 @@ def _push_mode(value: str) -> str:
     return mode
 
 
-def _positive_int(value: str) -> int:
+def _positive_int(name: str, value: str) -> int:
     try:
         number = int(value)
     except ValueError:
         number = 0
     if number <= 0:
-        raise ValueError("PERSONALAI_LONG_CONTEXT_TOKENS must be a positive integer")
+        raise ValueError(f"{name} must be a positive integer")
     return number
 
 
@@ -47,6 +47,7 @@ class Settings:
     model_fallback: str = ""
     model_long: str = ""
     long_context_tokens: int = 32000
+    local_context_tokens: int = 8192  # Ollama's context; longer prompts never go to local
     ollama_base_url: str = "http://127.0.0.1:11434/v1"
     ollama_model: str = "qwen2.5:3b"
     owner_emails: tuple[str, ...] = ()
@@ -113,7 +114,12 @@ class Settings:
             model_fallback=e.get("PERSONALAI_MODEL_FALLBACK", defaults.model_fallback).strip(),
             model_long=e.get("PERSONALAI_MODEL_LONG", defaults.model_long).strip(),
             long_context_tokens=_positive_int(
-                e.get("PERSONALAI_LONG_CONTEXT_TOKENS", str(defaults.long_context_tokens))
+                "PERSONALAI_LONG_CONTEXT_TOKENS",
+                e.get("PERSONALAI_LONG_CONTEXT_TOKENS", str(defaults.long_context_tokens)),
+            ),
+            local_context_tokens=_positive_int(
+                "PERSONALAI_LOCAL_CONTEXT_TOKENS",
+                e.get("PERSONALAI_LOCAL_CONTEXT_TOKENS", str(defaults.local_context_tokens)),
             ),
             owner_emails=_split(e.get("PERSONALAI_OWNER_EMAILS", "")),
             mail_accounts=_split(e.get("PERSONALAI_MAIL_ACCOUNTS", "")),
