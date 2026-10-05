@@ -15,6 +15,8 @@ dependencies = [
     "google-auth",
     "google-auth-oauthlib",
     "apscheduler>=3.10,<4",
+    "pypdf>=6.19.0",
+    "defusedxml>=0.7.1",
 ]
 
 [dependency-groups]
@@ -45,5 +47,5 @@ files = ["agent"]
 testpaths = ["tests"]
 
 [[tool.mypy.overrides]]
-module = ["googleapiclient.*", "google_auth_oauthlib.*", "apscheduler.*"]
+module = ["googleapiclient.*", "defusedxml.*", "google_auth_oauthlib.*", "apscheduler.*"]
 ignore_missing_imports = true

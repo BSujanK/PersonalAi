@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS devices (
@@ -118,6 +118,25 @@ CREATE TABLE IF NOT EXISTS mail_feedback (
     new_category TEXT NOT NULL CHECK (new_category IN ('important', 'normal', 'promo', 'spam')),
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS deadline_proposals (
+    classroom_account TEXT NOT NULL,
+    course_id TEXT NOT NULL,
+    coursework_id TEXT NOT NULL,
+    due_at TEXT NOT NULL,
+    action_id TEXT NOT NULL,
+    proposed_at TEXT NOT NULL,
+    PRIMARY KEY (classroom_account, course_id, coursework_id)
+);
+CREATE TABLE IF NOT EXISTS local_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path_hash TEXT NOT NULL UNIQUE,
+    path_enc BLOB NOT NULL,
+    size INTEGER NOT NULL,
+    mtime_ns INTEGER NOT NULL,
+    indexed_at TEXT NOT NULL
+);
+-- Holds keyed hashes of words, never plaintext; rowid = local_files.id.
+CREATE VIRTUAL TABLE IF NOT EXISTS local_files_fts USING fts5(tokens);
 """
 
 

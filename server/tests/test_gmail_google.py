@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 import json
+import re
+from pathlib import Path
 from typing import Any
 
 import pytest
 from googleapiclient.errors import HttpError
 
 from agent.connectors.gmail import HistoryExpired, MessageNotFound
-from agent.connectors.gmail_google import (
+from agent.connectors.gmail_google import GoogleGmailApi, build_gmail_api
+from agent.connectors.google_auth import (
     CLIENT_SECRET_NAME,
-    GMAIL_SCOPE,
-    GmailNotConfigured,
-    GoogleGmailApi,
-    build_gmail_api,
+    GMAIL_MODIFY,
+    GoogleAuth,
+    GoogleNotConfigured,
     token_secret_name,
 )
 from agent.store.keystore import KeyStore
@@ -128,11 +130,11 @@ def test_after_call_hook_runs() -> None:
 
 
 def test_build_requires_secrets() -> None:
-    with pytest.raises(GmailNotConfigured):
-        build_gmail_api("me@example.com", KeyStore())
+    with pytest.raises(GoogleNotConfigured):
+        build_gmail_api("me@example.com", GoogleAuth(KeyStore()))
 
 
-def test_build_uses_only_modify_scope_and_keyring_secrets() -> None:
+def test_build_uses_shared_credential_from_keyring() -> None:
     keystore = KeyStore()
     keystore.set(
         CLIENT_SECRET_NAME,
@@ -140,10 +142,22 @@ def test_build_uses_only_modify_scope_and_keyring_secrets() -> None:
     )
     keystore.set(
         token_secret_name("me@example.com"),
-        json.dumps({"refresh_token": "rt", "token": "at"}),
+        json.dumps({"refresh_token": "rt", "token": "at", "scopes": [GMAIL_MODIFY]}),
     )
-    api = build_gmail_api("me@example.com", keystore)
+    api = build_gmail_api("me@example.com", GoogleAuth(keystore))
     credentials = api._service._http.credentials
-    assert list(credentials.scopes) == [GMAIL_SCOPE]
+    assert list(credentials.scopes) == [GMAIL_MODIFY]
     assert credentials.client_id == "cid"
     assert credentials.refresh_token == "rt"
+
+
+def test_no_code_calls_a_gmail_send_endpoint() -> None:
+    agent_dir = Path(__file__).resolve().parent.parent / "agent"
+    endpoint = re.compile(r"\b(messages|drafts)\(\)\s*\.\s*send\b")
+    method = re.compile(r"""["']send["']""")
+    offenders = [
+        str(path.relative_to(agent_dir))
+        for path in agent_dir.rglob("*.py")
+        if endpoint.search(text := path.read_text()) or method.search(text)
+    ]
+    assert offenders == []
