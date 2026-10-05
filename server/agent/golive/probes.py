@@ -67,7 +67,8 @@ class PowerSettings:
 
 
 def _ac_index(system: System, subgroup: str, setting: str) -> int | None:
-    result = system.run(["powercfg", "/query", "SCHEME_CURRENT", subgroup, setting])
+    # /qh, not /query: Modern Standby laptops hide LIDACTION from /query.
+    result = system.run(["powercfg", "/qh", "SCHEME_CURRENT", subgroup, setting])
     if result.returncode != 0:
         return None
     match = _AC_INDEX.search(result.stdout)

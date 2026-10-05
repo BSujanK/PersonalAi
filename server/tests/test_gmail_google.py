@@ -158,6 +158,6 @@ def test_no_code_calls_a_gmail_send_endpoint() -> None:
     offenders = [
         str(path.relative_to(agent_dir))
         for path in agent_dir.rglob("*.py")
-        if endpoint.search(text := path.read_text()) or method.search(text)
+        if endpoint.search(text := path.read_text(encoding="utf-8")) or method.search(text)
     ]
     assert offenders == []

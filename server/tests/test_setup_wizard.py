@@ -417,7 +417,7 @@ def test_power_step_never_changes_settings(harness: Harness) -> None:
     assert any("never changes power settings" in t for t in prompter.said)
     every = system.runs + system.interactive
     assert not any(flag in argv for argv in every for flag in FORBIDDEN_POWER)
-    assert not any(argv[0] == "powercfg" and "/query" not in argv for argv in every)
+    assert not any(argv[0] == "powercfg" and "/qh" not in argv for argv in every)
 
 
 def test_google_merge_has_no_duplicates(harness: Harness) -> None:

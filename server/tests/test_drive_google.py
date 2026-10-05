@@ -144,6 +144,6 @@ def test_module_has_no_share_delete_or_update_calls() -> None:
 
     import agent.connectors.drive_google as module
 
-    source = Path(module.__file__).read_text()
+    source = Path(module.__file__).read_text(encoding="utf-8")
     for forbidden in ("permissions", ".delete(", ".update(", ".copy(", "emptyTrash"):
         assert forbidden not in source
