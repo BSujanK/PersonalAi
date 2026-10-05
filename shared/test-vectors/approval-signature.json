@@ -1,0 +1,30 @@
+{
+  "description": "Shared approval-signature vectors. sig = hex(HMAC-SHA256(approval_key, action_id|payload_hash|nonce|decision)). approval_key_b64url is the unpadded base64url form /pair returns. Synthetic key, never a real one.",
+  "approval_key_b64url": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "cases": [
+    {
+      "action_id": "3f2a9c1e5b7d4a6c8e0f1a2b3c4d5e6f",
+      "payload_hash": "a69d108621a41cc4a37e9d6b5182285563cc1ce269aa9421e5c71e9ac8bc30c3",
+      "nonce": "n0nce-AbC_123-xyz",
+      "decision": "approve",
+      "message": "3f2a9c1e5b7d4a6c8e0f1a2b3c4d5e6f|a69d108621a41cc4a37e9d6b5182285563cc1ce269aa9421e5c71e9ac8bc30c3|n0nce-AbC_123-xyz|approve",
+      "sig": "3e691bfacaa3b1059e178a629d203e6bece9efaeeaff44dcedff9c3859ace8fe"
+    },
+    {
+      "action_id": "3f2a9c1e5b7d4a6c8e0f1a2b3c4d5e6f",
+      "payload_hash": "a69d108621a41cc4a37e9d6b5182285563cc1ce269aa9421e5c71e9ac8bc30c3",
+      "nonce": "n0nce-AbC_123-xyz",
+      "decision": "reject",
+      "message": "3f2a9c1e5b7d4a6c8e0f1a2b3c4d5e6f|a69d108621a41cc4a37e9d6b5182285563cc1ce269aa9421e5c71e9ac8bc30c3|n0nce-AbC_123-xyz|reject",
+      "sig": "716cbaf9d8ec06b398fa81a7974b939ee6fffe73a5ce56a609fda006ea6a049a"
+    },
+    {
+      "action_id": "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e",
+      "payload_hash": "ca668f9c47fdc308380455910c0b97d2be0bf95ba0054452266565246f3b1b11",
+      "nonce": "ZmFrZS1ub25jZS0wMDAx",
+      "decision": "approve",
+      "message": "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e|ca668f9c47fdc308380455910c0b97d2be0bf95ba0054452266565246f3b1b11|ZmFrZS1ub25jZS0wMDAx|approve",
+      "sig": "cf78834aa9c201e3f3c3ca00d4123be7ebbf35ce746cc36f2b981f3000590870"
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import logging
 import secrets
 import sqlite3
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -38,6 +39,8 @@ class ApprovalEngine:
         audit: AuditLog,
         keystore: KeyStore,
         clock: Clock,
+        *,
+        on_proposed: Callable[[], None] | None = None,
     ) -> None:
         self._db = db
         self._cipher = cipher
@@ -45,6 +48,7 @@ class ApprovalEngine:
         self._audit = audit
         self._keystore = keystore
         self._clock = clock
+        self._on_proposed = on_proposed
 
     def _to_action(self, row: sqlite3.Row) -> PendingAction:
         aid = row["id"]
@@ -95,7 +99,13 @@ class ApprovalEngine:
                 ),
             )
             self._audit.record("proposed", actor="agent", action_id=action_id, detail=tool_name)
-        return self._require(action_id)
+        action = self._require(action_id)
+        if self._on_proposed is not None:
+            try:
+                self._on_proposed()
+            except Exception as exc:  # a notification failure must not undo the proposal
+                log.warning("proposal listener failed: %s", type(exc).__name__)
+        return action
 
     def _require(self, action_id: str) -> PendingAction:
         action = self.get(action_id)

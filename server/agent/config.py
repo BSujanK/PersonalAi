@@ -17,6 +17,16 @@ def _split_paths(value: str) -> tuple[str, ...]:
     return tuple(part.strip() for part in value.split(os.pathsep) if part.strip())
 
 
+PUSH_MODES = ("off", "expo")
+
+
+def _push_mode(value: str) -> str:
+    mode = value.strip().lower()
+    if mode not in PUSH_MODES:
+        raise ValueError("PERSONALAI_PUSH must be 'off' or 'expo'")
+    return mode
+
+
 @dataclass(frozen=True)
 class Settings:
     bind_hosts: tuple[str, ...] = ("127.0.0.1",)
@@ -45,6 +55,7 @@ class Settings:
     file_index_minutes: int = 30
     finance_utc_offset_minutes: int = 330
     finance_categorize_minutes: int = 15
+    push: str = "off"  # "off" or "expo"; pushes carry only a count, never content
 
     @property
     def google_accounts(self) -> tuple[str, ...]:
@@ -117,4 +128,5 @@ class Settings:
             finance_categorize_minutes=int(
                 e.get("PERSONALAI_FINANCE_CATEGORIZE_MINUTES", defaults.finance_categorize_minutes)
             ),
+            push=_push_mode(e.get("PERSONALAI_PUSH", defaults.push)),
         )

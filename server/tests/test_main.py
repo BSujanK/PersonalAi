@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -60,15 +61,55 @@ def test_serve_starts_uvicorn_when_valid(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert started == ["127.0.0.1"]
 
 
-def test_pair_prints_code(
+def test_pair_without_tailscale_bind_prints_code_and_explains(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("PERSONALAI_DB_PATH", str(tmp_path / "agent.db"))
     monkeypatch.setattr(main_module, "assert_secure_backend", lambda: None)
+    monkeypatch.setattr(main_module.segno, "make", _no_qr)
     assert main(["pair"]) == 0
     out = capsys.readouterr().out
     assert "Pairing code: " in out
-    assert "http://127.0.0.1:8765/pair" in out
+    assert "No Tailscale bind address" in out
+
+
+def _no_qr(*_args: object, **_kwargs: object) -> None:
+    raise AssertionError("no QR without a reachable address")
+
+
+@pytest.mark.parametrize(
+    ("hosts", "argv", "url"),
+    [
+        ("127.0.0.1,100.101.102.103", ["pair"], "http://100.101.102.103:8765"),
+        ("fd7a:115c:a1e0::5", ["pair"], "http://[fd7a:115c:a1e0::5]:8765"),
+        ("127.0.0.1", ["pair", "--url", "http://laptop.tail1.ts.net:8765/"], None),
+    ],
+)
+def test_pair_prints_qr_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    hosts: str,
+    argv: list[str],
+    url: str | None,
+) -> None:
+    monkeypatch.setenv("PERSONALAI_DB_PATH", str(tmp_path / "agent.db"))
+    monkeypatch.setenv("PERSONALAI_BIND_HOSTS", hosts)
+    monkeypatch.setattr(main_module, "assert_secure_backend", lambda: None)
+    payloads: list[str] = []
+    real_make = main_module.segno.make
+
+    def capture(content: str, **kwargs: object) -> object:
+        payloads.append(content)
+        return real_make(content, **kwargs)
+
+    monkeypatch.setattr(main_module.segno, "make", capture)
+    assert main(argv) == 0
+    out = capsys.readouterr().out
+    [payload] = payloads
+    data = json.loads(payload)
+    code = out.split("Pairing code: ")[1].split()[0]
+    assert data == {"v": 1, "url": url or "http://laptop.tail1.ts.net:8765", "code": code}
 
 
 class _FakeScheduler:

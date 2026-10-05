@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
+import json
 import sys
 import threading
 from collections.abc import Sequence
 
+import segno
 import uvicorn
 
 from agent.api.app import create_app
@@ -157,18 +160,42 @@ def _serve(settings: Settings) -> int:
     return 0
 
 
-def _pair(settings: Settings) -> int:
+_TAILSCALE = (ipaddress.ip_network("100.64.0.0/10"), ipaddress.ip_network("fd7a:115c:a1e0::/48"))
+
+
+def _phone_url(
+    settings: Settings, hosts: Sequence[ipaddress.IPv4Address | ipaddress.IPv6Address]
+) -> str | None:
+    """The first Tailscale bind address: the only kind of address the phone app accepts."""
+    for host in hosts:
+        if any(host in net for net in _TAILSCALE):
+            shown = f"[{host}]" if host.version == 6 else str(host)
+            return f"http://{shown}:{settings.port}"
+    return None
+
+
+def _pair(settings: Settings, url: str | None) -> int:
     try:
         assert_secure_backend()
         hosts = validate_bind_hosts(settings.bind_hosts)
     except (InsecureKeyringError, UnsafeBindAddress) as exc:
         return _refuse(str(exc))
+    phone_url = url.rstrip("/") if url else _phone_url(settings, hosts)
     db = Database(settings.db_path)
     code = open_pairing_window(db, utcnow, settings.pairing_window_seconds)
+    if phone_url is None:
+        print(
+            "No Tailscale bind address is configured (PERSONALAI_BIND_HOSTS), so the phone "
+            "cannot reach this server. Pass --url http://<laptop>.<tailnet>.ts.net:PORT or "
+            "enter the code by hand."
+        )
+    else:
+        payload = json.dumps({"v": 1, "url": phone_url, "code": code}, separators=(",", ":"))
+        print("Scan this with the PersonalAi app (Settings > Pair):")
+        segno.make(payload, error="m").terminal(compact=True)
+        print(f"Server: {phone_url}")
     print(f"Pairing code: {code}")
     print(f"Valid for {settings.pairing_window_seconds} seconds, single use.")
-    host = f"[{hosts[0]}]" if hosts[0].version == 6 else str(hosts[0])
-    print(f"Pair at: http://{host}:{settings.port}/pair")
     return 0
 
 
@@ -176,12 +203,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agent")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("serve", help="run the server (default)")
-    sub.add_parser("pair", help="open a pairing window and print the code")
+    pair = sub.add_parser("pair", help="open a pairing window and print the code and QR")
+    pair.add_argument("--url", help="server URL for the phone, e.g. a MagicDNS name")
     args = parser.parse_args(argv)
     try:
         settings = Settings.from_env()
     except ValueError as exc:
         return _refuse(f"invalid configuration: {exc}")
     if args.command == "pair":
-        return _pair(settings)
+        return _pair(settings, args.url)
     return _serve(settings)

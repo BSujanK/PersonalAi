@@ -6,9 +6,11 @@ from fastapi import APIRouter, Depends, FastAPI
 
 from agent.api import approvals as approvals_routes
 from agent.api import chat as chat_routes
+from agent.api import device as device_routes
 from agent.api import finance as finance_routes
 from agent.api import mail as mail_routes
 from agent.api import pair as pair_routes
+from agent.api import today as today_routes
 from agent.api.auth import require_device
 from agent.config import Settings
 from agent.core.approvals import ApprovalEngine
@@ -21,6 +23,9 @@ from agent.core.redact import Redactor
 from agent.core.tools import ToolRegistry
 from agent.finance.services import FinanceServices
 from agent.mail.services import MailServices
+from agent.phone.commands import CommandQueue
+from agent.phone.push import PushNotifier
+from agent.phone.tools import register_phone_tools
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.keystore import KeyStore
@@ -40,7 +45,17 @@ def create_app(
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     cipher = FieldCipher(keystore.get_or_create_bytes("db_key"))
     audit = AuditLog(db, clock)
-    approvals = ApprovalEngine(db, cipher, registry, audit, keystore, clock)
+    approvals = ApprovalEngine(
+        db,
+        cipher,
+        registry,
+        audit,
+        keystore,
+        clock,
+        on_proposed=lambda: app.state.push.notify_pending(approvals.pending_count()),
+    )
+    commands = CommandQueue(db, cipher, clock)
+    register_phone_tools(registry, commands, clock)
     redactor = Redactor(settings.redaction_emails)
     app.state.settings = settings
     app.state.db = db
@@ -49,6 +64,9 @@ def create_app(
     app.state.cipher = cipher
     app.state.audit = audit
     app.state.approvals = approvals
+    app.state.registry = registry
+    app.state.commands = commands
+    app.state.push = PushNotifier(db, keystore, enabled=settings.push == "expo")
     app.state.chat_locks = KeyedLocks()
     app.state.loop = AgentLoop(llm, registry, redactor, approvals, settings)
 
@@ -57,6 +75,8 @@ def create_app(
     protected = [Depends(require_device)]
     app.include_router(chat_routes.router, dependencies=protected)
     app.include_router(approvals_routes.router, dependencies=protected)
+    app.include_router(device_routes.router, dependencies=protected)
+    app.include_router(today_routes.router, dependencies=protected)
     if mail is not None:
         app.state.mail = mail
         app.include_router(mail_routes.router, dependencies=protected)

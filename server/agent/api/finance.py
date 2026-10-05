@@ -14,6 +14,7 @@ from agent.core.audit import AuditLog
 from agent.finance.categorize import Category
 from agent.finance.ingest import SmsIn
 from agent.finance.services import FinanceServices
+from agent.finance.sms_parsers.common import known_senders
 from agent.finance.summary import Period, format_inr, local_tz, resolve_period, spend_summary
 from agent.store.models import Device
 
@@ -76,6 +77,11 @@ def ingest_sms(
         "ignored": result.ignored,
         "unparsed": result.unparsed,
     }
+
+
+@router.get("/sms/senders")
+def sms_senders() -> dict[str, list[str]]:
+    return {"senders": known_senders()}
 
 
 @router.get("/finance/summary")

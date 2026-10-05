@@ -36,6 +36,11 @@ _SENDER_BANKS: dict[str, Bank] = {
 }
 
 
+def known_senders() -> list[str]:
+    """Normalised sender IDs the parsers recognise; the phone uses them as its SMS filter."""
+    return sorted(_SENDER_BANKS)
+
+
 def normalize_sender(sender: str) -> str:
     """`AD-BOBTXN` / `JD-SBIUPI-S` / `bobsms` -> `BOBTXN` / `SBIUPI` / `BOBSMS`."""
     name = sender.strip().upper()

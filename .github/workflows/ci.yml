@@ -52,3 +52,4 @@ jobs:
           npm ci
           npx tsc --noEmit
           npx eslint .
+          npx jest --ci

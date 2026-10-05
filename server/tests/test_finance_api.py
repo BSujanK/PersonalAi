@@ -69,6 +69,7 @@ def test_every_finance_route_needs_the_device_token() -> None:
     api = _api()
     for method, path in (
         ("post", "/sms"),
+        ("get", "/sms/senders"),
         ("get", "/finance/summary"),
         ("get", "/finance/balances"),
         ("get", "/finance/transactions"),
@@ -117,6 +118,13 @@ def test_invalid_batch_is_422_and_stores_nothing() -> None:
     assert api.client.post("/sms", json=too_many, headers=api.headers).status_code == 422
     assert api.env.db.query("SELECT 1 FROM finance_sms") == []
     assert api.env.db.query("SELECT 1 FROM audit_log WHERE event = 'sms_batch'") == []
+
+
+def test_sms_senders_lists_the_phone_filter() -> None:
+    api = _api()
+    senders = api.client.get("/sms/senders", headers=api.headers).json()["senders"]
+    assert {"BOBTXN", "BOBSMS", "HDFCBK"} <= set(senders)
+    assert senders == sorted(senders)
 
 
 def test_summary_balances_and_transactions_endpoints() -> None:

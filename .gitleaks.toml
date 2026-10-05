@@ -1,0 +1,9 @@
+# Default gitleaks rules, plus one narrow allowlist: the shared approval-signature test
+# vectors use a synthetic key (bytes 0x00..0x1f) that trips the generic-api-key rule.
+# Never add a path holding real material here.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic cross-language test vectors"
+paths = ['''shared/test-vectors/approval-signature\.json''']
