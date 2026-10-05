@@ -47,7 +47,7 @@ def main(argv: list[str]) -> int:  # pragma: no cover - interactive
     assert_secure_backend()
     keystore = KeyStore()
     if args.client_secret is not None:
-        client_raw = json.dumps(json.loads(args.client_secret.read_text()))
+        client_raw = json.dumps(json.loads(args.client_secret.read_text(encoding="utf-8-sig")))
     else:
         client_raw = keystore.get(CLIENT_SECRET_NAME)
     if client_raw is None:

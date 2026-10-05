@@ -11,6 +11,7 @@ import sys
 import threading
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import TextIO
 
 import segno
 import uvicorn
@@ -318,11 +319,24 @@ def _setup(redo: list[str]) -> int:
     )
 
 
+def _tolerate_any_output(*streams: TextIO | None) -> None:
+    """Never crash on a character the console's code page lacks (e.g. ``✓`` or ``⟨PHONE_1⟩``).
+
+    Windows redirects and old consoles use cp1252, where printing those raises
+    UnicodeEncodeError. Unencodable characters are replaced with ``?`` instead.
+    """
+    for stream in streams:
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="replace")
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
     read_passphrase: Callable[[str], str] = getpass.getpass,
 ) -> int:
+    _tolerate_any_output(sys.stdout, sys.stderr)
     parser = argparse.ArgumentParser(prog="agent")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("serve", help="run the server (default)")
