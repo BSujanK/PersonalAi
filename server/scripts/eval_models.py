@@ -44,7 +44,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agent.api.chat import _load_history
 from agent.config import Settings
-from agent.core.llm import ChatMessage, LLMClient, LLMResponse, OpenAICompatClient
+from agent.core.llm import (
+    ChatMessage,
+    LLMClient,
+    LLMResponse,
+    OpenAICompatClient,
+    cloud_extra_body,
+)
 from agent.core.loop import STEP_LIMIT_REPLY
 from agent.core.redact import RedactionMap, Redactor
 from agent.store.keystore import InsecureKeyringError, KeyStore, assert_secure_backend
@@ -1119,6 +1125,7 @@ def build_client(
     *,
     transport: httpx.BaseTransport | None = None,
     sleep: Callable[[float], None] = time.sleep,
+    extra_body: dict[str, Any] | None = None,
 ) -> tuple[LLMClient, Callable[[], int]]:
     """A client for one model plus a counter of every 429 it saw (retries included)."""
     seen = [0]
@@ -1129,7 +1136,7 @@ def build_client(
 
     http = httpx.Client(transport=transport, event_hooks={"response": [count]})
     client = OpenAICompatClient(
-        base_url, key, model_id, http_client=http, max_retries=3, sleep=sleep
+        base_url, key, model_id, http_client=http, max_retries=3, sleep=sleep, extra_body=extra_body
     )
     return client, lambda: seen[0]
 
@@ -1272,7 +1279,12 @@ def main(
 
     def client_for(model_id: str) -> tuple[LLMClient, Callable[[], int]]:
         return build_client(
-            settings.nvidia_base_url, key, model_id, transport=transport, sleep=sleep
+            settings.nvidia_base_url,
+            key,
+            model_id,
+            transport=transport,
+            sleep=sleep,
+            extra_body=cloud_extra_body(settings),
         )
 
     with isolated_keyring():
