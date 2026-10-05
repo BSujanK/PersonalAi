@@ -61,6 +61,24 @@ class System(Protocol):
         ...
 
 
+# Installers that do not reliably put their CLI on PATH (Tailscale's Windows installer often
+# doesn't): known locations, searched only after PATH.
+_KNOWN_LOCATIONS: dict[str, tuple[str, ...]] = {
+    "tailscale": (r"%ProgramFiles%\Tailscale\tailscale.exe",),
+}
+
+
+def _resolve(name: str) -> str | None:
+    found = shutil.which(name)
+    if found is not None:
+        return found
+    for pattern in _KNOWN_LOCATIONS.get(name, ()):
+        candidate = os.path.expandvars(pattern)
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
 class RealSystem:
     """The live machine. Only ``agent doctor`` and ``agent setup`` construct it."""
 
@@ -71,10 +89,10 @@ class RealSystem:
         return (info.major, info.minor, info.micro)
 
     def which(self, name: str) -> str | None:
-        return shutil.which(name)
+        return _resolve(name)
 
     def run(self, argv: Sequence[str], *, timeout: float = 30) -> CommandResult:
-        exe = shutil.which(argv[0])
+        exe = _resolve(argv[0])
         if exe is None:
             return CommandResult(NOT_FOUND, "")
         try:
@@ -92,7 +110,7 @@ class RealSystem:
         return CommandResult(done.returncode, done.stdout)
 
     def run_interactive(self, argv: Sequence[str]) -> int:
-        exe = shutil.which(argv[0])
+        exe = _resolve(argv[0])
         if exe is None:
             return NOT_FOUND
         try:

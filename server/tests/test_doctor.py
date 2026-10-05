@@ -191,9 +191,7 @@ def env(tmp_path: Path) -> Env:
             TAILSCALE: CommandResult(0, f"{TS_IP}\n"),
             SCHTASKS: CommandResult(0, SCHTASKS_RUNNING),
             **{
-                ("powercfg", "/query", "SCHEME_CURRENT", *args): CommandResult(
-                    0, powercfg_output(0)
-                )
+                ("powercfg", "/qh", "SCHEME_CURRENT", *args): CommandResult(0, powercfg_output(0))
                 for args in POWERCFG.values()
             },
         },
@@ -579,7 +577,7 @@ def test_scheduled_task_unreadable_status_warns(env: Env) -> None:
 
 
 def test_power_sleep_enabled(env: Env) -> None:
-    key = ("powercfg", "/query", "SCHEME_CURRENT", *POWERCFG["STANDBYIDLE"])
+    key = ("powercfg", "/qh", "SCHEME_CURRENT", *POWERCFG["STANDBYIDLE"])
     env.system.commands[key] = CommandResult(0, powercfg_output(1800))
     result = env.result("power")
     assert result.status == "fail"
@@ -588,13 +586,13 @@ def test_power_sleep_enabled(env: Env) -> None:
 
 
 def test_power_lid_action(env: Env) -> None:
-    key = ("powercfg", "/query", "SCHEME_CURRENT", *POWERCFG["LIDACTION"])
+    key = ("powercfg", "/qh", "SCHEME_CURRENT", *POWERCFG["LIDACTION"])
     env.system.commands[key] = CommandResult(0, powercfg_output(1))
     assert "lid close on AC" in env.result("power").detail
 
 
 def test_power_unreadable_warns(env: Env) -> None:
-    key = ("powercfg", "/query", "SCHEME_CURRENT", *POWERCFG["HIBERNATEIDLE"])
+    key = ("powercfg", "/qh", "SCHEME_CURRENT", *POWERCFG["HIBERNATEIDLE"])
     env.system.commands.pop(key)
     assert env.result("power").status == "warn"
 
@@ -699,7 +697,7 @@ def test_exit_code_one_when_a_required_check_fails(env: Env) -> None:
 
 
 def test_multi_line_fix_is_indented(env: Env) -> None:
-    key = ("powercfg", "/query", "SCHEME_CURRENT", *POWERCFG["LIDACTION"])
+    key = ("powercfg", "/qh", "SCHEME_CURRENT", *POWERCFG["LIDACTION"])
     env.system.commands[key] = CommandResult(0, powercfg_output(1))
     _, text = env.doctor()
     assert "       fix: powercfg /change standby-timeout-ac 0\n" in text
