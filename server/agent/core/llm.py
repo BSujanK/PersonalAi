@@ -138,6 +138,7 @@ class OpenAICompatClient:
         sleep: Callable[[float], None] = time.sleep,
         timeout: float = 60,
         retry_rate_limit: bool = True,
+        extra_body: dict[str, Any] | None = None,
     ) -> None:
         self._client = openai.OpenAI(
             base_url=base_url,
@@ -150,6 +151,7 @@ class OpenAICompatClient:
         self._max_retries = max_retries
         self._sleep = sleep
         self._retry_rate_limit = retry_rate_limit
+        self._extra_body = extra_body
 
     def complete(
         self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]
@@ -191,6 +193,8 @@ class OpenAICompatClient:
         kwargs: dict[str, Any] = {"model": self._model, "messages": _to_wire(messages)}
         if tools:
             kwargs["tools"] = list(tools)
+        if self._extra_body:
+            kwargs["extra_body"] = self._extra_body
         return kwargs
 
     def _stream_once(self, kwargs: dict[str, Any], on_delta: DeltaSink) -> LLMResponse:
@@ -251,6 +255,15 @@ class OpenAICompatClient:
         raise AssertionError("unreachable")  # pragma: no cover
 
 
+# Sent to NVIDIA routes unless PERSONALAI_CLOUD_THINKING is on: reasoning models otherwise
+# stream their thinking into the reply text and answer far more slowly.
+NO_THINKING: dict[str, Any] = {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+def cloud_extra_body(settings: Settings) -> dict[str, Any] | None:
+    return None if settings.cloud_thinking else NO_THINKING
+
+
 class ModelRouter:
     """Routes each call across primary/long, fallback and local models.
 
@@ -297,6 +310,7 @@ class ModelRouter:
                 http_client=self._http_client,
                 sleep=self._sleep,
                 retry_rate_limit=index == len(cloud) - 1,
+                extra_body=cloud_extra_body(settings),
             )
             chain.append((name, client, model))
         if estimate <= settings.local_context_tokens:

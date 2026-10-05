@@ -34,6 +34,13 @@ class InMemoryKeyring(KeyringBackend):
             raise PasswordDeleteError("not found") from None
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    # Runs before collection, so test modules that build a world at import time (e.g.
+    # test_injection_suite) can never reach the real OS keyring. It runs only under pytest:
+    # scripts that import this module, like eval_models.py, keep the real keyring.
+    keyring.set_keyring(InMemoryKeyring())
+
+
 @pytest.fixture(autouse=True)
 def in_memory_keyring() -> Iterator[InMemoryKeyring]:
     previous = keyring.get_keyring()

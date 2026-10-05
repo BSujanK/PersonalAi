@@ -48,6 +48,8 @@ class Settings:
     model_long: str = ""
     long_context_tokens: int = 32000
     local_context_tokens: int = 8192  # Ollama's context; longer prompts never go to local
+    # Reasoning models (Nemotron, ...) otherwise put their thinking in the reply text.
+    cloud_thinking: bool = False
     ollama_base_url: str = "http://127.0.0.1:11434/v1"
     ollama_model: str = "qwen2.5:3b"
     owner_emails: tuple[str, ...] = ()
@@ -121,6 +123,8 @@ class Settings:
                 "PERSONALAI_LOCAL_CONTEXT_TOKENS",
                 e.get("PERSONALAI_LOCAL_CONTEXT_TOKENS", str(defaults.local_context_tokens)),
             ),
+            cloud_thinking=e.get("PERSONALAI_CLOUD_THINKING", "").strip().lower()
+            in ("1", "true", "on", "yes"),
             owner_emails=_split(e.get("PERSONALAI_OWNER_EMAILS", "")),
             mail_accounts=_split(e.get("PERSONALAI_MAIL_ACCOUNTS", "")),
             vip_senders=_split(e.get("PERSONALAI_VIP_SENDERS", "")),

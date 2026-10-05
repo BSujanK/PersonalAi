@@ -13,7 +13,7 @@ import json
 import sys
 
 from agent.config import Settings
-from agent.core.llm import ChatMessage, LLMUnavailable, OpenAICompatClient
+from agent.core.llm import ChatMessage, LLMUnavailable, OpenAICompatClient, cloud_extra_body
 from agent.core.redact import from_model
 from agent.store.keystore import InsecureKeyringError, KeyStore, assert_secure_backend
 
@@ -52,7 +52,9 @@ def main() -> int:
     if not key:
         print("FAIL: nvidia_api_key is not in the keyring (service PersonalAi)", file=sys.stderr)
         return 1
-    client = OpenAICompatClient(settings.nvidia_base_url, key, model)
+    client = OpenAICompatClient(
+        settings.nvidia_base_url, key, model, extra_body=cloud_extra_body(settings)
+    )
     try:
         response = client.complete([ChatMessage("user", from_model(_PROMPT))], [_TOOL])
     except LLMUnavailable as exc:
