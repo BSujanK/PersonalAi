@@ -12,6 +12,7 @@ from agent.api import mail as mail_routes
 from agent.api import pair as pair_routes
 from agent.api import today as today_routes
 from agent.api.auth import require_device
+from agent.api.limits import BodySizeLimit
 from agent.config import Settings
 from agent.core.approvals import ApprovalEngine
 from agent.core.audit import AuditLog
@@ -43,6 +44,7 @@ def create_app(
     finance: FinanceServices | None = None,
 ) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    app.add_middleware(BodySizeLimit)
     cipher = FieldCipher(keystore.get_or_create_bytes("db_key"))
     audit = AuditLog(db, clock)
     approvals = ApprovalEngine(

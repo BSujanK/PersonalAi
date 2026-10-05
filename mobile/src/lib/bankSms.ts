@@ -4,6 +4,7 @@ import { PermissionsAndroid, Platform } from 'react-native';
 import BankSms from '../../modules/bank-sms';
 import { getSmsSenders, postSms } from './api';
 import { getJson, setJson } from './prefs';
+import { sanitiseSenders } from './senders';
 import { flushQueue, type FlushResult } from './smsSync';
 
 const CUSTOM_KEY = 'sms.custom_senders';
@@ -14,21 +15,21 @@ export const getCustomSenders = () => getJson<string[]>(CUSTOM_KEY, []);
 export const getDefaultSenders = () => getJson<string[]>(DEFAULTS_KEY, []);
 
 export async function saveCustomSenders(senders: string[]): Promise<void> {
-  await setJson(CUSTOM_KEY, senders);
+  await setJson(CUSTOM_KEY, sanitiseSenders(senders));
   await applyAllowlist();
 }
 
 /** Push defaults (cached from the server) plus custom IDs to the native receiver. */
 export async function applyAllowlist(): Promise<void> {
   const [defaults, custom] = await Promise.all([getDefaultSenders(), getCustomSenders()]);
-  BankSms.setAllowedSenders([...new Set([...defaults, ...custom])]);
+  BankSms.setAllowedSenders(sanitiseSenders([...defaults, ...custom]));
 }
 
 /** Refresh the server's default sender list when reachable; the cached copy is used otherwise. */
 export async function refreshDefaultSenders(): Promise<string[]> {
   try {
     const { senders } = await getSmsSenders();
-    await setJson(DEFAULTS_KEY, senders);
+    await setJson(DEFAULTS_KEY, sanitiseSenders(senders));
   } catch {
     // Offline or older server: keep the cached list.
   }

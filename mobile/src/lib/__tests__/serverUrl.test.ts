@@ -6,8 +6,7 @@ describe('normaliseServerUrl', () => {
     ['http://100.64.0.1', 'http://100.64.0.1'],
     ['http://100.127.255.255:8765/', 'http://100.127.255.255:8765'],
     ['http://[fd7a:115c:a1e0::1]:8765', 'http://[fd7a:115c:a1e0::1]:8765'],
-    ['https://laptop.tail1234.ts.net', 'https://laptop.tail1234.ts.net'],
-    ['  http://Laptop.Tail1234.TS.net:8765 ', 'http://laptop.tail1234.ts.net:8765'],
+    ['  http://100.100.100.100:8765 ', 'http://100.100.100.100:8765'],
   ])('accepts %s', (input, expected) => {
     expect(normaliseServerUrl(input)).toBe(expected);
   });
@@ -19,6 +18,12 @@ describe('normaliseServerUrl', () => {
     'http://127.0.0.1:8765',
     'http://0.0.0.0:8765',
     'https://ts.net',
+    'https://evil.tailnet-name.ts.net',
+    'http://laptop.tailnet.ts.net:8765',
+    'https://laptop.tail1234.ts.net',
+    'https://100.64.0.1:8765',
+    'https://[fd7a:115c:a1e0::1]:8765',
+    'http://localhost:8765',
     'https://evil.com',
     'https://evil.com.ts.net.evil.com',
     'http://100.64.0.1/x',

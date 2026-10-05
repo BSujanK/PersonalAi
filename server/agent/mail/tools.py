@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import defaultdict
 from collections.abc import Callable
 from datetime import timedelta
@@ -63,7 +64,11 @@ def _check_labels(raw: Any, name: str) -> list[str]:
 
 
 def _line(text: str) -> str:
-    return " ".join(text.split())[:_SUBJECT_PREVIEW]
+    """One display line for an approval preview: no control or format (bidi, zero-width) chars."""
+    visible = "".join(
+        " " if cat == "Cc" else ch for ch in text if (cat := unicodedata.category(ch)) != "Cf"
+    )
+    return " ".join(visible.split())[:_SUBJECT_PREVIEW]
 
 
 def _summary(mail: StoredMail) -> dict[str, Any]:

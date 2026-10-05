@@ -136,6 +136,7 @@ The server only answers while the laptop is awake.
 2. In the app: **Settings > Pair**, scan the QR (or type `http://100.x.y.z:8765` and the code). The app refuses any address outside the tailnet.
 3. Confirm with your fingerprint when asked. The approval key is stored behind that unlock.
 4. Check: the Today screen loads.
+5. If you paired before (a test phone, an older install), list devices with `uv run python -m agent devices` and revoke the old ones with `uv run python -m agent revoke --device ID`.
 
 ### 12. First sync checks
 
@@ -236,9 +237,9 @@ The Android app lives in `mobile/` (Expo SDK 57, TypeScript). It is a dev-client
 
 1. On the laptop, bind the server to its Tailscale IP (`PERSONALAI_BIND_HOSTS` accepts only loopback or Tailscale addresses) and run `python -m agent pair`. It opens a short pairing window and prints a QR code.
 2. Install Tailscale on the phone and join the same tailnet.
-3. Open the app and scan the QR code (or type the `http://100.x.y.z:8765` URL and code by hand). The app refuses any host outside `100.64.0.0/10`, `fd7a:115c:a1e0::/48` and `*.ts.net`.
+3. Open the app and scan the QR code (or type the `http://100.x.y.z:8765` URL and code by hand). The app accepts only `http://` Tailscale IP addresses (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`); MagicDNS names are refused.
 4. Pairing needs a fingerprint or face unlock enrolled on the phone. The approval key is stored behind that unlock, so approving an action always prompts for it. If no biometric is enrolled, pairing fails; there is no fallback.
-5. Settings, then Unpair, wipes the token and key from the phone. Revoke the device on the laptop as well.
+5. Settings, then Unpair, wipes the token and key from the phone. Revoke the device on the laptop as well: `uv run python -m agent devices` lists them, `uv run python -m agent revoke --device ID` (or `--all`) revokes.
 
 ### Permissions
 

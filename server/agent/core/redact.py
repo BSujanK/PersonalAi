@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 
@@ -263,6 +264,11 @@ class Redactor:
         self._kinds = (*_KINDS_BEFORE_SELF, self_kind, *_KINDS_AFTER_SELF)
 
     def _redact_str(self, text: str, rmap: RedactionMap) -> str:
+        # Fold lookalikes (fullwidth digits, letters and "@") and drop invisible format characters
+        # (zero-width, bidi) first, so neither can split or disguise a value from the patterns.
+        text = "".join(
+            ch for ch in unicodedata.normalize("NFKC", text) if unicodedata.category(ch) != "Cf"
+        )
         # Untrusted text must not be able to forge a placeholder that rehydration would expand.
         text = text.replace(_OPEN, "<").replace(_CLOSE, ">")
         claimed: list[Span] = []
