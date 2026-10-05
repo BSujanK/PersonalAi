@@ -13,6 +13,8 @@ from agent.api.app import create_app
 from agent.api.pair import open_pairing_window
 from agent.config import Settings
 from agent.connectors.gmail_google import build_gmail_api
+from agent.connectors.google_auth import GoogleAuth
+from agent.core.approvals import ApprovalEngine
 from agent.core.clock import utcnow
 from agent.core.llm import build_default_client
 from agent.core.netguard import UnsafeBindAddress, validate_bind_hosts
@@ -23,10 +25,11 @@ from agent.mail.services import MailServices, cached_api_factory
 from agent.mail.store import MailStore
 from agent.mail.sync import MailSync
 from agent.mail.tools import register_mail_tools
-from agent.scheduler import start_mail_polling
+from agent.scheduler import DEADLINE_JOB_ID, FILE_INDEX_JOB_ID, MAIL_JOB_ID, Job, start_jobs
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.keystore import InsecureKeyringError, KeyStore, assert_secure_backend
+from agent.workspace.services import WorkspaceServices, deadline_proposer, setup_workspace
 
 EXIT_REFUSED = 2
 
@@ -37,12 +40,15 @@ def _refuse(message: str) -> int:
 
 
 def _setup_mail(
-    settings: Settings, db: Database, keystore: KeyStore, registry: ToolRegistry
+    settings: Settings,
+    db: Database,
+    db_key: bytes,
+    google_auth: GoogleAuth,
+    registry: ToolRegistry,
 ) -> MailServices:
-    db_key = keystore.get_or_create_bytes("db_key")
     store = MailStore(db, FieldCipher(db_key), db_key)
     api_for = cached_api_factory(
-        settings.mail_accounts, lambda account: build_gmail_api(account, keystore)
+        settings.mail_accounts, lambda account: build_gmail_api(account, google_auth)
     )
     classifier = MailClassifier(
         store, build_classifier_llm(settings), Redactor(settings.redaction_emails), settings
@@ -50,6 +56,33 @@ def _setup_mail(
     sync = MailSync(store, api_for, classifier, utcnow, settings.mail_initial_days)
     register_mail_tools(registry, store, api_for, utcnow)
     return MailServices(store, sync, api_for)
+
+
+def _background_jobs(
+    settings: Settings,
+    db: Database,
+    approvals: ApprovalEngine,
+    mail: MailServices | None,
+    workspace: WorkspaceServices,
+) -> list[Job]:
+    jobs: list[Job] = []
+    if mail is not None:
+        sync = mail.sync
+        jobs.append(
+            Job(
+                MAIL_JOB_ID,
+                lambda: sync.sync_all(settings.mail_accounts),
+                settings.mail_poll_minutes,
+            )
+        )
+    proposer = deadline_proposer(settings, db, approvals, workspace, utcnow)
+    if proposer is not None:
+        jobs.append(Job(DEADLINE_JOB_ID, proposer.run, settings.deadline_poll_minutes))
+    if workspace.file_index is not None:
+        jobs.append(
+            Job(FILE_INDEX_JOB_ID, workspace.file_index.refresh, settings.file_index_minutes)
+        )
+    return jobs
 
 
 def _serve(settings: Settings) -> int:
@@ -61,16 +94,15 @@ def _serve(settings: Settings) -> int:
         db = Database(settings.db_path)
         keystore = KeyStore()
         llm = build_default_client(settings, keystore)
+        db_key = keystore.get_or_create_bytes("db_key")
+        google_auth = GoogleAuth(keystore)
         if settings.mail_accounts:
-            mail = _setup_mail(settings, db, keystore, registry)
+            mail = _setup_mail(settings, db, db_key, google_auth, registry)
+        workspace = setup_workspace(settings, db, db_key, registry, google_auth, utcnow)
     except (InsecureKeyringError, UnsafeBindAddress, ValueError) as exc:
         return _refuse(str(exc))
     app = create_app(settings, db=db, keystore=keystore, llm=llm, registry=registry, mail=mail)
-    scheduler = (
-        start_mail_polling(mail.sync, settings.mail_accounts, settings.mail_poll_minutes)
-        if mail is not None
-        else None
-    )
+    scheduler = start_jobs(_background_jobs(settings, db, app.state.approvals, mail, workspace))
     servers = [
         uvicorn.Server(
             uvicorn.Config(

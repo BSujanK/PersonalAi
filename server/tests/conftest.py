@@ -7,7 +7,7 @@ from collections.abc import Iterator
 import keyring
 import pytest
 from keyring.backend import KeyringBackend
-from keyring.errors import PasswordDeleteError
+from keyring.errors import PasswordDeleteError, PasswordSetError
 
 
 class InMemoryKeyring(KeyringBackend):
@@ -37,3 +37,21 @@ def in_memory_keyring() -> Iterator[InMemoryKeyring]:
     keyring.set_keyring(backend)
     yield backend
     keyring.set_keyring(previous)
+
+
+class SizeLimitedKeyring(InMemoryKeyring):
+    """Mimics Windows Credential Manager, which rejects secrets over 2560 bytes of UTF-16."""
+
+    LIMIT_BYTES = 2560
+
+    def set_password(self, service: str, username: str, password: str) -> None:
+        if len(password.encode("utf-16-le")) > self.LIMIT_BYTES:
+            raise PasswordSetError("secret too long")
+        super().set_password(service, username, password)
+
+
+@pytest.fixture
+def size_limited_keyring() -> SizeLimitedKeyring:
+    backend = SizeLimitedKeyring()
+    keyring.set_keyring(backend)  # the autouse fixture restores the previous backend
+    return backend

@@ -1,0 +1,269 @@
+"""Classroom deadlines proposed as calendar events. Every event still needs approval."""
+
+from __future__ import annotations
+
+import logging
+import re
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+from typing import Any
+
+from agent.connectors.classroom import ClassroomApi, due_instant, due_of
+from agent.connectors.gcal import CalendarApi
+from agent.core.approvals import ApprovalEngine
+from agent.core.clock import Clock
+from agent.core.policy import MAX_PENDING_ACTIONS
+from agent.core.tools import Tool, ToolKind, ToolRegistry
+from agent.store.db import Database
+from agent.store.models import ActionStatus
+from agent.workspace.calendar_tools import (
+    NO_GUESTS,
+    check_account,
+    check_text,
+    describe_when,
+    parse_when,
+    time_field,
+)
+
+log = logging.getLogger(__name__)
+
+TOOL_NAME = "calendar_add_deadline"
+PROPERTY_KEY = "personalai_coursework"
+DESCRIPTION = "Added from Google Classroom."
+BLOCK = timedelta(minutes=30)
+RETRY_AFTER = timedelta(hours=24)
+_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+_ACCOUNT_RE = re.compile(r"[^\s/]{1,254}")
+
+
+@dataclass(frozen=True)
+class _Deadline:
+    calendar_account: str
+    key: str
+    summary: str
+    start: date | datetime
+    end: date | datetime
+
+    def body(self) -> dict[str, Any]:
+        return {
+            "summary": self.summary,
+            "start": time_field(self.start),
+            "end": time_field(self.end),
+            "description": DESCRIPTION,
+            "extendedProperties": {"private": {PROPERTY_KEY: self.key}},
+        }
+
+
+def _parse(args: dict[str, Any], calendar_accounts: Sequence[str]) -> _Deadline:
+    calendar_account = check_account(args.get("calendar_account"), calendar_accounts)
+    classroom_account = args.get("classroom_account")
+    if not isinstance(classroom_account, str) or not _ACCOUNT_RE.fullmatch(classroom_account):
+        raise ValueError("invalid classroom_account")
+    ids: list[str] = []
+    for name in ("course_id", "coursework_id"):
+        value = args.get(name)
+        if not isinstance(value, str) or not _ID_RE.fullmatch(value):
+            raise ValueError(f"invalid {name}")
+        ids.append(value)
+    title = check_text(args.get("title"), "title", limit=200, minimum=1, one_line=True)
+    course = check_text(args.get("course"), "course", limit=200, minimum=1, one_line=True)
+    due = parse_when(args.get("due"), "due")
+    start: date | datetime
+    end: date | datetime
+    if isinstance(due, datetime):
+        start, end = due - BLOCK, due
+    else:
+        start, end = due, due + timedelta(days=1)
+    return _Deadline(
+        calendar_account,
+        "/".join([classroom_account, *ids]),
+        f"Due: {title} ({course})",
+        start,
+        end,
+    )
+
+
+def register_deadline_tool(
+    registry: ToolRegistry,
+    calendar_api_for: Callable[[str], CalendarApi],
+    calendar_accounts: Sequence[str],
+) -> None:
+    def preview(args: dict[str, Any]) -> str:
+        item = _parse(args, calendar_accounts)
+        return "\n".join(
+            [
+                f"Add deadline to the calendar of {item.calendar_account}",
+                f"Title: {item.summary}",
+                f"When: {describe_when(item.start, item.end)}",
+                f"Description: {DESCRIPTION}",
+                NO_GUESTS,
+            ]
+        )
+
+    def run(args: dict[str, Any]) -> Any:
+        item = _parse(args, calendar_accounts)
+        api = calendar_api_for(item.calendar_account)
+        if api.find_private(PROPERTY_KEY, item.key):
+            return {"ok": 0, "duplicate": True}
+        created = api.insert_event(item.body())
+        return {"ok": 1, "id": created["id"]}
+
+    registry.register(
+        Tool(
+            name=TOOL_NAME,
+            description=(
+                "Add a Classroom assignment deadline to the owner's calendar. No guests are "
+                "invited. Requires the owner's approval."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "calendar_account": {"type": "string"},
+                    "classroom_account": {"type": "string"},
+                    "course_id": {"type": "string"},
+                    "coursework_id": {"type": "string"},
+                    "title": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "course": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "due": {"type": "string", "description": "ISO datetime with offset, or date"},
+                },
+                "required": [
+                    "calendar_account",
+                    "classroom_account",
+                    "course_id",
+                    "coursework_id",
+                    "title",
+                    "course",
+                    "due",
+                ],
+                "additionalProperties": False,
+            },
+            kind=ToolKind.WRITE,
+            run=run,
+            preview=preview,
+        )
+    )
+
+
+@dataclass
+class _Scan:
+    pending: int
+    proposed: int = 0
+
+
+def _line(text: Any, limit: int, default: str) -> str:
+    collapsed = " ".join(text.split())[:limit] if isinstance(text, str) else ""
+    return collapsed or default
+
+
+class DeadlineProposer:
+    """Proposes one calendar event per upcoming Classroom deadline, at most once per due date."""
+
+    def __init__(
+        self,
+        db: Database,
+        approvals: ApprovalEngine,
+        classroom_api_for: Callable[[str], ClassroomApi],
+        classroom_accounts: Sequence[str],
+        calendar_account: str | None,
+        clock: Clock,
+        horizon_days: int,
+    ) -> None:
+        self._db = db
+        self._approvals = approvals
+        self._api_for = classroom_api_for
+        self._accounts = classroom_accounts
+        self._calendar_account = calendar_account
+        self._clock = clock
+        self._horizon = timedelta(days=horizon_days)
+
+    def run(self) -> int:
+        """Propose new deadlines; returns how many proposals were created."""
+        if self._calendar_account is None:
+            return 0
+        scan = _Scan(self._approvals.pending_count())
+        for account in self._accounts:
+            if self._full(scan):
+                break
+            try:
+                self._scan_account(account, scan)
+            except Exception as exc:  # one broken account must not stop the others
+                log.warning("deadline scan failed for an account: %s", type(exc).__name__)
+        log.info("deadline scan proposed %d actions", scan.proposed)
+        return scan.proposed
+
+    @staticmethod
+    def _full(scan: _Scan) -> bool:
+        return scan.pending >= MAX_PENDING_ACTIONS // 2
+
+    def _scan_account(self, account: str, scan: _Scan) -> None:
+        api = self._api_for(account)
+        now = self._clock()
+        for course in api.list_courses():
+            course_id = course.get("id")
+            if not isinstance(course_id, str):
+                continue
+            course_name = _line(course.get("name"), 200, "Course")
+            for work in api.list_coursework(course_id):
+                if self._full(scan):
+                    return
+                due = due_of(work)
+                if due is None or not now < due_instant(due) <= now + self._horizon:
+                    continue
+                self._consider(account, course_id, course_name, work, due.isoformat(), scan)
+
+    def _consider(
+        self,
+        account: str,
+        course_id: str,
+        course_name: str,
+        work: dict[str, Any],
+        due: str,
+        scan: _Scan,
+    ) -> None:
+        coursework_id = work.get("id")
+        if not isinstance(coursework_id, str) or not self._should_propose(
+            account, course_id, coursework_id, due
+        ):
+            return
+        args = {
+            "calendar_account": self._calendar_account,
+            "classroom_account": account,
+            "course_id": course_id,
+            "coursework_id": coursework_id,
+            "title": _line(work.get("title"), 200, "Assignment"),
+            "course": course_name,
+            "due": due,
+        }
+        try:
+            action = self._approvals.propose(TOOL_NAME, args, None)
+        except ValueError:  # an id or value the tool rejects; skip just this item
+            return
+        with self._db.transaction():
+            self._db.execute(
+                "INSERT INTO deadline_proposals (classroom_account, course_id, coursework_id, "
+                "due_at, action_id, proposed_at) VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT (classroom_account, course_id, coursework_id) DO UPDATE SET "
+                "due_at = excluded.due_at, action_id = excluded.action_id, "
+                "proposed_at = excluded.proposed_at",
+                (account, course_id, coursework_id, due, action.id, self._clock().isoformat()),
+            )
+        scan.pending += 1
+        scan.proposed += 1
+
+    def _should_propose(self, account: str, course_id: str, coursework_id: str, due: str) -> bool:
+        rows = self._db.query(
+            "SELECT due_at, action_id, proposed_at FROM deadline_proposals "
+            "WHERE classroom_account = ? AND course_id = ? AND coursework_id = ?",
+            (account, course_id, coursework_id),
+        )
+        if not rows:
+            return True
+        row = rows[0]
+        if row["due_at"] != due:
+            return True
+        action = self._approvals.get(row["action_id"])
+        retryable = action is None or action.status in (ActionStatus.EXPIRED, ActionStatus.FAILED)
+        return (
+            retryable and self._clock() - datetime.fromisoformat(row["proposed_at"]) > RETRY_AFTER
+        )

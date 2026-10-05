@@ -7,6 +7,7 @@ import uvicorn
 
 import agent.main as main_module
 from agent.main import main
+from agent.scheduler import DEADLINE_JOB_ID, FILE_INDEX_JOB_ID, MAIL_JOB_ID, Job
 
 
 @pytest.fixture
@@ -81,36 +82,73 @@ def _serve_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[str]:
     return started
 
 
+def _capture_jobs(monkeypatch: pytest.MonkeyPatch) -> tuple[list[list[Job]], _FakeScheduler]:
+    captured: list[list[Job]] = []
+    scheduler = _FakeScheduler()
+
+    def fake_start(jobs: list[Job]) -> _FakeScheduler | None:
+        captured.append(list(jobs))
+        return scheduler if jobs else None
+
+    monkeypatch.setattr(main_module, "start_jobs", fake_start)
+    return captured, scheduler
+
+
 def test_serve_with_mail_accounts_polls_and_stops_scheduler(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     started = _serve_env(monkeypatch, tmp_path)
     monkeypatch.setenv("PERSONALAI_MAIL_ACCOUNTS", "me@example.com,second@example.org")
-    scheduler = _FakeScheduler()
-    polled: list[tuple[tuple[str, ...], int]] = []
-
-    def fake_start(sync: object, accounts: tuple[str, ...], minutes: int) -> _FakeScheduler:
-        polled.append((tuple(accounts), minutes))
-        return scheduler
-
-    monkeypatch.setattr(main_module, "start_mail_polling", fake_start)
+    captured, scheduler = _capture_jobs(monkeypatch)
     assert main(["serve"]) == 0
     assert started == ["127.0.0.1"]
-    assert polled == [(("me@example.com", "second@example.org"), 5)]
+    assert [(job.id, job.minutes) for job in captured[0]] == [(MAIL_JOB_ID, 5)]
     assert scheduler.shutdowns == [False]
 
 
-def test_serve_without_mail_accounts_disables_mail(
+def test_serve_without_accounts_starts_no_jobs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     started = _serve_env(monkeypatch, tmp_path)
-
-    def must_not_start(*_a: object) -> None:
-        raise AssertionError("mail polling must be off")
-
-    monkeypatch.setattr(main_module, "start_mail_polling", must_not_start)
+    captured, _ = _capture_jobs(monkeypatch)
     assert main(["serve"]) == 0
     assert started == ["127.0.0.1"]
+    assert captured == [[]]
+
+
+def test_serve_with_workspace_registers_jobs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _serve_env(monkeypatch, tmp_path)
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    monkeypatch.setenv("PERSONALAI_CALENDAR_ACCOUNTS", "me@example.com")
+    monkeypatch.setenv("PERSONALAI_CLASSROOM_ACCOUNTS", "student@example.edu")
+    monkeypatch.setenv("PERSONALAI_DRIVE_ACCOUNTS", "me@example.com")
+    monkeypatch.setenv("PERSONALAI_FILE_ROOTS", str(docs))
+    captured, _ = _capture_jobs(monkeypatch)
+    assert main(["serve"]) == 0
+    assert [(job.id, job.minutes) for job in captured[0]] == [
+        (DEADLINE_JOB_ID, 60),
+        (FILE_INDEX_JOB_ID, 30),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("PERSONALAI_FILE_ROOTS", "relative/folder"),
+        ("PERSONALAI_DEADLINE_CALENDAR", "other@example.com"),
+    ],
+)
+def test_serve_refuses_bad_workspace_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, name: str, value: str
+) -> None:
+    _serve_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("PERSONALAI_CALENDAR_ACCOUNTS", "me@example.com")
+    monkeypatch.setenv(name, value)
+    _capture_jobs(monkeypatch)
+    assert main(["serve"]) == 2
 
 
 def test_serve_refuses_non_loopback_ollama_when_mail_enabled(

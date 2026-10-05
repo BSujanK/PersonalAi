@@ -2,29 +2,20 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from typing import Any
 
-from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from agent.connectors.gmail import MAX_BATCH_IDS, HistoryExpired, MessageNotFound
-from agent.store.keystore import KeyStore
+from agent.connectors.google_auth import GMAIL_MODIFY, GoogleAuth
 
-GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.modify"  # no send scope in M2
-CLIENT_SECRET_NAME = "google_oauth_client"  # noqa: S105 - keyring entry name
+# gmail.modify covers read, label, archive and trash, but Google also lets it send mail. Sending is
+# prevented by the agent having no send tool and no code that calls messages.send or drafts.send
+# (tests/test_gmail_google.py enforces this), not by the scope.
 _HISTORY_TYPES = ["messageAdded", "messageDeleted", "labelAdded", "labelRemoved"]
 _RETRIES = 3
-
-
-class GmailNotConfigured(RuntimeError):
-    """The OAuth client or the account's token is missing from the keyring."""
-
-
-def token_secret_name(account: str) -> str:
-    return f"google_oauth:{account}"
 
 
 def _status(exc: HttpError) -> int | None:
@@ -102,32 +93,7 @@ class GoogleGmailApi:
         self._execute(self._service.users().messages().trash(userId="me", id=message_id))
 
 
-def _client_config(raw: str) -> dict[str, Any]:
-    data = json.loads(raw)
-    inner = data.get("installed") or data.get("web") or data
-    config: dict[str, Any] = inner
-    return config
-
-
-def build_gmail_api(account: str, keystore: KeyStore) -> GoogleGmailApi:
-    client_raw = keystore.get(CLIENT_SECRET_NAME)
-    token_raw = keystore.get(token_secret_name(account))
-    if client_raw is None or token_raw is None:
-        raise GmailNotConfigured("google oauth client or account token missing from keyring")
-    client = _client_config(client_raw)
-    info: dict[str, Any] = json.loads(token_raw)
-    info.setdefault("client_id", client.get("client_id"))
-    info.setdefault("client_secret", client.get("client_secret"))
-    info.setdefault("token_uri", client.get("token_uri", "https://oauth2.googleapis.com/token"))
-    credentials = Credentials.from_authorized_user_info(  # type: ignore[no-untyped-call]
-        info, scopes=[GMAIL_SCOPE]
-    )
-    saved = {"token": credentials.token}
-
-    def persist_refreshed() -> None:
-        if credentials.token != saved["token"]:
-            keystore.set(token_secret_name(account), credentials.to_json())
-            saved["token"] = credentials.token
-
+def build_gmail_api(account: str, auth: GoogleAuth) -> GoogleGmailApi:
+    credentials = auth.credentials(account, [GMAIL_MODIFY])
     service = build("gmail", "v1", credentials=credentials, cache_discovery=False)
-    return GoogleGmailApi(service, persist_refreshed)
+    return GoogleGmailApi(service, auth.persist_hook(account))
