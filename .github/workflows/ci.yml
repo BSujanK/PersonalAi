@@ -18,6 +18,8 @@ jobs:
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # .gitleaks.toml uses [[allowlists]] with condition = "AND" (gitleaks >= 8.25).
+          GITLEAKS_VERSION: 8.28.0
 
   server:
     runs-on: ubuntu-latest
@@ -53,3 +55,40 @@ jobs:
           npx tsc --noEmit
           npx eslint .
           npx jest --ci
+
+  # Compiles the native side (including the Kotlin bank-sms module) into a debug APK.
+  # Debug builds are signed with the throwaway debug key Gradle generates on the runner;
+  # no signing secrets or google-services.json are used, so push stays off in this APK.
+  android:
+    runs-on: ubuntu-latest
+    needs: mobile
+    timeout-minutes: 60
+    env:
+      EXPO_NO_TELEMETRY: "1"
+      CI: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Prebuild
+        working-directory: mobile
+        run: |
+          npm ci
+          npx expo prebuild --platform android --no-install --clean
+      - name: Assemble debug APK
+        working-directory: mobile/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: personalai-debug-apk
+          path: mobile/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
