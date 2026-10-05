@@ -12,12 +12,12 @@ from pydantic import BaseModel, Field
 from agent.api.auth import require_device
 from agent.core.audit import AuditLog
 from agent.finance.categorize import Category
-from agent.finance.ingest import SmsIn
+from agent.finance.ingest import IngestResult, SmsIn
 from agent.finance.services import FinanceServices
 from agent.finance.sms_parsers.common import known_senders
 from agent.finance.summary import Period, format_inr, local_tz, resolve_period, spend_summary
 from agent.store.models import Device
-from agent.store.sync_status import SMS_INGEST, record_ok
+from agent.store.sync_status import SMS_INGEST, record_failure, record_ok
 
 router = APIRouter()
 
@@ -51,6 +51,16 @@ def _received(item: SmsItem, latest: datetime) -> datetime:
     return moment
 
 
+def _record_ingest_status(request: Request, result: IngestResult) -> None:
+    """OK unless the parsers understood nothing: only unreadable bank SMS is a failure."""
+    db, clock = request.app.state.db, request.app.state.clock
+    understood = result.parsed + result.balances + result.duplicates + result.ignored
+    if result.unparsed and not understood:
+        record_failure(db, SMS_INGEST, clock, f"{result.unparsed} bank SMS could not be parsed")
+    else:
+        record_ok(db, SMS_INGEST, clock)
+
+
 @router.post("/sms")
 def ingest_sms(
     body: SmsBatch, request: Request, device: Annotated[Device, Depends(require_device)]
@@ -70,7 +80,7 @@ def ingest_sms(
                 f"ignored={result.ignored} unparsed={result.unparsed}"
             ),
         )
-        record_ok(request.app.state.db, SMS_INGEST, request.app.state.clock)
+        _record_ingest_status(request, result)
     return {
         "accepted": result.accepted,
         "duplicates": result.duplicates,

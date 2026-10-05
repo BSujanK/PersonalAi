@@ -126,35 +126,76 @@ def register_classroom_tools(
             for item in api_for(account).list_materials(course_id, limit)
         ]
 
-    account_prop = {"account": {"type": "string"}}
-    course_props = {
-        **account_prop,
-        "course_id": {"type": "string"},
-        "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+    account_any = {
+        "account": {
+            "type": "string",
+            "description": "Only this Classroom account; leave it out to cover every account.",
+        }
     }
+    account_copied = {
+        "account": {
+            "type": "string",
+            "description": "The account field of the course in classroom_courses, copied exactly.",
+        }
+    }
+    course_copied = {
+        "type": "string",
+        "description": (
+            "The id field of the course in classroom_courses (a short code such as c1). "
+            "It is never the course name."
+        ),
+    }
+    limit_prop = {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20,
+        "description": "Maximum number of items (default 10).",
+    }
+    course_props = {**account_copied, "course_id": course_copied, "limit": limit_prop}
     for name, description, props, required, run in (
-        ("classroom_courses", "List active Google Classroom courses.", account_prop, [], courses),
+        (
+            "classroom_courses",
+            "List the owner's active Google Classroom courses. Call this first whenever the "
+            "owner names a course (for example History): every course has an id and an account, "
+            "and the other classroom tools need those, not the course name.",
+            account_any,
+            [],
+            courses,
+        ),
         (
             "classroom_coursework",
-            "List upcoming Classroom assignments with due dates, soonest first.",
+            "List upcoming Classroom assignments with their due dates, soonest first. To answer "
+            "'what is due in <course>', first find the course with classroom_courses, then call "
+            "this with that course's id as course_id; leave course_id out to list every course. "
+            "Each item has title, due (ISO date or datetime), course, course_id, id and account. "
+            "When the owner wants a deadline on their calendar, use calendar_add_deadline with "
+            "these values.",
             {
-                **account_prop,
-                "course_id": {"type": "string"},
-                "days": {"type": "integer", "minimum": 1, "maximum": 60},
+                **account_any,
+                "course_id": course_copied,
+                "days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 60,
+                    "description": "How many days ahead to look (default 14; use 60 for the term).",
+                },
             },
             [],
             coursework,
         ),
         (
             "classroom_announcements",
-            "Recent announcements for one Classroom course.",
+            "Recent announcements posted by teachers in ONE Classroom course (they often carry "
+            "exam dates, room changes and deadlines). Needs the account and id of the course "
+            "from classroom_courses, so call that first.",
             course_props,
             ["account", "course_id"],
             announcements,
         ),
         (
             "classroom_materials",
-            "Recent class materials for one Classroom course.",
+            "Recent class materials (slides, readings, files) of ONE Classroom course. Needs "
+            "the account and id of the course from classroom_courses, so call that first.",
             course_props,
             ["account", "course_id"],
             materials,

@@ -38,6 +38,29 @@ jobs:
           uv run mypy agent
           uv run pytest -q
 
+  # The agent only ever runs on the owner's Windows laptop. Linux CI missed Windows-only bugs:
+  # tailscale.exe not on PATH, `powercfg /query` hiding LIDACTION on Modern Standby laptops,
+  # Path.read_text() defaulting to cp1252, and tests writing into the real Credential Manager.
+  # Same steps as `server`; no PYTHONUTF8 or other shim, so the default code page stays in play.
+  server-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      # bash, not the default pwsh: a pwsh step only fails on its last native command, so a
+      # failing `ruff check` in the middle would go unnoticed.
+      - name: Install, lint, type-check and test
+        shell: bash
+        working-directory: server
+        run: |
+          set -euo pipefail
+          uv sync --all-extras --dev
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy agent
+          uv run pytest -q
+
   mobile:
     runs-on: ubuntu-latest
     steps:

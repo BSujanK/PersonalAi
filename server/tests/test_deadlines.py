@@ -324,3 +324,68 @@ def test_hostile_titles_are_flattened_and_bad_ids_skipped() -> None:
     payload = _only_action(w).payload
     assert payload["course"] == "Intro to Examples"
     assert payload["title"].startswith("Line one Line two ") and len(payload["title"]) == 200
+
+
+def _classroom_status(w: Workspace) -> tuple[Any, Any]:
+    from agent.store.sync_status import CLASSROOM, last_failure, last_ok
+
+    return last_ok(w.db, CLASSROOM), last_failure(w.db, CLASSROOM)
+
+
+def test_scan_that_failed_for_every_account_is_recorded_as_a_failure() -> None:
+    from agent.connectors.google_auth import GoogleNotConfigured
+
+    w = Workspace()
+    w.classrooms[OTHER] = FakeClassroomApi()
+    for api in w.classrooms.values():
+        api.fail = GoogleNotConfigured("google oauth client or account token missing")
+    assert _proposer(w, (COLLEGE, OTHER)).run_and_record() == 0
+    ok, failure = _classroom_status(w)
+    assert ok is None
+    assert failure is not None and not failure.partial
+    assert failure.reason == "2 of 2 account(s) failed: GoogleNotConfigured"
+
+
+def test_scan_that_read_an_account_is_recorded_ok() -> None:
+    w = Workspace()
+    _setup(w)
+    assert _proposer(w).run_and_record() == 1
+    ok, failure = _classroom_status(w)
+    assert ok == w.clock() and failure is None
+
+
+def test_scan_with_one_broken_account_is_ok_but_partial() -> None:
+    w = Workspace()
+    w.classrooms[OTHER] = FakeClassroomApi()
+    w.classrooms[OTHER].fail = RuntimeError("nope")
+    _setup(w)
+    _proposer(w, (OTHER, COLLEGE)).run_and_record()
+    ok, failure = _classroom_status(w)
+    assert ok == w.clock()
+    assert failure is not None and failure.partial
+    assert failure.reason == "1 of 2 account(s) failed: RuntimeError"
+
+
+def test_a_later_good_scan_clears_the_failure() -> None:
+    w = Workspace()
+    _setup(w)
+    api = w.classrooms[COLLEGE]
+    api.fail = RuntimeError("down")
+    proposer = _proposer(w)
+    proposer.run_and_record()
+    assert _classroom_status(w)[0] is None
+    api.fail = None
+    proposer.run_and_record()
+    ok, failure = _classroom_status(w)
+    assert ok is not None and failure is None
+
+
+def test_scan_skipped_because_the_queue_is_full_is_not_recorded_ok() -> None:
+    w = Workspace()
+    _setup(w)
+    for i in range(MAX_PENDING_ACTIONS // 2):
+        w.engine.propose("calendar_add_deadline", _args(coursework_id=f"old{i}"), None)
+    _proposer(w).run_and_record()
+    ok, failure = _classroom_status(w)
+    assert ok is None
+    assert failure is not None and "too many approvals" in failure.reason

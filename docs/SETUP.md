@@ -57,7 +57,7 @@ Every value is written as a Windows **user** environment variable (no file in th
 uv run python -m agent doctor
 ```
 
-It prints a pass/fail line per prerequisite, with the exact command that fixes each failure: Python and uv, the keyring backend, the NVIDIA key and that the configured models exist, Ollama and its context length, each Google account's granted services, the bind addresses and Tailscale, the database, its key and the audit chain, the scheduled task, power settings, a paired phone, and the last mail, SMS and Classroom sync times. It exits with 0 only when every required check passes (the sync times are informational). `--json` prints the same as JSON. It never prints keys, tokens, mail or SMS. Run it again whenever something seems off.
+It prints a pass/fail line per prerequisite, with the exact command that fixes each failure: Python and uv, the keyring backend, the NVIDIA key and that the configured models exist, Ollama and its context length, each Google account's granted services, the bind addresses and Tailscale, the database, its key and the audit chain, the scheduled task, power settings, a paired phone, whether the running server is older than the code on disk, and the last mail, SMS and Classroom sync times. It exits with 0 only when every required check passes (the sync and server-age lines are informational, but a sync whose latest run failed, for example Classroom with no usable Google token, shows `[FAIL]` with the reason instead of a stale "OK" time). `--json` prints the same as JSON. It never prints keys, tokens, mail or SMS. Run it again whenever something seems off.
 
 Then go through the first sync checks in [A12](#a12-first-sync-checks).
 
@@ -205,9 +205,15 @@ On the phone:
 
 ### A9. Start the server at logon (Task Scheduler)
 
-1. From `server\`: `powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1`. It registers the task "PersonalAi agent" for your user: it starts one minute after logon (so Tailscale has its address), restarts every minute if the server exits, keeps running on battery, and runs hidden. It needs no admin rights and stores no secrets.
-2. `Start-ScheduledTask -TaskName "PersonalAi agent"`, then repeat the check from step A7.3.
+1. From `server\`: `powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1`. It registers the task "PersonalAi agent" for your user: it starts one minute after logon (so Tailscale has its address), restarts every minute if the server exits, keeps running on battery, and runs hidden. It needs no admin rights and stores no secrets. The task runs `scripts\run_agent.ps1`, which starts the virtualenv's `python.exe -m agent serve` and ties it to itself, so stopping the task (`Stop-ScheduledTask`, or Task Scheduler's **End**) really stops the server.
+2. `uv run python -m agent restart`, then repeat the check from step A7.3.
 3. Check after a reboot: log in, wait two minutes, repeat step A7.3. The task runs only while you are logged in, because the keys are in your user's Credential Manager.
+
+#### Updating the server
+
+**After updating (a `git pull`, new dependencies, or any code change), run `uv run python -m agent restart`.** It first syncs the environment (as every `uv run` does), then stops every running `agent serve` of your user, including a stale one left over from an older version of the task or started by hand in a terminal, and starts the task again. Without it the old process keeps running the old code and holds port 8765, so a plain `Start-ScheduledTask` starts a second server that exits at once with code 3.
+
+`uv run python -m agent doctor` warns ("Running server is current") when the running server started before the newest file under `server\agent` was changed, which is the sign that you forgot. If you still have the task from before this change, run `powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1` once to switch it to the new wrapper, then `agent restart`.
 
 ### A10. Power settings
 

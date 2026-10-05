@@ -1,4 +1,4 @@
-"""Command-line entry point: ``serve`` (default) and ``pair``."""
+"""Command-line entry point: ``serve`` (default), ``pair``, ``restart``, ``doctor`` and more."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import sys
 import threading
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import TextIO
 
 import segno
 import uvicorn
@@ -29,12 +30,14 @@ from agent.core.redact import Redactor
 from agent.core.tools import ToolRegistry
 from agent.finance.services import FinanceServices, setup_finance
 from agent.golive.doctor import run_doctor
+from agent.golive.probes import TASK_NAME
+from agent.golive.service import restart_server
 from agent.golive.setup import STEP_IDS, ConsolePrompter, run_setup
 from agent.golive.system import RealSystem
 from agent.mail.classify import MailClassifier, build_classifier_llm
 from agent.mail.services import MailServices, cached_api_factory
 from agent.mail.store import MailStore
-from agent.mail.sync import MailSync
+from agent.mail.sync import MailSync, sync_and_record
 from agent.mail.tools import register_mail_tools
 from agent.scheduler import (
     DEADLINE_JOB_ID,
@@ -49,7 +52,6 @@ from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.devices import list_devices, revoke_devices
 from agent.store.keystore import InsecureKeyringError, KeyStore, assert_secure_backend
-from agent.store.sync_status import CLASSROOM, record_ok
 from agent.workspace.services import WorkspaceServices, deadline_proposer, setup_workspace
 
 EXIT_REFUSED = 2
@@ -102,19 +104,13 @@ def _background_jobs(
         jobs.append(
             Job(
                 MAIL_JOB_ID,
-                lambda: sync.sync_all(settings.mail_accounts),
+                lambda: sync_and_record(sync, db, settings.mail_accounts),
                 settings.mail_poll_minutes,
             )
         )
     proposer = deadline_proposer(settings, db, approvals, workspace, utcnow)
     if proposer is not None:
-        run_proposer = proposer.run
-
-        def propose_and_record() -> None:
-            run_proposer()
-            record_ok(db, CLASSROOM, utcnow)
-
-        jobs.append(Job(DEADLINE_JOB_ID, propose_and_record, settings.deadline_poll_minutes))
+        jobs.append(Job(DEADLINE_JOB_ID, proposer.run_and_record, settings.deadline_poll_minutes))
     if workspace.file_index is not None:
         jobs.append(
             Job(FILE_INDEX_JOB_ID, workspace.file_index.refresh, settings.file_index_minutes)
@@ -296,6 +292,10 @@ def _doctor(settings: Settings, as_json: bool) -> int:
     )
 
 
+def _restart(task_name: str) -> int:
+    return restart_server(RealSystem(), sys.stdout, task_name=task_name)
+
+
 def _setup(redo: list[str]) -> int:
     try:
         assert_secure_backend()
@@ -319,11 +319,24 @@ def _setup(redo: list[str]) -> int:
     )
 
 
+def _tolerate_any_output(*streams: TextIO | None) -> None:
+    """Never crash on a character the console's code page lacks (e.g. ``✓`` or ``⟨PHONE_1⟩``).
+
+    Windows redirects and old consoles use cp1252, where printing those raises
+    UnicodeEncodeError. Unencodable characters are replaced with ``?`` instead.
+    """
+    for stream in streams:
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="replace")
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
     read_passphrase: Callable[[str], str] = getpass.getpass,
 ) -> int:
+    _tolerate_any_output(sys.stdout, sys.stderr)
     parser = argparse.ArgumentParser(prog="agent")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("serve", help="run the server (default)")
@@ -359,9 +372,17 @@ def main(
     setup.add_argument(
         "--redo", action="append", default=[], choices=STEP_IDS, help="re-run a step (repeatable)"
     )
+    restart = sub.add_parser(
+        "restart",
+        help="stop every running server of this user, then start the scheduled task "
+        "(run this after updating the code)",
+    )
+    restart.add_argument("--task", default=TASK_NAME, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.command == "setup":
         return _setup(args.redo)
+    if args.command == "restart":
+        return _restart(args.task)
     try:
         settings = Settings.from_env()
     except ValueError as exc:

@@ -21,7 +21,9 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest", "ruff", "mypy"]
+# httpx2: what starlette.testclient (TestClient) wants; with plain httpx it warns that this is
+# deprecated and a later starlette may drop that fallback. Runtime code and the OpenAI SDK keep httpx.
+dev = ["pytest", "ruff", "mypy", "httpx2>=2"]
 
 [build-system]
 requires = ["hatchling"]
@@ -46,6 +48,8 @@ files = ["agent"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Fail loudly if TestClient ever falls back to the deprecated httpx path again.
+filterwarnings = ["error:Using .httpx. with .starlette.testclient. is deprecated"]
 
 [[tool.mypy.overrides]]
 module = ["googleapiclient.*", "defusedxml.*", "google_auth_oauthlib.*", "apscheduler.*"]

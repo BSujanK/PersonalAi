@@ -29,13 +29,13 @@ from agent.core.audit import AuditLog
 from agent.core.clock import Clock
 from agent.core.llm import require_loopback
 from agent.core.netguard import validate_bind_hosts
-from agent.golive import probes
+from agent.golive import probes, service
 from agent.golive.system import System
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.devices import list_devices
 from agent.store.keystore import KeyStore, assert_secure_backend
-from agent.store.sync_status import CLASSROOM, SMS_INGEST, last_ok
+from agent.store.sync_status import CLASSROOM, MAIL, SMS_INGEST, last_failure, last_ok
 
 Status = Literal["pass", "fail", "warn", "skip"]
 
@@ -47,6 +47,11 @@ _TAILSCALE_NETS = (
     ipaddress.ip_network("fd7a:115c:a1e0::/48"),
 )
 _STALE_FACTOR = 3
+AGENT_DIR = Path(__file__).resolve().parents[1]  # server/agent: the code the server runs
+_GOOGLE_FIX = (
+    "fix the Google account checks above (token missing or scopes), "
+    "then restart: uv run python -m agent restart"
+)
 
 
 @dataclass(frozen=True)
@@ -66,6 +71,7 @@ class _Ctx:
     keystore: KeyStore
     clock: Clock
     db: Database | None
+    code_dir: Path
 
     @property
     def is_windows(self) -> bool:
@@ -427,7 +433,7 @@ def _check_database(ctx: _Ctx) -> CheckResult:
             "fail",
             True,
             "database file not found",
-            'start the server once: Start-ScheduledTask -TaskName "PersonalAi agent"',
+            "start the server once: uv run python -m agent restart",
         )
     key = ctx.keystore.get_bytes(DB_KEY_NAME)
     if key is None or len(key) != 32:
@@ -496,9 +502,36 @@ def _check_task(ctx: _Ctx) -> CheckResult:
             "fail",
             True,
             f"installed but {state.status}",
-            f'Start-ScheduledTask -TaskName "{probes.TASK_NAME}"',
+            "uv run python -m agent restart",
         )
     return CheckResult("scheduled_task", title, "pass", True, "Running")
+
+
+@_guard("server_code", "Running server is current", required=False)
+def _check_server_code(ctx: _Ctx) -> CheckResult:
+    """Warn when the running server started before the newest source file was modified."""
+    title = "Running server is current"
+    if not ctx.is_windows:
+        return _skip_non_windows("server_code", title, required=False)
+    procs = service.find_server_processes(ctx.system)
+    if procs is None:
+        return CheckResult("server_code", title, "warn", False, "could not list processes")
+    if not procs:
+        return CheckResult("server_code", title, "skip", False, "no running server process")
+    started = min(p.started for p in procs)
+    newest = service.newest_source_mtime(ctx.code_dir)
+    when = started.isoformat(timespec="minutes")
+    if newest is not None and newest > started:
+        return CheckResult(
+            "server_code",
+            title,
+            "warn",
+            False,
+            f"the server started {when}, before its code changed "
+            f"({newest.isoformat(timespec='minutes')}): it is running stale code",
+            "uv run python -m agent restart",
+        )
+    return CheckResult("server_code", title, "pass", False, f"started {when}")
 
 
 @_guard("power", "Power settings")
@@ -570,6 +603,25 @@ def _freshness(
     return CheckResult(check_id, title, "pass", False, detail)
 
 
+def _with_failure(ctx: _Ctx, name: str, result: CheckResult, fix: str) -> CheckResult:
+    """Override a freshness result when the source's latest run is recorded as failed."""
+    failure = last_failure(ctx.db, name) if ctx.db is not None else None
+    if failure is None:
+        return result
+    when = _aware(failure.at).isoformat(timespec="minutes")
+    detail = f"{failure.reason} ({when}; last OK: {result.detail})"
+    if failure.partial:
+        return CheckResult(result.id, result.title, "warn", False, "partly failing: " + detail)
+    return CheckResult(
+        result.id,
+        result.title,
+        "fail",
+        False,
+        "failing: " + detail,
+        fix,
+    )
+
+
 def _mail_last_sync(ctx: _Ctx) -> datetime | None:
     """The oldest per-account sync time; ``None`` if any configured account never synced."""
     if ctx.db is None:
@@ -589,8 +641,17 @@ def _check_mail_sync(ctx: _Ctx) -> CheckResult:
     title = "Last mail sync"
     if not ctx.settings.mail_accounts:
         return CheckResult("last_mail_sync", title, "skip", False, "no mail accounts")
-    return _freshness(
-        "last_mail_sync", title, _mail_last_sync(ctx), ctx.clock(), ctx.settings.mail_poll_minutes
+    return _with_failure(
+        ctx,
+        MAIL,
+        _freshness(
+            "last_mail_sync",
+            title,
+            _mail_last_sync(ctx),
+            ctx.clock(),
+            ctx.settings.mail_poll_minutes,
+        ),
+        _GOOGLE_FIX,
     )
 
 
@@ -598,7 +659,13 @@ def _check_mail_sync(ctx: _Ctx) -> CheckResult:
 def _check_sms(ctx: _Ctx) -> CheckResult:
     title = "Last SMS ingest"
     last = last_ok(ctx.db, SMS_INGEST) if ctx.db is not None else None
-    return _freshness("last_sms_ingest", title, last, ctx.clock(), None)
+    return _with_failure(
+        ctx,
+        SMS_INGEST,
+        _freshness("last_sms_ingest", title, last, ctx.clock(), None),
+        "the phone sent bank SMS the parsers cannot read: check the sender and format of "
+        "unparsed messages (see docs/SETUP.md)",
+    )
 
 
 @_guard("last_classroom_sync", "Last Classroom sync", required=False)
@@ -607,8 +674,13 @@ def _check_classroom(ctx: _Ctx) -> CheckResult:
     if not ctx.settings.classroom_accounts:
         return CheckResult("last_classroom_sync", title, "skip", False, "no Classroom accounts")
     last = last_ok(ctx.db, CLASSROOM) if ctx.db is not None else None
-    return _freshness(
-        "last_classroom_sync", title, last, ctx.clock(), ctx.settings.deadline_poll_minutes
+    return _with_failure(
+        ctx,
+        CLASSROOM,
+        _freshness(
+            "last_classroom_sync", title, last, ctx.clock(), ctx.settings.deadline_poll_minutes
+        ),
+        _GOOGLE_FIX,
     )
 
 
@@ -626,6 +698,7 @@ _CHECKS: tuple[_Check, ...] = (
     _check_database,
     _check_audit,
     _check_task,
+    _check_server_code,
     _check_power,
     _check_paired,
     _check_mail_sync,
@@ -645,9 +718,14 @@ def _open_existing_db(path: Path) -> Database | None:
 
 
 def run_checks(
-    settings: Settings, system: System, keystore: KeyStore, *, clock: Clock
+    settings: Settings,
+    system: System,
+    keystore: KeyStore,
+    *,
+    clock: Clock,
+    code_dir: Path = AGENT_DIR,
 ) -> list[CheckResult]:
-    ctx = _Ctx(settings, system, keystore, clock, _open_existing_db(settings.db_path))
+    ctx = _Ctx(settings, system, keystore, clock, _open_existing_db(settings.db_path), code_dir)
     results: list[CheckResult] = []
     try:
         for check in _CHECKS:
@@ -683,8 +761,9 @@ def run_doctor(
     as_json: bool,
     out: TextIO,
     clock: Clock,
+    code_dir: Path = AGENT_DIR,
 ) -> int:
-    results = run_checks(settings, system, keystore, clock=clock)
+    results = run_checks(settings, system, keystore, clock=clock, code_dir=code_dir)
     ok = not any(r.required and r.status == "fail" for r in results)
     if as_json:
         out.write(json.dumps({"ok": ok, "checks": [asdict(r) for r in results]}, indent=2) + "\n")

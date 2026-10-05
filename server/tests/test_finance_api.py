@@ -189,3 +189,26 @@ def test_sms_batch_records_the_last_ingest_time() -> None:
     assert last_ok(api.env.db, SMS_INGEST) is None
     _sms(api, _item())
     assert last_ok(api.env.db, SMS_INGEST) == api.env.clock()
+
+
+def test_sms_batch_nobody_could_parse_is_a_failure_not_ok() -> None:
+    from agent.store.sync_status import SMS_INGEST, last_failure, last_ok
+
+    api = _api()
+    response = _sms(api, _item("Unreadable bank text one"), _item("Unreadable text two", -6))
+    assert response.json()["unparsed"] == 2  # type: ignore[attr-defined]
+    assert last_ok(api.env.db, SMS_INGEST) is None
+    failure = last_failure(api.env.db, SMS_INGEST)
+    assert failure is not None and failure.reason == "2 bank SMS could not be parsed"
+    assert "Unreadable" not in failure.reason
+
+
+def test_sms_batch_with_some_parsed_is_ok_and_clears_an_old_failure() -> None:
+    from agent.store.sync_status import SMS_INGEST, last_failure, last_ok
+
+    api = _api()
+    _sms(api, _item("Unreadable bank text one"))
+    assert last_failure(api.env.db, SMS_INGEST) is not None
+    _sms(api, _item(), _item("Unreadable bank text one", -7))
+    assert last_ok(api.env.db, SMS_INGEST) == api.env.clock()
+    assert last_failure(api.env.db, SMS_INGEST) is None

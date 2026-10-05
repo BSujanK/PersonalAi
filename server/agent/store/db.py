@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS devices (
@@ -199,6 +199,13 @@ CREATE TABLE IF NOT EXISTS device_commands (
 CREATE TABLE IF NOT EXISTS sync_status (
     name TEXT PRIMARY KEY,
     last_ok_at TEXT NOT NULL
+);
+-- The latest failed run of a background source; deleted again by the next fully good run.
+CREATE TABLE IF NOT EXISTS sync_failures (
+    name TEXT PRIMARY KEY,
+    failed_at TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    partial INTEGER NOT NULL DEFAULT 0
 );
 -- Holds keyed hashes of words, never plaintext; rowid = local_files.id.
 CREATE VIRTUAL TABLE IF NOT EXISTS local_files_fts USING fts5(tokens);
