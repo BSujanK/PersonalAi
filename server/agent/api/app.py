@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, FastAPI
 
 from agent.api import approvals as approvals_routes
 from agent.api import chat as chat_routes
+from agent.api import conversations as conversations_routes
 from agent.api import device as device_routes
 from agent.api import finance as finance_routes
 from agent.api import mail as mail_routes
@@ -76,6 +77,7 @@ def create_app(
     app.include_router(pair_routes.router)
     protected = [Depends(require_device)]
     app.include_router(chat_routes.router, dependencies=protected)
+    app.include_router(conversations_routes.router, dependencies=protected)
     app.include_router(approvals_routes.router, dependencies=protected)
     app.include_router(device_routes.router, dependencies=protected)
     app.include_router(today_routes.router, dependencies=protected)

@@ -91,6 +91,7 @@ class AgentLoop:
         *,
         on_text: Callable[[str], None] | None = None,
         on_reset: Callable[[], None] | None = None,
+        on_tool: Callable[[str, str], None] | None = None,
     ) -> LoopResult:
         system = ChatMessage("system", from_model(SYSTEM_PROMPT))
         new: list[ChatMessage] = [ChatMessage("user", self._redactor.redact(user_text, rmap))]
@@ -112,7 +113,14 @@ class AgentLoop:
             if emitted and on_reset is not None:
                 on_reset()  # text shown before a tool call is not part of the final answer
             for call in response.tool_calls:
-                new.append(self._handle_call(call, conversation_id, rmap, pending_ids))
+                label = self._tool_label(call)
+                if on_tool is not None:
+                    on_tool(label, "started")
+                message = self._handle_call(call, conversation_id, rmap, pending_ids)
+                if on_tool is not None:
+                    failed = message.content.text.startswith("error:")
+                    on_tool(label, "failed" if failed else "finished")
+                new.append(message)
         return LoopResult(STEP_LIMIT_REPLY, new, pending_ids)
 
     def _streamed_step(
@@ -154,6 +162,10 @@ class AgentLoop:
         if not response.tool_calls:
             emit(rehydrator.flush())
         return response, emitted
+
+    def _tool_label(self, call: ToolCall) -> str:
+        """Tool name for progress events: only registered names, never model-chosen text."""
+        return call.name if self._registry.get(call.name) is not None else "unknown"
 
     def _tool_message(self, call: ToolCall, text: str) -> ChatMessage:
         return ChatMessage("tool", from_model(text), tool_call_id=call.id)
