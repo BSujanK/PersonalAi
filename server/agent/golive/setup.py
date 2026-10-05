@@ -26,6 +26,7 @@ from agent.connectors.google_auth import (
 )
 from agent.core.netguard import UnsafeBindAddress, validate_bind_hosts
 from agent.golive import probes
+from agent.golive.restart import restart_server
 from agent.golive.system import System
 from agent.store.keystore import KeyStore
 
@@ -535,8 +536,7 @@ class _Wizard:
                 "Settings changed during setup; restart the task so it picks them up?", True
             )
         ):
-            self._powershell(["-Command", f"Stop-ScheduledTask -TaskName '{probes.TASK_NAME}'"])
-            self._start_task()
+            restart_server(self.system, self._settings(), out=self.p.say)
 
     def _powershell(self, args: Sequence[str], *, bypass: bool = False) -> int:
         argv = ["powershell", "-NoProfile"]

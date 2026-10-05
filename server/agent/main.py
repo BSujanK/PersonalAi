@@ -1,4 +1,4 @@
-"""Command-line entry point: ``serve`` (default) and ``pair``."""
+"""Command-line entry point: ``serve`` (default), ``pair``, ``restart`` and friends."""
 
 from __future__ import annotations
 
@@ -29,6 +29,8 @@ from agent.core.redact import Redactor
 from agent.core.tools import ToolRegistry
 from agent.finance.services import FinanceServices, setup_finance
 from agent.golive.doctor import run_doctor
+from agent.golive.probes import SERVER_DIR
+from agent.golive.restart import log_path, restart_server
 from agent.golive.setup import STEP_IDS, ConsolePrompter, run_setup
 from agent.golive.system import RealSystem
 from agent.mail.classify import MailClassifier, build_classifier_llm
@@ -54,7 +56,7 @@ from agent.workspace.deadlines import DeadlineScanResult
 from agent.workspace.services import WorkspaceServices, deadline_proposer, setup_workspace
 
 EXIT_REFUSED = 2
-SERVER_DIR = Path(__file__).resolve().parents[1]
+LOG_MAX_BYTES = 5 * 1024 * 1024
 
 
 def _refuse(message: str) -> int:
@@ -171,7 +173,19 @@ def _configure_logging() -> None:
     logger.setLevel(logging.INFO)
 
 
+def _redirect_console_to_log(settings: Settings) -> None:
+    """pythonw has no console (stdout and stderr are None): write to ``agent.log`` instead."""
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    path = log_path(settings)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and path.stat().st_size > LOG_MAX_BYTES:
+        path.replace(path.with_name(path.name + ".1"))
+    sys.stdout = sys.stderr = path.open("a", encoding="utf-8", buffering=1)
+
+
 def _serve(settings: Settings) -> int:
+    _redirect_console_to_log(settings)
     _configure_logging()
     registry = ToolRegistry()
     mail: MailServices | None = None
@@ -332,6 +346,10 @@ def _doctor(settings: Settings, as_json: bool) -> int:
     )
 
 
+def _restart(settings: Settings) -> int:
+    return restart_server(RealSystem(), settings)
+
+
 def _setup(redo: list[str]) -> int:
     try:
         assert_secure_backend()
@@ -389,6 +407,7 @@ def main(
     )
     doctor = sub.add_parser("doctor", help="check every go-live prerequisite (read-only)")
     doctor.add_argument("--json", action="store_true", help="print the results as JSON")
+    sub.add_parser("restart", help="restart the server's scheduled task (Windows)")
     setup = sub.add_parser(
         "setup", help="interactive go-live wizard (Windows); asks before every change"
     )
@@ -404,6 +423,8 @@ def main(
         return _refuse(f"invalid configuration: {exc}")
     if args.command == "doctor":
         return _doctor(settings, args.json)
+    if args.command == "restart":
+        return _restart(settings)
     if args.command == "pair":
         return _pair(settings, args.url)
     if args.command == "devices":

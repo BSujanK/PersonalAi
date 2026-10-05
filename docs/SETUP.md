@@ -57,7 +57,7 @@ Every value is written as a Windows **user** environment variable (no file in th
 uv run python -m agent doctor
 ```
 
-It prints a pass/fail line per prerequisite, with the exact command that fixes each failure: Python and uv, the keyring backend, the NVIDIA key and that the configured models exist, Ollama and its context length, each Google account's granted services, the bind addresses and Tailscale, the database, its key and the audit chain, the scheduled task, power settings, a paired phone, and the last mail, SMS and Classroom sync times. It exits with 0 only when every required check passes (the sync times are informational). `--json` prints the same as JSON. It never prints keys, tokens, mail or SMS. Run it again whenever something seems off.
+It prints a pass/fail line per prerequisite, with the exact command that fixes each failure: Python and uv, the keyring backend, the NVIDIA key and that the configured models exist, Ollama and its context length, each Google account's granted services, the bind addresses and Tailscale, the database, its key and the audit chain, the scheduled task and whether the running server is up to date with the code on disk, power settings, a paired phone, and the last mail, SMS and Classroom sync times. It exits with 0 only when every required check passes (the sync times are informational). `--json` prints the same as JSON. It never prints keys, tokens, mail or SMS. Run it again whenever something seems off.
 
 Then go through the first sync checks in [A12](#a12-first-sync-checks).
 
@@ -203,10 +203,23 @@ On the phone:
 1. Enrol a fingerprint or face unlock (**Settings > Security**) if you have not. Pairing fails without one; there is no fallback.
 2. **Settings > Apps > PersonalAi > Battery**: set **Unrestricted**, so SMS upload and background sync are not killed. Do the same for Tailscale.
 
+### After updating the code
+
+After every `git pull` (or any other change to the code), run from `server\`:
+
+```powershell
+uv sync
+uv run python -m agent restart
+```
+
+The running server keeps the old code until it is restarted. `agent restart` stops the scheduled task, makes sure no old server is still holding the port (it only ever stops the PersonalAi server, never another program), starts the task again and waits until the new server is listening. `agent doctor` warns when the running server started before the code on disk last changed.
+
+If you installed the scheduled task before this change, run `powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1` once more first. The old task ran PowerShell, then uv, then Python, and stopping it left Python running on the port; `agent doctor` warns about this too.
+
 ### A9. Start the server at logon (Task Scheduler)
 
-1. From `server\`: `powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1`. It registers the task "PersonalAi agent" for your user: it starts one minute after logon (so Tailscale has its address), restarts every minute if the server exits, keeps running on battery, and runs hidden. It needs no admin rights and stores no secrets.
-2. `Start-ScheduledTask -TaskName "PersonalAi agent"`, then repeat the check from step A7.3.
+1. From `server\`: `powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1`. It registers the task "PersonalAi agent" for your user: it starts one minute after logon (so Tailscale has its address), restarts every minute if the server exits, keeps running on battery, and runs hidden. It needs no admin rights and stores no secrets. The task runs the server folder's `.venv\Scripts\pythonw.exe` directly, so run `uv sync` first. With no console, the server writes its log to `agent.log` next to the database (`%USERPROFILE%\.personalai\agent.log` by default); the log holds counts and error types only, never mail, SMS or keys.
+2. `uv run python -m agent restart` (or `Start-ScheduledTask -TaskName "PersonalAi agent"` the first time), then repeat the check from step A7.3.
 3. Check after a reboot: log in, wait two minutes, repeat step A7.3. The task runs only while you are logged in, because the keys are in your user's Credential Manager.
 
 ### A10. Power settings
@@ -252,7 +265,7 @@ uv run python -m agent restore --in D:\backups\personalai-2026-10-05.paibak     
 - Format: AES-256-GCM with a key derived from the passphrase by scrypt; the header is authenticated too, so any change to the file makes it fail to open. A backup never overwrites an existing file.
 - The backup does **not** hold the phone pairing, approval keys, Google tokens or the NVIDIA key. After restoring on a new laptop, redo steps A3 (sign-in only), A4 and A11 (or `agent setup --redo google --redo nvidia_key --redo pair`).
 - `restore` refuses to replace an existing database, or a different `db_key` in the keyring, unless you add `--force`. With `--force` the old database is renamed to `agent.db.pre-restore-<timestamp>` and the old key is kept in the keyring as `db_key.pre-restore-<timestamp>`; nothing is deleted.
-- Stop the scheduled task before restoring (`Stop-ScheduledTask -TaskName "PersonalAi agent"`) and start it again afterwards.
+- Stop the scheduled task before restoring (`Stop-ScheduledTask -TaskName "PersonalAi agent"`), and afterwards run `uv run python -m agent restart`.
 - Suggested habit: a backup each week to an external drive or a cloud folder; the file is safe to store there because it is encrypted.
 
 ## Configuration

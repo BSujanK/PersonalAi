@@ -30,6 +30,8 @@ from agent.core.clock import Clock
 from agent.core.llm import require_loopback
 from agent.core.netguard import validate_bind_hosts
 from agent.golive import probes
+from agent.golive.probes import SERVER_DIR
+from agent.golive.restart import INSTALL_FIX, RESTART_FIX
 from agent.golive.system import System
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
@@ -73,6 +75,7 @@ class _Ctx:
     keystore: KeyStore
     clock: Clock
     db: Database | None
+    server_dir: Path = SERVER_DIR
 
     @property
     def is_windows(self) -> bool:
@@ -505,7 +508,65 @@ def _check_task(ctx: _Ctx) -> CheckResult:
             f"installed but {state.status}",
             f'Start-ScheduledTask -TaskName "{probes.TASK_NAME}"',
         )
+    executable = probes.task_executable(ctx.system)
+    if executable is not None and executable.lower().endswith("powershell.exe"):
+        return CheckResult(
+            "scheduled_task",
+            title,
+            "warn",
+            True,
+            "uses the old PowerShell launcher; stopping it leaves the server running",
+            f"{INSTALL_FIX}\n{RESTART_FIX}",
+        )
     return CheckResult("scheduled_task", title, "pass", True, "Running")
+
+
+def _stamp(moment: datetime) -> str:
+    return moment.strftime("%Y-%m-%d %H:%M UTC")
+
+
+@_guard("server_process", "Running server", required=False)
+def _check_server(ctx: _Ctx) -> CheckResult:
+    title = "Running server"
+    if not ctx.is_windows:
+        return _skip_non_windows("server_process", title, required=False)
+    port = ctx.settings.port
+    found = probes.listener(ctx.system, port)
+    if found is None:
+        return CheckResult(
+            "server_process",
+            title,
+            "warn",
+            False,
+            f"nothing is listening on port {port}",
+            RESTART_FIX,
+        )
+    if not probes.is_agent_server(found.command_line):
+        return CheckResult(
+            "server_process",
+            title,
+            "warn",
+            False,
+            f"port {port} is held by another program (pid {found.pid})",
+        )
+    changed = probes.newest_code_mtime(ctx.server_dir)
+    if changed is not None and found.started_at < changed:
+        return CheckResult(
+            "server_process",
+            title,
+            "warn",
+            False,
+            "running code from before the last update "
+            f"(server started {_stamp(found.started_at)}, code changed {_stamp(changed)})",
+            RESTART_FIX,
+        )
+    return CheckResult(
+        "server_process",
+        title,
+        "pass",
+        False,
+        f"pid {found.pid}, started {_stamp(found.started_at)}",
+    )
 
 
 @_guard("power", "Power settings")
@@ -696,6 +757,7 @@ _CHECKS: tuple[_Check, ...] = (
     _check_database,
     _check_audit,
     _check_task,
+    _check_server,
     _check_power,
     _check_paired,
     _check_mail_sync,
@@ -715,9 +777,14 @@ def _open_existing_db(path: Path) -> Database | None:
 
 
 def run_checks(
-    settings: Settings, system: System, keystore: KeyStore, *, clock: Clock
+    settings: Settings,
+    system: System,
+    keystore: KeyStore,
+    *,
+    clock: Clock,
+    server_dir: Path = SERVER_DIR,
 ) -> list[CheckResult]:
-    ctx = _Ctx(settings, system, keystore, clock, _open_existing_db(settings.db_path))
+    ctx = _Ctx(settings, system, keystore, clock, _open_existing_db(settings.db_path), server_dir)
     results: list[CheckResult] = []
     try:
         for check in _CHECKS:

@@ -35,6 +35,7 @@ class FakeSystem:
         self.interactive: list[list[str]] = []
         self.ollama: list[str] | None = []
         self.task_status: str | None = None  # None: not installed
+        self.task_calls: list[str] = []  # Stop/Start run non-interactively by restart
         self.power_ok = False
         self.tailscale = True
         self.headers: list[Mapping[str, str]] = []
@@ -53,10 +54,25 @@ class FakeSystem:
             if self.task_status is None:
                 return CommandResult(1, "")
             return CommandResult(0, f"TaskName: x\nStatus: {self.task_status}\n")
+        if argv[0] == "powershell":
+            return self._powershell(argv[-1])
         if argv[0] == "powercfg":
             index = "0x00000000" if self.power_ok else "0x00000708"
             return CommandResult(0, f"Current AC Power Setting Index: {index}\n")
         return CommandResult(NOT_FOUND, "")
+
+    def _powershell(self, script: str) -> CommandResult:
+        if script.startswith("Stop-ScheduledTask"):
+            self.task_calls.append("stop")
+            self.task_status = "Ready"
+        elif script.startswith("Start-ScheduledTask"):
+            self.task_calls.append("start")
+            self.task_status = "Running"
+        elif "Get-NetTCPConnection" in script and self.task_status == "Running":
+            cmd = "C:\\app\\server\\.venv\\Scripts\\pythonw.exe -m agent serve"
+            started = "2026-10-05T11:00:00.0000000Z"
+            return CommandResult(0, json.dumps({"pid": 4242, "started": started, "cmd": cmd}))
+        return CommandResult(0, "")
 
     def run_interactive(self, argv: Sequence[str]) -> int:
         args = list(argv)
@@ -452,6 +468,7 @@ def test_task_restart_offered_when_settings_changed(harness: Harness) -> None:
     harness.complete_first_run()
     system = harness.system
     system.interactive.clear()
+    system.task_calls.clear()
     system.env.pop("PERSONALAI_BIND_HOSTS")
 
     code, _ = harness.run(
@@ -463,10 +480,8 @@ def test_task_restart_offered_when_settings_changed(harness: Harness) -> None:
     )
 
     assert code == 0
-    assert [a[-1] for a in system.interactive] == [
-        "Stop-ScheduledTask -TaskName 'PersonalAi agent'",
-        "Start-ScheduledTask -TaskName 'PersonalAi agent'",
-    ]
+    assert system.interactive == []
+    assert system.task_calls == ["stop", "start"]
 
 
 def test_bad_nvidia_listing_skips_models_without_leaking(harness: Harness) -> None:

@@ -3,8 +3,13 @@
   Registers (or replaces) the "PersonalAi agent" scheduled task for the current user (M7).
 
 .DESCRIPTION
-  The task starts `uv run python -m agent serve` from this repo's server folder at logon and
-  restarts it if it exits. It runs only while you are logged on, as you, because the secrets
+  The task starts the server folder's virtualenv Python directly (.venv\Scripts\pythonw.exe
+  -m agent serve) at logon and restarts it if it exits. There is no PowerShell or uv process in
+  between, so Stop-ScheduledTask stops the server itself and frees its port. pythonw has no
+  console window; the server writes its log next to the database (agent.log).
+
+  Run `uv sync` first so .venv exists. After updating the code, run `uv sync` and then
+  `uv run python -m agent restart`. It runs only while you are logged on, as you, because the secrets
   live in your Windows Credential Manager. It needs no admin rights and stores no secrets:
   configuration comes from your user environment variables (PERSONALAI_*), set beforehand.
 
@@ -18,17 +23,19 @@ param(
 $ErrorActionPreference = "Stop"
 
 $serverDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$uv = (Get-Command uv -ErrorAction Stop).Source
+$pythonw = Join-Path $serverDir ".venv\Scripts\pythonw.exe"
+if (-not (Test-Path $pythonw)) {
+    throw "$pythonw not found. Run 'uv sync' in $serverDir first."
+}
 $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 
 if (-not [Environment]::GetEnvironmentVariable("PERSONALAI_BIND_HOSTS", "User")) {
     Write-Warning "PERSONALAI_BIND_HOSTS is not set for your user; the server will bind 127.0.0.1 only and the phone cannot reach it."
 }
 
-# Hidden PowerShell host, so no console window sits open where closing it would stop the server.
-$command = "& '$uv' run --directory '$serverDir' python -m agent serve; exit `$LASTEXITCODE"
-$action = New-ScheduledTaskAction -Execute "powershell.exe" `
-    -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -Command `"$command`"" `
+# The server process is the task's own process: stopping the task stops the server. An earlier
+# version ran powershell -> uv -> python, and stopping the task left python holding the port.
+$action = New-ScheduledTaskAction -Execute $pythonw -Argument "-m agent serve" `
     -WorkingDirectory $serverDir
 # Start a minute after logon so Tailscale has its address before the server binds to it.
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user

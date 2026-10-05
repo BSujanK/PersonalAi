@@ -321,3 +321,56 @@ def test_mail_sync_records_each_account_separately() -> None:
     failure = last_failure(db, mail_status_name(bad))
     assert failure is not None
     assert failure[1] == "GoogleNotConfigured"
+
+
+def _no_console(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.stdout", None)
+    monkeypatch.setattr("sys.stderr", None)
+
+
+def test_serve_without_console_logs_to_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import sys
+
+    from agent.config import Settings
+
+    settings = Settings(db_path=tmp_path / "data" / "agent.db")
+    _no_console(monkeypatch)
+    main_module._redirect_console_to_log(settings)
+    stream = sys.stderr
+    assert stream is not None and sys.stdout is stream
+    print("first line")
+    print("second line", file=sys.stderr)
+    stream.close()
+    log = tmp_path / "data" / "agent.log"
+    assert log.read_text(encoding="utf-8") == "first line\nsecond line\n"
+    assert not log.with_name("agent.log.1").exists()
+
+
+def test_log_is_rotated_when_over_5_mb(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    import sys
+
+    from agent.config import Settings
+
+    log = tmp_path / "agent.log"
+    log.write_bytes(b"x" * (5 * 1024 * 1024 + 1))
+    older = tmp_path / "agent.log.1"
+    older.write_text("older", encoding="utf-8")
+    _no_console(monkeypatch)
+    main_module._redirect_console_to_log(Settings(db_path=tmp_path / "agent.db"))
+    stream = sys.stderr
+    assert stream is not None
+    print("fresh")
+    stream.close()
+    assert log.read_text(encoding="utf-8") == "fresh\n"
+    assert older.stat().st_size == 5 * 1024 * 1024 + 1
+
+
+def test_console_is_left_alone_when_present(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agent.config import Settings
+
+    main_module._redirect_console_to_log(Settings(db_path=tmp_path / "agent.db"))
+    assert not (tmp_path / "agent.log").exists()

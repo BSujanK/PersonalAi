@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +21,7 @@ from agent.connectors.google_auth import (
 )
 from agent.core.audit import AuditLog
 from agent.golive.doctor import CheckResult, run_checks, run_doctor
-from agent.golive.probes import POWER_FIX_COMMANDS
+from agent.golive.probes import POWER_FIX_COMMANDS, _listener_script
 from agent.golive.system import NOT_FOUND, CommandResult, HttpResult
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
@@ -50,6 +51,28 @@ POWERCFG = {
     "HIBERNATEIDLE": ("SUB_SLEEP", "HIBERNATEIDLE"),
     "LIDACTION": ("SUB_BUTTONS", "LIDACTION"),
 }
+
+SERVER_CMD = "C:\\app\\server\\.venv\\Scripts\\pythonw.exe -m agent serve"
+CODE_CHANGED = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
+SERVER_STARTED = datetime(2026, 10, 5, 11, 0, tzinfo=UTC)
+
+
+def listener_json(
+    pid: int = 4242, started: datetime = SERVER_STARTED, cmd: str = SERVER_CMD
+) -> CommandResult:
+    body = {"pid": pid, "started": started.strftime("%Y-%m-%dT%H:%M:%S.1234567Z"), "cmd": cmd}
+    return CommandResult(0, json.dumps(body))
+
+
+def powershell(script: str) -> tuple[str, ...]:
+    return ("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+
+
+TASK_EXE = powershell(
+    '(Get-ScheduledTask -TaskName "PersonalAi agent").Actions | '
+    "Select-Object -First 1 -ExpandProperty Execute"
+)
+LISTENER = powershell(_listener_script(8765))
 
 SCHTASKS_RUNNING = (
     "Folder: \\\nHostName:      LAPTOP-EXAMPLE\nTaskName:      \\PersonalAi agent\n"
@@ -112,10 +135,18 @@ class Env:
     keystore: KeyStore
     clock: FakeClock
     db_key: bytes
+    server_dir: Path
 
     def results(self) -> dict[str, CheckResult]:
         return {
-            r.id: r for r in run_checks(self.settings, self.system, self.keystore, clock=self.clock)
+            r.id: r
+            for r in run_checks(
+                self.settings,
+                self.system,
+                self.keystore,
+                clock=self.clock,
+                server_dir=self.server_dir,
+            )
         }
 
     def result(self, check_id: str) -> CheckResult:
@@ -196,6 +227,8 @@ def env(tmp_path: Path) -> Env:
         commands={
             TAILSCALE: CommandResult(0, f"{TS_IP}\n"),
             SCHTASKS: CommandResult(0, SCHTASKS_RUNNING),
+            TASK_EXE: CommandResult(0, "C:\\app\\server\\.venv\\Scripts\\pythonw.exe\r\n"),
+            LISTENER: listener_json(),
             **{
                 ("powercfg", "/qh", "SCHEME_CURRENT", *args): CommandResult(0, powercfg_output(0))
                 for args in POWERCFG.values()
@@ -215,7 +248,12 @@ def env(tmp_path: Path) -> Env:
             OLLAMA_URL: HttpResult(200, {"models": [{"name": "qwen2.5:3b"}]}),
         },
     )
-    return Env(settings, system, keystore, clock, db_key)
+    server_dir = tmp_path / "server"
+    (server_dir / "agent").mkdir(parents=True)
+    for name in ("agent/main.py", "uv.lock"):
+        (server_dir / name).write_text("x", encoding="utf-8")
+        os.utime(server_dir / name, (CODE_CHANGED.timestamp(), CODE_CHANGED.timestamp()))
+    return Env(settings, system, keystore, clock, db_key, server_dir)
 
 
 def test_healthy_machine_passes_everything(env: Env) -> None:
@@ -234,6 +272,7 @@ def test_healthy_machine_passes_everything(env: Env) -> None:
         "database",
         "audit_chain",
         "scheduled_task",
+        "server_process",
         "power",
         "paired_device",
         "last_mail_sync",
@@ -580,6 +619,54 @@ def test_scheduled_task_unreadable_status_warns(env: Env) -> None:
     env.system.commands[SCHTASKS] = CommandResult(0, SCHTASKS_LOCALISED)
     result = env.result("scheduled_task")
     assert (result.status, result.required) == ("warn", True)
+
+
+def test_scheduled_task_old_powershell_launcher_warns(env: Env) -> None:
+    env.system.commands[TASK_EXE] = CommandResult(0, "C:\\Windows\\System32\\POWERSHELL.EXE\n")
+    result = env.result("scheduled_task")
+    assert (result.status, result.required) == ("warn", True)
+    assert "old PowerShell launcher" in result.detail
+    assert result.fix.splitlines() == [
+        "powershell -ExecutionPolicy Bypass -File scripts\\install_task.ps1",
+        "uv run python -m agent restart",
+    ]
+
+
+def test_server_process_healthy(env: Env) -> None:
+    result = env.result("server_process")
+    assert (result.status, result.required) == ("pass", False)
+    assert result.detail == "pid 4242, started 2026-10-05 11:00 UTC"
+
+
+def test_server_process_nothing_listening(env: Env) -> None:
+    env.system.commands[LISTENER] = CommandResult(0, "")
+    result = env.result("server_process")
+    assert (result.status, result.required) == ("warn", False)
+    assert result.detail == "nothing is listening on port 8765"
+    assert result.fix == "uv run python -m agent restart"
+
+
+def test_server_process_foreign_program(env: Env) -> None:
+    env.system.commands[LISTENER] = listener_json(pid=77, cmd="C:\\other\\thing.exe --port 8765")
+    result = env.result("server_process")
+    assert result.status == "warn"
+    assert result.detail == "port 8765 is held by another program (pid 77)"
+
+
+def test_server_process_stale_code(env: Env) -> None:
+    env.system.commands[LISTENER] = listener_json(started=CODE_CHANGED - timedelta(hours=3))
+    result = env.result("server_process")
+    assert result.status == "warn"
+    assert result.detail == (
+        "running code from before the last update "
+        "(server started 2026-10-04 09:00 UTC, code changed 2026-10-04 12:00 UTC)"
+    )
+    assert result.fix == "uv run python -m agent restart"
+
+
+def test_server_process_skipped_off_windows(env: Env) -> None:
+    env.system.platform = "linux"
+    assert env.result("server_process").status == "skip"
 
 
 def test_power_sleep_enabled(env: Env) -> None:

@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 import re
+import shlex
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 
 from agent.golive.system import System
 
 TASK_NAME = "PersonalAi agent"
+SERVER_DIR = Path(__file__).resolve().parents[2]
 _TAILSCALE_V4 = ipaddress.ip_network("100.64.0.0/10")
 _AC_INDEX = re.compile(r"Current AC Power Setting Index:\s*0x([0-9a-fA-F]+)")
 _STATUS = re.compile(r"^\s*Status:\s*(.+?)\s*$", re.MULTILINE)
@@ -51,6 +56,83 @@ def scheduled_task(system: System, name: str = TASK_NAME) -> TaskState:
         return TaskState(exists=False)
     match = _STATUS.search(result.stdout)
     return TaskState(exists=True, status=match.group(1) if match else None)
+
+
+def _powershell(system: System, script: str) -> str | None:
+    """Stdout of a one-off PowerShell script, or ``None`` if it failed or printed nothing."""
+    result = system.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script])
+    text = result.stdout.strip()
+    return text if result.returncode == 0 and text else None
+
+
+def task_executable(system: System, name: str = TASK_NAME) -> str | None:
+    """The program the task's first action runs (``Execute``), or ``None`` if unreadable."""
+    return _powershell(
+        system,
+        f'(Get-ScheduledTask -TaskName "{name}").Actions | '
+        "Select-Object -First 1 -ExpandProperty Execute",
+    )
+
+
+@dataclass(frozen=True)
+class ListenerInfo:
+    pid: int
+    started_at: datetime  # aware, UTC
+    command_line: str  # may be empty when Windows hides it
+
+
+def _listener_script(port: int) -> str:
+    return (
+        f"$c = Get-NetTCPConnection -LocalPort {port} -State Listen "
+        "-ErrorAction SilentlyContinue | Select-Object -First 1; "
+        "if (-not $c) { exit 0 }; "
+        "$p = Get-Process -Id $c.OwningProcess -ErrorAction Stop; "
+        '$w = Get-CimInstance Win32_Process -Filter "ProcessId=$($c.OwningProcess)"; '
+        "[pscustomobject]@{pid = $p.Id; "
+        "started = $p.StartTime.ToUniversalTime().ToString('o'); "
+        "cmd = $w.CommandLine} | ConvertTo-Json -Compress"
+    )
+
+
+def listener(system: System, port: int) -> ListenerInfo | None:
+    """The process listening on ``port``; ``None`` if there is none or it could not be read."""
+    output = _powershell(system, _listener_script(port))
+    if output is None:
+        return None
+    try:
+        data = json.loads(output)
+        pid = data["pid"]
+        started = datetime.fromisoformat(data["started"])
+        command_line = data.get("cmd") or ""
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None
+    if isinstance(pid, bool) or not isinstance(pid, int) or not isinstance(command_line, str):
+        return None
+    started = started.replace(tzinfo=UTC) if started.tzinfo is None else started.astimezone(UTC)
+    return ListenerInfo(pid, started, command_line)
+
+
+def is_agent_server(command_line: str) -> bool:
+    """True for ``... -m agent`` or ``... -m agent serve`` (serve is the default command)."""
+    try:
+        words = [w.strip("\"'") for w in shlex.split(command_line, posix=False)]
+    except ValueError:
+        return False
+    for index, word in enumerate(words[:-1]):
+        if word == "-m" and words[index + 1] == "agent":
+            rest = words[index + 2 :]
+            return not rest or rest[0] == "serve"
+    return False
+
+
+def newest_code_mtime(server_dir: Path) -> datetime | None:
+    """Newest change time over the agent package's Python files and ``uv.lock``."""
+    try:
+        files = [*(server_dir / "agent").rglob("*.py"), server_dir / "uv.lock"]
+        newest = max(f.stat().st_mtime for f in files if f.is_file())
+    except (OSError, ValueError):
+        return None
+    return datetime.fromtimestamp(newest, UTC)
 
 
 @dataclass(frozen=True)
