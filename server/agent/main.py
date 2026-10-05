@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import ipaddress
 import json
 import sys
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from pathlib import Path
 
 import segno
 import uvicorn
@@ -18,6 +20,7 @@ from agent.config import Settings
 from agent.connectors.gmail_google import build_gmail_api
 from agent.connectors.google_auth import GoogleAuth
 from agent.core.approvals import ApprovalEngine
+from agent.core.audit import AuditLog
 from agent.core.clock import utcnow
 from agent.core.llm import build_default_client
 from agent.core.netguard import UnsafeBindAddress, validate_bind_hosts
@@ -37,8 +40,10 @@ from agent.scheduler import (
     Job,
     start_jobs,
 )
+from agent.store.backup import BackupError, create_backup, restore_backup
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
+from agent.store.devices import list_devices, revoke_devices
 from agent.store.keystore import InsecureKeyringError, KeyStore, assert_secure_backend
 from agent.workspace.services import WorkspaceServices, deadline_proposer, setup_workspace
 
@@ -46,7 +51,7 @@ EXIT_REFUSED = 2
 
 
 def _refuse(message: str) -> int:
-    print(f"refusing to start: {message}", file=sys.stderr)
+    print(f"refused: {message}", file=sys.stderr)
     return EXIT_REFUSED
 
 
@@ -186,7 +191,7 @@ def _pair(settings: Settings, url: str | None) -> int:
     if phone_url is None:
         print(
             "No Tailscale bind address is configured (PERSONALAI_BIND_HOSTS), so the phone "
-            "cannot reach this server. Pass --url http://<laptop>.<tailnet>.ts.net:PORT or "
+            "cannot reach this server. Pass --url http://100.x.y.z:PORT (Tailscale IP) or "
             "enter the code by hand."
         )
     else:
@@ -194,17 +199,106 @@ def _pair(settings: Settings, url: str | None) -> int:
         print("Scan this with the PersonalAi app (Settings > Pair):")
         segno.make(payload, error="m").terminal(compact=True)
         print(f"Server: {phone_url}")
+    active = [d for d in list_devices(db) if not d["revoked"]]
+    if active:
+        print(
+            f"{len(active)} device(s) already paired. After pairing, remove old phones with "
+            "`agent devices` and `agent revoke --device ID`."
+        )
     print(f"Pairing code: {code}")
     print(f"Valid for {settings.pairing_window_seconds} seconds, single use.")
     return 0
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def _devices(settings: Settings) -> int:
+    db = Database(settings.db_path)
+    devices = list_devices(db)
+    if not devices:
+        print("No paired devices.")
+    for d in devices:
+        state = "revoked" if d["revoked"] else "active"
+        print(f"{d['id']}  {state:7}  {d['created_at']}  {d['name']}")
+    return 0
+
+
+def _revoke(settings: Settings, device_ids: list[str], revoke_all: bool) -> int:
+    try:
+        assert_secure_backend()
+    except InsecureKeyringError as exc:
+        return _refuse(str(exc))
+    db = Database(settings.db_path)
+    if revoke_all:
+        device_ids = [d["id"] for d in list_devices(db) if not d["revoked"]]
+    done = revoke_devices(db, KeyStore(), AuditLog(db, utcnow), device_ids)
+    for device_id in done:
+        print(f"Revoked {device_id}")
+    missing = sorted(set(device_ids) - set(done))
+    for device_id in missing:
+        print(f"Not an active device: {device_id}", file=sys.stderr)
+    return 1 if missing else 0
+
+
+def _backup(settings: Settings, out_path: Path, read_passphrase: Callable[[str], str]) -> int:
+    try:
+        assert_secure_backend()
+        passphrase = read_passphrase("Backup passphrase: ")
+        if read_passphrase("Repeat passphrase: ") != passphrase:
+            return _refuse("passphrases do not match")
+        created_at = utcnow()
+        create_backup(settings.db_path, out_path, passphrase, KeyStore(), lambda: created_at)
+    except (InsecureKeyringError, BackupError) as exc:
+        return _refuse(str(exc))
+    print(f"Backup written: {out_path} ({out_path.stat().st_size} bytes)")
+    print(f"Created at: {created_at.isoformat()}")
+    return 0
+
+
+def _restore(
+    settings: Settings, in_path: Path, force: bool, read_passphrase: Callable[[str], str]
+) -> int:
+    try:
+        assert_secure_backend()
+        passphrase = read_passphrase("Backup passphrase: ")
+        restore_backup(in_path, settings.db_path, passphrase, KeyStore(), force=force)
+    except (InsecureKeyringError, BackupError) as exc:
+        return _refuse(str(exc))
+    print(f"Restored database: {settings.db_path}")
+    print("Re-pair the phone (pair) and re-authorise Google and the NVIDIA key before serving.")
+    return 0
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    read_passphrase: Callable[[str], str] = getpass.getpass,
+) -> int:
     parser = argparse.ArgumentParser(prog="agent")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("serve", help="run the server (default)")
     pair = sub.add_parser("pair", help="open a pairing window and print the code and QR")
-    pair.add_argument("--url", help="server URL for the phone, e.g. a MagicDNS name")
+    pair.add_argument("--url", help="server URL for the phone, e.g. http://100.x.y.z:8765")
+    sub.add_parser("devices", help="list paired devices")
+    revoke = sub.add_parser(
+        "revoke", help="revoke paired devices: their token stops working and approval key is erased"
+    )
+    which = revoke.add_mutually_exclusive_group(required=True)
+    which.add_argument("--device", action="append", default=[], help="device id (repeatable)")
+    which.add_argument("--all", action="store_true", help="revoke every active device")
+    backup = sub.add_parser(
+        "backup", help="write an encrypted backup of the database and its encryption key"
+    )
+    backup.add_argument("--out", required=True, type=Path, help="new backup file to create")
+    restore = sub.add_parser(
+        "restore",
+        help="restore a backup; STOP THE SERVER FIRST. Phone pairing and Google/NVIDIA "
+        "credentials are not in the backup and must be set up again",
+    )
+    restore.add_argument("--in", dest="in_path", required=True, type=Path, help="backup file")
+    restore.add_argument(
+        "--force",
+        action="store_true",
+        help="replace an existing database (kept aside as .pre-restore-<timestamp>) and db_key",
+    )
     args = parser.parse_args(argv)
     try:
         settings = Settings.from_env()
@@ -212,4 +306,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _refuse(f"invalid configuration: {exc}")
     if args.command == "pair":
         return _pair(settings, args.url)
+    if args.command == "devices":
+        return _devices(settings)
+    if args.command == "revoke":
+        return _revoke(settings, args.device, args.all)
+    if args.command == "backup":
+        return _backup(settings, args.out, read_passphrase)
+    if args.command == "restore":
+        return _restore(settings, args.in_path, args.force, read_passphrase)
     return _serve(settings)

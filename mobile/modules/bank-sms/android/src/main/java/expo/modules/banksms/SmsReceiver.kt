@@ -15,6 +15,7 @@ class SmsReceiver : BroadcastReceiver() {
     if (!SmsFilter.isBank(sender, SmsQueue.allowed(context))) return
     // Multipart messages arrive as several PDUs from one sender; join them in order.
     val body = parts.joinToString("") { it.messageBody ?: "" }
+    if (SmsFilter.isOtp(body)) return
     SmsQueue.add(context, listOf(Triple(sender, body, parts[0].timestampMillis)))
   }
 }

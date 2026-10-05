@@ -33,7 +33,9 @@ class BankSmsModule : Module() {
         while (it.moveToNext()) {
           val sender = it.getString(0) ?: continue
           if (!SmsFilter.isBank(sender, allowed)) continue
-          found.add(Triple(sender, it.getString(1) ?: "", it.getLong(2)))
+          val body = it.getString(1) ?: ""
+          if (SmsFilter.isOtp(body)) continue
+          found.add(Triple(sender, body, it.getLong(2)))
         }
       }
       SmsQueue.add(context, found)

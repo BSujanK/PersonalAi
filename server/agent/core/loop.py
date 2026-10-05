@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,13 +30,32 @@ SYSTEM_PROMPT = (
 )
 STEP_LIMIT_REPLY = "I stopped after too many steps."
 
-_UNTRUSTED_TAG = re.compile(r"<(/?\s*untrusted_data)", re.IGNORECASE)
+
+def _fullwidth(ch: str) -> str:
+    return chr(ord(ch) + 0xFEE0)  # U+FF01..U+FF5E mirror ASCII 0x21..0x7E
+
+
+def _tag_pattern() -> re.Pattern[str]:
+    """``<`` + optional ``/`` + ``untrusted_data``, any case, ASCII or fullwidth, any spacing.
+
+    Format characters (zero-width, bidi) are removed before matching, so they cannot split it.
+    """
+    letters = "".join(
+        f"[{re.escape(c)}{re.escape(c.upper())}{_fullwidth(c)}{_fullwidth(c.upper())}]"
+        for c in "untrusted_data"
+    )
+    return re.compile(rf"[<\uFE64\uFF1C](\s*[/\uFF0F]?\s*{letters})")
+
+
+_UNTRUSTED_TAG = _tag_pattern()
 _BAD_SOURCE_CHARS = re.compile(r"[^a-z0-9_.-]")
 
 
 def wrap_untrusted(source: str, text: str) -> str:
     safe_source = _BAD_SOURCE_CHARS.sub("_", source.lower())
-    neutral = _UNTRUSTED_TAG.sub("\u2039\\1", text)
+    # Dropping invisible format characters only removes framing tricks, never visible data.
+    visible = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+    neutral = _UNTRUSTED_TAG.sub("\u2039\\1", visible)
     return f'<untrusted_data source="{safe_source}">\n{neutral}\n</untrusted_data>'
 
 
