@@ -23,7 +23,7 @@ describe('normaliseServerUrl', () => {
     'https://evil.com.ts.net.evil.com',
     'http://100.64.0.1/x',
     'http://100.64.0.1:8765?x=1',
-    'http://user:pw@100.64.0.1:8765',
+    'http://user:pw@[fd7a:115c:a1e0::1]:8765',
     'ftp://100.64.0.1',
     'http://[fd7a:115c:a1e1::1]:8765',
     'http://100.064.0.1',
