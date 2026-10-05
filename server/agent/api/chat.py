@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from agent.core.llm import ChatMessage, LLMUnavailable, MissingApiKeyError, ToolCall
+from agent.core.llm import ChatMessage, LLMNotConfigured, LLMUnavailable, ToolCall
 from agent.core.redact import RedactionMap, from_model
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
@@ -98,7 +98,7 @@ def _run_turn(state: Any, body: ChatRequest, conversation_id: str, *, is_new: bo
         result = state.loop.run(conversation_id, history, body.message, rmap)
     except LLMUnavailable:
         raise HTTPException(status_code=503, detail="llm unavailable") from None
-    except MissingApiKeyError:
+    except LLMNotConfigured:
         raise HTTPException(status_code=503, detail="llm not configured") from None
     now = state.clock().isoformat()
     with db.transaction():

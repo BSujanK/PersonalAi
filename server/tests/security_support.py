@@ -15,7 +15,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
@@ -26,7 +26,7 @@ from agent.api.app import create_app
 from agent.api.pair import open_pairing_window
 from agent.config import Settings
 from agent.connectors.gmail import GmailApi
-from agent.core.llm import ChatMessage, LLMResponse, ToolCall
+from agent.core.llm import ChatMessage, LLMClient, LLMResponse, ToolCall
 from agent.core.policy import expected_signature, signature_message
 from agent.core.redact import from_model
 from agent.core.tools import ToolKind, ToolRegistry
@@ -307,8 +307,18 @@ class World:
         }
 
 
-def build_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch | None = None) -> World:
-    """Wire everything the way ``agent.main._serve`` does, over fakes, and pair a device."""
+def build_world(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch | None = None,
+    *,
+    llm: LLMClient | None = None,
+    max_agent_steps: int = 60,
+) -> World:
+    """Wire everything the way ``agent.main._serve`` does, over fakes, and pair a device.
+
+    ``llm`` replaces the default ``RecordingLLM``; only the model evaluation script does that, and
+    it never uses ``World.llm``.
+    """
     db = Database(":memory:")
     clock = FakeClock()
     keystore = KeyStore()
@@ -322,7 +332,7 @@ def build_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch | None = None) -
         classroom_accounts=(COLLEGE,),
         drive_accounts=(ME,),
         file_roots=(str(files_root),),
-        max_agent_steps=60,
+        max_agent_steps=max_agent_steps,
     )
     registry = ToolRegistry()
     finance = setup_finance(settings, db, db_key, registry, clock)
@@ -346,20 +356,21 @@ def build_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch | None = None) -
     patch.setattr(workspace_services, "build_drive_api", lambda _a, _auth: drive)
     workspace = setup_workspace(settings, db, db_key, registry, object(), clock)  # type: ignore[arg-type]
 
-    llm = RecordingLLM()
+    model = llm if llm is not None else RecordingLLM()
     app = create_app(
         settings,
         db=db,
         keystore=keystore,
-        llm=llm,
+        llm=model,
         registry=registry,
         clock=clock,
         mail=mail,
         finance=finance,
     )
     client = TestClient(app)
+    recorder = cast(RecordingLLM, model)
     world = World(
-        app, client, db, clock, keystore, registry, llm, settings, gmail, calendars, classroom,
+        app, client, db, clock, keystore, registry, recorder, settings, gmail, calendars, classroom,
         drive, files_root, mail, finance, workspace,
     )  # fmt: skip
     code = open_pairing_window(db, clock, 300)

@@ -46,6 +46,32 @@ def test_settings_from_env() -> None:
     assert Settings.from_env({}).bind_hosts == ("127.0.0.1",)
 
 
+def test_model_settings_from_env() -> None:
+    s = Settings.from_env(
+        {
+            "PERSONALAI_MODEL_PRIMARY": " org/primary ",
+            "PERSONALAI_MODEL_FALLBACK": "org/fallback",
+            "PERSONALAI_MODEL_LONG": "org/long ",
+            "PERSONALAI_LONG_CONTEXT_TOKENS": "5000",
+        }
+    )
+    assert (s.model_primary, s.model_fallback, s.model_long) == (
+        "org/primary",
+        "org/fallback",
+        "org/long",
+    )
+    assert s.long_context_tokens == 5000
+    d = Settings.from_env({})
+    assert (d.model_primary, d.model_fallback, d.model_long) == ("", "", "")
+    assert d.long_context_tokens == 32000
+
+
+@pytest.mark.parametrize("value", ["0", "-5", "abc", ""])
+def test_long_context_tokens_must_be_positive_int(value: str) -> None:
+    with pytest.raises(ValueError, match="positive integer"):
+        Settings.from_env({"PERSONALAI_LONG_CONTEXT_TOKENS": value})
+
+
 def test_mail_settings_from_env() -> None:
     s = Settings.from_env(
         {
