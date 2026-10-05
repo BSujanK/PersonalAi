@@ -1,16 +1,8 @@
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
-import {
-  Body,
-  Button,
-  Card,
-  colors,
-  ErrorText,
-  Screen,
-  SectionTitle,
-  Title,
-} from '../../src/components/ui';
+import { Body, Card, Chip, ErrorText, SectionTitle } from '../../src/components/ui';
+import { Screen } from '../../src/components/Screen';
 import {
   CATEGORIES,
   PERIODS,
@@ -25,10 +17,18 @@ import {
 } from '../../src/lib/api';
 import { errorMessage } from '../../src/lib/format';
 import { usePolling } from '../../src/lib/usePolling';
+import { useThemedStyles, type Palette } from '../../src/theme';
 
 const MONEY_POLL_MS = 60_000;
 
+const makeStyles = (_p: Palette) => ({
+  chips: { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 8 },
+  row: { flexDirection: 'row' as const, justifyContent: 'space-between' as const, gap: 8 },
+  pressRow: { minHeight: 44, justifyContent: 'center' as const },
+});
+
 export default function Money() {
+  const styles = useThemedStyles(makeStyles);
   const [period, setPeriod] = useState<Period>('this_month');
   const [balances, setBalances] = useState<Balance[]>([]);
   const [summary, setSummary] = useState<SpendSummary | null>(null);
@@ -72,8 +72,7 @@ export default function Money() {
   }
 
   return (
-    <Screen refreshing={refreshing} onRefresh={() => void refresh()}>
-      <Title>Money</Title>
+    <Screen title="Money" menu refreshing={refreshing} onRefresh={() => void refresh()}>
       <ErrorText message={error} />
 
       <SectionTitle>Balances</SectionTitle>
@@ -93,13 +92,12 @@ export default function Money() {
       <SectionTitle>Spending</SectionTitle>
       <View style={styles.chips}>
         {PERIODS.map((p) => (
-          <Pressable
+          <Chip
             key={p}
+            label={p.replace(/_/g, ' ')}
+            selected={p === period}
             onPress={() => setPeriod(p)}
-            style={[styles.chip, p === period && styles.chipOn]}
-          >
-            <Body>{p.replace(/_/g, ' ')}</Body>
-          </Pressable>
+          />
         ))}
       </View>
       {summary ? (
@@ -122,7 +120,12 @@ export default function Money() {
       {txns.length === 0 ? <Body muted>No transactions in this period.</Body> : null}
       {txns.map((t) => (
         <Card key={t.id}>
-          <Pressable onPress={() => setEditing(editing === t.id ? null : t.id)}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${t.counterparty ?? 'Unknown'}, change category`}
+            style={styles.pressRow}
+            onPress={() => setEditing(editing === t.id ? null : t.id)}
+          >
             <View style={styles.row}>
               <Body>{t.counterparty ?? 'Unknown'}</Body>
               <Body>
@@ -136,10 +139,10 @@ export default function Money() {
           {editing === t.id ? (
             <View style={styles.chips}>
               {CATEGORIES.map((c) => (
-                <Button
+                <Chip
                   key={c}
                   label={c}
-                  tone={c === t.category ? 'primary' : 'plain'}
+                  selected={c === t.category}
                   onPress={() => void choose(t, c)}
                 />
               ))}
@@ -150,16 +153,3 @@ export default function Money() {
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  chip: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 16,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  chipOn: { backgroundColor: '#dbe8ff', borderColor: colors.primary },
-  row: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
-});

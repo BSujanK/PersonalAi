@@ -72,7 +72,7 @@ def test_stream_tool_step_then_answer_emits_reset() -> None:
     )
     api = _api(llm)  # type: ignore[arg-type]
     events = _stream(api, _auth(_pair(api)), {"message": "mail?"})
-    assert _names(events) == ["start", "token", "reset", "token", "token", "done"]
+    assert _names(events) == ["start", "token", "reset", "tool", "tool", "token", "token", "done"]
     assert events[2][1] == {}
     assert events[-1][1]["reply"] == "Nothing new."
 

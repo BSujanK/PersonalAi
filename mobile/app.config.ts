@@ -11,9 +11,15 @@ const config: ExpoConfig = {
   version: '0.1.0',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
+  icon: './assets/icon.png',
+  backgroundColor: '#F7F5F0',
   android: {
     package: 'com.bsujank.personalai',
     allowBackup: false,
+    adaptiveIcon: {
+      foregroundImage: './assets/adaptive-icon.png',
+      backgroundColor: '#2B6A5C',
+    },
     permissions: [
       'android.permission.RECEIVE_SMS',
       'android.permission.READ_SMS',

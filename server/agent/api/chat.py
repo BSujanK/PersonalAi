@@ -100,6 +100,7 @@ def _execute_turn(
     is_new: bool,
     on_text: Callable[[str], None] | None = None,
     on_reset: Callable[[], None] | None = None,
+    on_tool: Callable[[str, str], None] | None = None,
 ) -> ChatResponse:
     """Load history, run the loop and persist. The caller holds the conversation lock."""
     db: Database = state.db
@@ -113,7 +114,13 @@ def _execute_turn(
             raise _UnknownConversation
         history, rmap = loaded
     result = state.loop.run(
-        conversation_id, history, body.message, rmap, on_text=on_text, on_reset=on_reset
+        conversation_id,
+        history,
+        body.message,
+        rmap,
+        on_text=on_text,
+        on_reset=on_reset,
+        on_tool=on_tool,
     )
     now = state.clock().isoformat()
     with db.transaction():
@@ -186,6 +193,10 @@ def _stream_turn(
                     is_new=is_new,
                     on_text=lambda text: events.put(_sse("token", {"text": text})),
                     on_reset=lambda: events.put(_sse("reset", {})),
+                    # Tool names and status only: never arguments or results.
+                    on_tool=lambda name, status: events.put(
+                        _sse("tool", {"name": name, "status": status})
+                    ),
                 )
             events.put(_sse("done", response.model_dump()))
         except LLMUnavailable:

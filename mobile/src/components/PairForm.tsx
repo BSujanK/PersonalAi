@@ -1,13 +1,13 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRef, useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { pair } from '../lib/api';
 import { errorMessage } from '../lib/format';
 import { usePairing } from '../lib/PairingContext';
 import { savePairing } from '../lib/secureKeys';
 import { normaliseServerUrl, parsePairingQr } from '../lib/serverUrl';
-import { Body, Button, Card, colors, ErrorText } from './ui';
+import { Body, Button, Caption, Card, ErrorText, TextField } from './ui';
 
 const DEVICE_NAME = 'Android phone';
 
@@ -92,17 +92,17 @@ export function PairForm() {
         onPress={scanning ? () => setScanning(false) : () => void startScan()}
         disabled={busy}
       />
-      <Text style={styles.label}>Or enter by hand</Text>
-      <TextInput
-        style={styles.input}
+      <Caption>Or enter by hand</Caption>
+      <TextField
+        accessibilityLabel="Server address"
         placeholder="http://100.x.y.z:8765"
         autoCapitalize="none"
         autoCorrect={false}
         value={url}
         onChangeText={setUrl}
       />
-      <TextInput
-        style={styles.input}
+      <TextField
+        accessibilityLabel="Pairing code"
         placeholder="Pairing code"
         autoCapitalize="none"
         autoCorrect={false}
@@ -124,13 +124,4 @@ export function PairForm() {
 const styles = StyleSheet.create({
   wrap: { gap: 12 },
   camera: { height: 280, borderRadius: 10, overflow: 'hidden' },
-  label: { color: colors.muted, fontSize: 13 },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: 10,
-    backgroundColor: colors.card,
-    color: colors.text,
-  },
 });
