@@ -35,7 +35,7 @@ from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.devices import list_devices
 from agent.store.keystore import KeyStore, assert_secure_backend
-from agent.store.sync_status import CLASSROOM, SMS_INGEST, last_ok
+from agent.store.sync_status import CLASSROOM, MAIL, SMS_INGEST, last_failure, last_ok
 
 Status = Literal["pass", "fail", "warn", "skip"]
 
@@ -47,6 +47,10 @@ _TAILSCALE_NETS = (
     ipaddress.ip_network("fd7a:115c:a1e0::/48"),
 )
 _STALE_FACTOR = 3
+_GOOGLE_FIX = (
+    "fix the Google account checks above (token missing or scopes), "
+    "then restart: uv run python -m agent restart"
+)
 
 
 @dataclass(frozen=True)
@@ -570,6 +574,25 @@ def _freshness(
     return CheckResult(check_id, title, "pass", False, detail)
 
 
+def _with_failure(ctx: _Ctx, name: str, result: CheckResult, fix: str) -> CheckResult:
+    """Override a freshness result when the source's latest run is recorded as failed."""
+    failure = last_failure(ctx.db, name) if ctx.db is not None else None
+    if failure is None:
+        return result
+    when = _aware(failure.at).isoformat(timespec="minutes")
+    detail = f"{failure.reason} ({when}; last OK: {result.detail})"
+    if failure.partial:
+        return CheckResult(result.id, result.title, "warn", False, "partly failing: " + detail)
+    return CheckResult(
+        result.id,
+        result.title,
+        "fail",
+        False,
+        "failing: " + detail,
+        fix,
+    )
+
+
 def _mail_last_sync(ctx: _Ctx) -> datetime | None:
     """The oldest per-account sync time; ``None`` if any configured account never synced."""
     if ctx.db is None:
@@ -589,8 +612,17 @@ def _check_mail_sync(ctx: _Ctx) -> CheckResult:
     title = "Last mail sync"
     if not ctx.settings.mail_accounts:
         return CheckResult("last_mail_sync", title, "skip", False, "no mail accounts")
-    return _freshness(
-        "last_mail_sync", title, _mail_last_sync(ctx), ctx.clock(), ctx.settings.mail_poll_minutes
+    return _with_failure(
+        ctx,
+        MAIL,
+        _freshness(
+            "last_mail_sync",
+            title,
+            _mail_last_sync(ctx),
+            ctx.clock(),
+            ctx.settings.mail_poll_minutes,
+        ),
+        _GOOGLE_FIX,
     )
 
 
@@ -598,7 +630,13 @@ def _check_mail_sync(ctx: _Ctx) -> CheckResult:
 def _check_sms(ctx: _Ctx) -> CheckResult:
     title = "Last SMS ingest"
     last = last_ok(ctx.db, SMS_INGEST) if ctx.db is not None else None
-    return _freshness("last_sms_ingest", title, last, ctx.clock(), None)
+    return _with_failure(
+        ctx,
+        SMS_INGEST,
+        _freshness("last_sms_ingest", title, last, ctx.clock(), None),
+        "the phone sent bank SMS the parsers cannot read: check the sender and format of "
+        "unparsed messages (see docs/SETUP.md)",
+    )
 
 
 @_guard("last_classroom_sync", "Last Classroom sync", required=False)
@@ -607,8 +645,13 @@ def _check_classroom(ctx: _Ctx) -> CheckResult:
     if not ctx.settings.classroom_accounts:
         return CheckResult("last_classroom_sync", title, "skip", False, "no Classroom accounts")
     last = last_ok(ctx.db, CLASSROOM) if ctx.db is not None else None
-    return _freshness(
-        "last_classroom_sync", title, last, ctx.clock(), ctx.settings.deadline_poll_minutes
+    return _with_failure(
+        ctx,
+        CLASSROOM,
+        _freshness(
+            "last_classroom_sync", title, last, ctx.clock(), ctx.settings.deadline_poll_minutes
+        ),
+        _GOOGLE_FIX,
     )
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -17,6 +17,8 @@ from agent.connectors.gmail import (
 )
 from agent.core.clock import Clock
 from agent.mail.store import MailStore
+from agent.store.db import Database
+from agent.store.sync_status import MAIL, record_scan
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +51,20 @@ def _history_messages(record: dict[str, Any], key: str) -> Iterable[dict[str, An
             yield entry
 
 
+def sync_and_record(
+    sync: MailSync, db: Database, accounts: Sequence[str]
+) -> dict[str, SyncStats | str]:
+    """The scheduled job: sync every account, then record the outcome for ``agent doctor``.
+
+    Mail is OK only if at least one account synced; if every account failed (a missing token, say)
+    the failure is recorded with its exception type names instead.
+    """
+    results = sync.sync_all(accounts)
+    failures = [r for r in results.values() if isinstance(r, str)]
+    record_scan(db, MAIL, sync.clock, succeeded=len(results) - len(failures), failures=failures)
+    return results
+
+
 class MailSync:
     def __init__(
         self,
@@ -65,6 +81,10 @@ class MailSync:
         self._clock = clock
         self._initial_days = initial_days
         self._on_new = on_new
+
+    @property
+    def clock(self) -> Clock:
+        return self._clock
 
     def sync_all(self, accounts: Iterable[str]) -> dict[str, SyncStats | str]:
         """Sync each account; a failure is recorded as the exception's type name."""

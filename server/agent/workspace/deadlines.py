@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -17,6 +17,7 @@ from agent.core.policy import MAX_PENDING_ACTIONS
 from agent.core.tools import Tool, ToolKind, ToolRegistry
 from agent.store.db import Database
 from agent.store.models import ActionStatus
+from agent.store.sync_status import CLASSROOM, record_failure, record_scan
 from agent.workspace.calendar_tools import (
     NO_GUESTS,
     check_account,
@@ -149,6 +150,18 @@ def register_deadline_tool(
 class _Scan:
     pending: int
     proposed: int = 0
+    scanned: int = 0  # accounts whose courses and coursework were read successfully
+    failures: list[str] = field(default_factory=list)  # exception type name per failed account
+
+
+@dataclass(frozen=True)
+class ScanReport:
+    """What one pass did. ``scanned`` counts accounts read successfully, ``failures`` the rest."""
+
+    proposed: int
+    scanned: int
+    failures: tuple[str, ...]
+    accounts: int
 
 
 def _line(text: Any, limit: int, default: str) -> str:
@@ -179,8 +192,12 @@ class DeadlineProposer:
 
     def run(self) -> int:
         """Propose new deadlines; returns how many proposals were created."""
+        return self.scan().proposed
+
+    def scan(self) -> ScanReport:
+        """Like :meth:`run`, but also says which accounts could be read (for sync status)."""
         if self._calendar_account is None:
-            return 0
+            return ScanReport(0, 0, (), len(self._accounts))
         scan = _Scan(self._approvals.pending_count())
         for account in self._accounts:
             if self._full(scan):
@@ -189,8 +206,24 @@ class DeadlineProposer:
                 self._scan_account(account, scan)
             except Exception as exc:  # one broken account must not stop the others
                 log.warning("deadline scan failed for an account: %s", type(exc).__name__)
+                scan.failures.append(type(exc).__name__)
+            else:
+                scan.scanned += 1
         log.info("deadline scan proposed %d actions", scan.proposed)
-        return scan.proposed
+        return ScanReport(scan.proposed, scan.scanned, tuple(scan.failures), len(self._accounts))
+
+    def run_and_record(self) -> int:
+        """The scheduled job: scan, then record Classroom as OK only if an account was read."""
+        report = self.scan()
+        if report.scanned == 0 and not report.failures and report.accounts:
+            # Nothing was read and nothing failed: too many approvals were already pending.
+            reason = "scan skipped: too many approvals are pending"
+            record_failure(self._db, CLASSROOM, self._clock, reason)
+        else:
+            record_scan(
+                self._db, CLASSROOM, self._clock, succeeded=report.scanned, failures=report.failures
+            )
+        return report.proposed
 
     @staticmethod
     def _full(scan: _Scan) -> bool:

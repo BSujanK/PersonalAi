@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from agent.connectors.gmail import GmailApi, MailMessage
 from agent.mail.store import MailStore
-from agent.mail.sync import MailSync
+from agent.mail.sync import MailSync, sync_and_record
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from tests.fakes_gmail import FakeGmailApi
@@ -224,6 +225,52 @@ def test_sync_all_isolates_failures() -> None:
     results = sync.sync_all(["bad@example.com", ACCOUNT])
     assert results["bad@example.com"] == "RuntimeError"
     assert getattr(results[ACCOUNT], "added", None) == 1
+
+
+def _mail_status(db: Database) -> tuple[Any, Any]:
+    from agent.store.sync_status import MAIL, last_failure, last_ok
+
+    return last_ok(db, MAIL), last_failure(db, MAIL)
+
+
+def test_mail_job_records_ok_when_an_account_synced() -> None:
+    sync, _store, api, db = _setup()
+    api.add_message("m1")
+    sync_and_record(sync, db, [ACCOUNT])
+    ok, failure = _mail_status(db)
+    assert ok is not None and failure is None
+
+
+def test_mail_job_records_the_failure_when_every_account_failed() -> None:
+    sync, _store, _api, db = _setup()
+
+    def api_for(account: str) -> GmailApi:
+        raise RuntimeError("no token")
+
+    sync._api_for = api_for
+    results = sync_and_record(sync, db, [ACCOUNT, "second@example.com"])
+    assert set(results.values()) == {"RuntimeError"}
+    ok, failure = _mail_status(db)
+    assert ok is None
+    assert failure is not None and not failure.partial
+    assert failure.reason == "2 of 2 account(s) failed: RuntimeError"
+
+
+def test_mail_job_with_one_broken_account_is_partial() -> None:
+    sync, _store, api, db = _setup()
+    api.add_message("m1")
+    real = sync._api_for
+
+    def api_for(account: str) -> GmailApi:
+        if account == "bad@example.com":
+            raise RuntimeError("no token")
+        return real(account)
+
+    sync._api_for = api_for
+    sync_and_record(sync, db, ["bad@example.com", ACCOUNT])
+    ok, failure = _mail_status(db)
+    assert ok is not None
+    assert failure is not None and failure.partial
 
 
 def _secret_mail(api: FakeGmailApi) -> None:

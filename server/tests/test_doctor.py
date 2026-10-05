@@ -25,7 +25,7 @@ from agent.golive.system import NOT_FOUND, CommandResult, HttpResult
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.keystore import KeyStore
-from agent.store.sync_status import CLASSROOM, SMS_INGEST, record_ok
+from agent.store.sync_status import CLASSROOM, MAIL, SMS_INGEST, record_failure, record_ok
 from tests.conftest import InMemoryKeyring
 from tests.support import START, FakeClock
 
@@ -665,6 +665,44 @@ def test_mail_sync_uses_the_oldest_account(env: Env) -> None:
     )
     db.close()
     assert env.result("last_mail_sync").detail.endswith("(4m ago)")
+
+
+def _fail_status(env: Env, name: str, reason: str, *, partial: bool = False) -> None:
+    db = Database(env.settings.db_path)
+    record_failure(db, name, lambda: env.clock() - timedelta(minutes=1), reason, partial=partial)
+    db.close()
+
+
+@pytest.mark.parametrize(
+    ("name", "check_id"),
+    [
+        (CLASSROOM, "last_classroom_sync"),
+        (MAIL, "last_mail_sync"),
+        (SMS_INGEST, "last_sms_ingest"),
+    ],
+)
+def test_recorded_failure_reports_fail_with_the_reason(env: Env, name: str, check_id: str) -> None:
+    _fail_status(env, name, "1 of 1 account(s) failed: GoogleNotConfigured")
+    result = env.result(check_id)
+    assert result.status == "fail"
+    assert "GoogleNotConfigured" in result.detail and "last OK:" in result.detail
+    assert result.fix
+    _, text = env.doctor()
+    assert f"[FAIL] {result.title}: failing: 1 of 1 account(s) failed" in text
+
+
+def test_partial_failure_is_a_warning(env: Env) -> None:
+    _fail_status(env, MAIL, "1 of 2 account(s) failed: HttpError", partial=True)
+    result = env.result("last_mail_sync")
+    assert result.status == "warn" and "HttpError" in result.detail
+
+
+def test_a_good_run_after_a_failure_reads_as_pass_again(env: Env) -> None:
+    _fail_status(env, CLASSROOM, "1 of 1 account(s) failed: GoogleNotConfigured")
+    db = Database(env.settings.db_path)
+    record_ok(db, CLASSROOM, env.clock)
+    db.close()
+    assert env.result("last_classroom_sync").status == "pass"
 
 
 # --- crashes never leak ----------------------------------------------------------------------

@@ -185,6 +185,26 @@ def test_serve_with_workspace_registers_jobs(
     ]
 
 
+def test_classroom_job_without_google_tokens_is_recorded_as_failing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agent.store.db import Database
+    from agent.store.sync_status import CLASSROOM, last_failure, last_ok
+
+    _serve_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("PERSONALAI_CALENDAR_ACCOUNTS", "me@example.com")
+    monkeypatch.setenv("PERSONALAI_CLASSROOM_ACCOUNTS", "student@example.edu")
+    captured, _ = _capture_jobs(monkeypatch)
+    assert main(["serve"]) == 0
+    [deadline_job] = [j for j in captured[0] if j.id == DEADLINE_JOB_ID]
+    deadline_job.run()  # no OAuth client or token in the (in-memory) keyring
+    db = Database(tmp_path / "agent.db")
+    assert last_ok(db, CLASSROOM) is None
+    failure = last_failure(db, CLASSROOM)
+    assert failure is not None
+    assert failure.reason == "1 of 1 account(s) failed: GoogleNotConfigured"
+
+
 @pytest.mark.parametrize(
     ("name", "value"),
     [
