@@ -12,6 +12,10 @@ from keyring.errors import PasswordDeleteError, PasswordSetError
 
 class InMemoryKeyring(KeyringBackend):
     priority = 1  # type: ignore[assignment]
+    # Never auto-discovered: keyring's chainer would otherwise add this test backend next to the
+    # real OS store in any process that merely imports it (e.g. scripts/eval_models.py). Tests
+    # install it explicitly with keyring.set_keyring, which does not check viability.
+    viable = False  # type: ignore[assignment]
 
     def __init__(self) -> None:
         super().__init__()

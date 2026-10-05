@@ -238,3 +238,11 @@ def test_interrupted_overwrite_keeps_old_value(size_limited_keyring: SizeLimited
         ks.set("k", "b" * 3000)
     assert ks.get("k") == "a" * 3000
     assert keyring.get_password(SERVICE, "k") is not None
+
+
+def test_test_keyrings_are_never_auto_discovered() -> None:
+    # Importing tests.conftest (as scripts/eval_models.py does) must not let keyring's chainer
+    # pick up the in-memory backends next to the real OS store.
+    discovered = {type(b) for b in chainer.ChainerBackend.backends}
+    assert InMemoryKeyring not in discovered
+    assert SizeLimitedKeyring not in discovered
