@@ -15,19 +15,156 @@ uv run pytest -q
 
 Tests mock every external API and use an in-memory keyring, so they need no network, accounts or OS keyring.
 
-## Laptop setup (M7)
+## Go-live guide (M7): Windows laptop and Android phone
 
-Placeholder checklist; the steps are filled in during phase M7, done on the laptop:
+Do these steps in order on the laptop (PowerShell, as your normal user, not as admin unless a step says so) and the phone. Each step ends with a check. Stop at the first check that fails.
 
-- [ ] Install Tailscale and note the laptop's Tailscale IP (`100.x.y.z`).
-- [ ] Install Python 3.12+ and `uv`; run `uv sync` in `server/`.
-- [ ] Confirm the Windows Credential Manager keyring is active (the server refuses to start otherwise).
-- [ ] Store the NVIDIA API key in the keyring under service `PersonalAi`, name `nvidia_api_key`.
-- [ ] Install Ollama and pull the local model (`qwen2.5:3b`).
-- [ ] Set `PERSONALAI_BIND_HOSTS` to `127.0.0.1,<tailscale ip>` and `PERSONALAI_OWNER_EMAILS` to your addresses.
-- [ ] Start with `uv run python -m agent serve`.
-- [ ] Pair the phone: `uv run python scripts/pair_phone.py`, then scan or enter the code in the app within 5 minutes.
-- [ ] Google OAuth and the phone's bank SMS reader (later phases).
+### 1. Laptop prerequisites
+
+1. Install [Python 3.12+](https://www.python.org/downloads/windows/), [uv](https://docs.astral.sh/uv/getting-started/installation/) and Git, then clone the repo, for example to `C:\Users\you\PersonalAi`.
+2. In `server\`, run `uv sync`.
+3. Check the keyring backend is Windows Credential Manager:
+   ```powershell
+   uv run python -c "import keyring; print(keyring.get_keyring())"
+   ```
+   It must print `WinVaultKeyring` (possibly inside a `ChainerBackend`). The server refuses to start on any other backend; there is no plaintext fallback.
+
+### 2. Tailscale
+
+1. Install [Tailscale](https://tailscale.com/download/windows) on the laptop and sign in.
+2. In the Tailscale admin console, open the laptop's machine menu and choose **Disable key expiry**, so the laptop does not drop off the tailnet after 180 days.
+3. Note the laptop's address: `tailscale ip -4` (a `100.x.y.z` address; it stays the same for this machine).
+4. Install Tailscale on the phone from the Play Store and sign in with the same account. In Android **Settings > Network > VPN > Tailscale**, turning on **Always-on VPN** keeps the phone connected.
+5. Check: from the phone's browser, `http://100.x.y.z:8765` will answer later, once the server runs (step 7).
+
+### 3. Google Cloud OAuth (production mode)
+
+1. At [console.cloud.google.com](https://console.cloud.google.com/), create a project, for example `personalai`.
+2. **APIs & Services > Library**: enable the Gmail API, Google Calendar API, Google Classroom API and Google Drive API.
+3. **Google Auth Platform > Branding / Audience** (the OAuth consent screen): user type **External**, app name `PersonalAi`, your address as support and developer contact. Add each Google account you will sign in with as a test user while you set up.
+4. **Audience > Publish app**, so the status is **In production**. This matters: in "Testing" mode refresh tokens expire after 7 days and the agent silently stops syncing. You do not need to submit for verification; Google shows a "Google hasn't verified this app" screen at sign-in, which you pass with **Advanced > Go to PersonalAi (unsafe)**. That is expected for a personal app used only by you.
+5. **Clients > Create client**, type **Desktop app**. Download the client JSON.
+6. From `server\`, authorise each account with the services you want it to use (scopes accumulate across runs, and `--client-secret` is only needed the first time):
+   ```powershell
+   uv run python scripts/setup_google_oauth.py --account you@example.com --services gmail,calendar,drive --client-secret C:\Users\you\Downloads\client_secret.json
+   uv run python scripts/setup_google_oauth.py --account you@college.example.edu --services gmail,classroom,drive
+   ```
+   A browser opens on `127.0.0.1`; sign in as that account and allow everything asked. The client JSON and the tokens go only into the keyring.
+7. Delete the downloaded client JSON.
+8. If the college Workspace admin blocks third-party apps (the sign-in shows "access blocked" or "admin_policy_enforced"), set up forwarding from the college mailbox to your personal Gmail instead, and leave the college account out of every `PERSONALAI_*_ACCOUNTS` variable. Classroom is then unavailable.
+9. Check: the script prints the account and the services it authorised, with no error.
+
+### 4. NVIDIA API key
+
+1. At [build.nvidia.com](https://build.nvidia.com/), sign in and generate an API key (it starts with `nvapi-`).
+2. Store it in the keyring. The command prompts for the value without echoing it; never put the key on the command line, in a file or in an environment variable:
+   ```powershell
+   uv run python -m keyring set PersonalAi nvidia_api_key
+   ```
+3. Check: `uv run python scripts/check_nvidia.py` prints `OK: <model> reachable and tool calling works`. It sends one fixed synthetic prompt, nothing personal.
+
+### 5. Ollama (local classifier and fallback)
+
+1. Install [Ollama for Windows](https://ollama.com/download) and let it run at startup (the default).
+2. `ollama pull qwen2.5:3b`
+3. Do not set `OLLAMA_HOST`; Ollama must stay on `127.0.0.1:11434`. The server refuses a non-loopback Ollama address.
+4. Check: `ollama run qwen2.5:3b "say ok"` answers.
+
+### 6. Configuration
+
+Set your user environment variables once (they hold no secrets). Replace the examples with your values; see [Configuration](#configuration) for every variable.
+
+```powershell
+$vars = @{
+  PERSONALAI_BIND_HOSTS        = "127.0.0.1,100.x.y.z"   # loopback plus the laptop's Tailscale IP
+  PERSONALAI_OWNER_EMAILS      = "you@example.com,you@college.example.edu"
+  PERSONALAI_MAIL_ACCOUNTS     = "you@example.com,you@college.example.edu"
+  PERSONALAI_CALENDAR_ACCOUNTS = "you@example.com"
+  PERSONALAI_CLASSROOM_ACCOUNTS= "you@college.example.edu"
+  PERSONALAI_DRIVE_ACCOUNTS    = "you@example.com,you@college.example.edu"
+  PERSONALAI_COLLEGE_DOMAINS   = "college.example.edu"
+  PERSONALAI_FILE_ROOTS        = "C:\Users\you\Documents\College;C:\Users\you\Notes"
+}
+foreach ($k in $vars.Keys) { [Environment]::SetEnvironmentVariable($k, $vars[$k], "User") }
+```
+
+Open a new PowerShell window afterwards so it sees the variables. The server refuses `0.0.0.0`, `::`, LAN addresses such as `192.168.x.x`, and anything else outside loopback and Tailscale.
+
+### 7. First run (in a terminal)
+
+1. From `server\`: `uv run python -m agent serve`. It prints nothing on success and keeps running. If it prints `refused: ...`, fix what it names.
+2. Windows Firewall may ask about Python. If the phone cannot reach the server later, add an inbound rule that only allows the tailnet (run PowerShell as admin once):
+   ```powershell
+   New-NetFirewallRule -DisplayName "PersonalAi (Tailscale only)" -Direction Inbound -Protocol TCP -LocalPort 8765 -RemoteAddress 100.64.0.0/10 -Action Allow
+   ```
+   Never allow it for all addresses.
+3. Check: `curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8765/today` prints `401` (the route exists and needs a device token).
+4. Stop it with Ctrl+C once the phone is paired and step 11 passes; step 9 makes it start on its own.
+
+### 8. Build and install the Android app
+
+The CI `android` job builds a **debug** APK on every PR (artifact `personalai-debug-apk`). That APK proves the native code compiles, but a debug build loads its JavaScript from a dev server, so do not install it as your daily app. Build a release-style APK instead, one of two ways:
+
+- **EAS (recommended, no Android SDK needed):** from `mobile\`, `npm ci`, then `npx eas-cli login` and `npx eas-cli build -p android --profile preview`. EAS creates and keeps the signing key for you. Download the APK from the link it prints. For push, see [Optional push](#optional-push) before building.
+- **Local Gradle:** install Android Studio (it brings the SDK) and JDK 17. From `mobile\`: `npm ci`, `npx expo prebuild --platform android`, then in `mobile\android` run `.\gradlew assembleRelease`. Create your own release keystore first (`keytool -genkeypair -v -keystore personalai.jks -keyalg RSA -keysize 2048 -validity 10000 -alias personalai`), keep it outside the repo, and configure it in `android\app\build.gradle` `signingConfigs.release`. The APK is in `android\app\build\outputs\apk\release\`.
+
+Sideload it: copy the APK to the phone and open it (allow **Install unknown apps** for the Files app when asked), or `adb install path\to\app.apk` with USB debugging on.
+
+On the phone:
+
+1. Enrol a fingerprint or face unlock (**Settings > Security**) if you have not. Pairing fails without one; there is no fallback.
+2. **Settings > Apps > PersonalAi > Battery**: set **Unrestricted**, so SMS upload and background sync are not killed. Do the same for Tailscale.
+
+### 9. Start the server at logon (Task Scheduler)
+
+1. From `server\`: `powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1`. It registers the task "PersonalAi agent" for your user: it starts one minute after logon (so Tailscale has its address), restarts every minute if the server exits, keeps running on battery, and runs hidden. It needs no admin rights and stores no secrets.
+2. `Start-ScheduledTask -TaskName "PersonalAi agent"`, then repeat the check from step 7.3.
+3. Check after a reboot: log in, wait two minutes, repeat step 7.3. The task runs only while you are logged in, because the keys are in your user's Credential Manager.
+
+### 10. Power settings
+
+The server only answers while the laptop is awake.
+
+1. **Settings > System > Power & battery > Screen, sleep & hibernate timeouts**: when plugged in, set **Make my device sleep after** to **Never**. Or, in PowerShell: `powercfg /change standby-timeout-ac 0` and `powercfg /change hibernate-timeout-ac 0`.
+2. **Control Panel > Power Options > Choose what closing the lid does**: **When I close the lid, plugged in: Do nothing**.
+3. **Device Manager > Network adapters > your Wi-Fi adapter > Properties > Power Management**: untick **Allow the computer to turn off this device to save power**.
+4. On battery, keep Windows defaults; the phone simply queues SMS and retries until the laptop is back.
+
+### 11. Pair the phone
+
+1. With the server running, from `server\`: `uv run python -m agent pair`. It prints a QR code and a one-time code valid for 5 minutes.
+2. In the app: **Settings > Pair**, scan the QR (or type `http://100.x.y.z:8765` and the code). The app refuses any address outside the tailnet.
+3. Confirm with your fingerprint when asked. The approval key is stored behind that unlock.
+4. Check: the Today screen loads.
+
+### 12. First sync checks
+
+Go through these once; they are the end-to-end acceptance list from `docs/PLAN.md`.
+
+- [ ] `scripts/check_nvidia.py` passed (step 4).
+- [ ] Mail: within `PERSONALAI_MAIL_POLL_MINUTES` of starting, the digest in the app covers the last 7 days, and the important/normal split looks right.
+- [ ] Calendar and Classroom: upcoming Classroom deadlines appear as pending approvals; approving one creates the event.
+- [ ] Ask "Remind me at 7am": an approval appears on the phone, the fingerprint prompt follows, and the alarm is set in the clock app (open the app after approving).
+- [ ] Ask "Draft a reply to <someone>": the exact text is shown; reject it; check Gmail Sent that nothing was sent.
+- [ ] Bank SMS: **Settings > Import bank SMS**, allow SMS; a real Bank of Baroda SMS appears in Money, and the balance matches the latest "Avl Bal".
+- [ ] Turn Tailscale off on the phone: the app can no longer reach the server. Turn it back on.
+- [ ] Take the first backup (below) and store the passphrase in your password manager.
+
+## Backup and restore
+
+The database holds your mail index, ledger and history (sensitive columns are encrypted with `db_key`, which lives in the keyring). A backup is one encrypted file that holds the database and `db_key`, so it can be restored on a new laptop.
+
+```powershell
+uv run python -m agent backup --out D:\backups\personalai-2026-10-05.paibak
+uv run python -m agent restore --in D:\backups\personalai-2026-10-05.paibak          # stop the server first
+```
+
+- The passphrase is prompted for (twice for a backup), at least 12 characters, and never taken from the command line or environment. Without it the backup cannot be opened, so keep it in a password manager, not on the laptop.
+- Format: AES-256-GCM with a key derived from the passphrase by scrypt; the header is authenticated too, so any change to the file makes it fail to open. A backup never overwrites an existing file.
+- The backup does **not** hold the phone pairing, approval keys, Google tokens or the NVIDIA key. After restoring on a new laptop, redo steps 3 (sign-in only), 4 and 11.
+- `restore` refuses to replace an existing database, or a different `db_key` in the keyring, unless you add `--force`. With `--force` the old database is renamed to `agent.db.pre-restore-<timestamp>` and the old key is kept in the keyring as `db_key.pre-restore-<timestamp>`; nothing is deleted.
+- Stop the scheduled task before restoring (`Stop-ScheduledTask -TaskName "PersonalAi agent"`) and start it again afterwards.
+- Suggested habit: a backup each week to an external drive or a cloud folder; the file is safe to store there because it is encrypted.
 
 ## Configuration
 
@@ -121,4 +258,4 @@ Polling every 30 seconds while the app is open works with no setup. For push not
 
 ### Checks
 
-`cd mobile && npm ci && npx tsc --noEmit && npx eslint . && npx jest --ci`. The Kotlin SMS module (`mobile/modules/bank-sms`) is only compiled by an Android build, so test it on the phone.
+`cd mobile && npm ci && npx tsc --noEmit && npx eslint . && npx jest --ci`. The Kotlin SMS module (`mobile/modules/bank-sms`) is compiled by the CI `android` job (Expo prebuild plus Gradle `assembleDebug`); its runtime behaviour (SMS receiver, alarms, push) still has to be checked on the phone.

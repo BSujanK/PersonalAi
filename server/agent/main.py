@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import ipaddress
 import json
 import sys
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from pathlib import Path
 
 import segno
 import uvicorn
@@ -37,6 +39,7 @@ from agent.scheduler import (
     Job,
     start_jobs,
 )
+from agent.store.backup import BackupError, create_backup, restore_backup
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.keystore import InsecureKeyringError, KeyStore, assert_secure_backend
@@ -46,7 +49,7 @@ EXIT_REFUSED = 2
 
 
 def _refuse(message: str) -> int:
-    print(f"refusing to start: {message}", file=sys.stderr)
+    print(f"refused: {message}", file=sys.stderr)
     return EXIT_REFUSED
 
 
@@ -199,12 +202,60 @@ def _pair(settings: Settings, url: str | None) -> int:
     return 0
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def _backup(settings: Settings, out_path: Path, read_passphrase: Callable[[str], str]) -> int:
+    try:
+        assert_secure_backend()
+        passphrase = read_passphrase("Backup passphrase: ")
+        if read_passphrase("Repeat passphrase: ") != passphrase:
+            return _refuse("passphrases do not match")
+        created_at = utcnow()
+        create_backup(settings.db_path, out_path, passphrase, KeyStore(), lambda: created_at)
+    except (InsecureKeyringError, BackupError) as exc:
+        return _refuse(str(exc))
+    print(f"Backup written: {out_path} ({out_path.stat().st_size} bytes)")
+    print(f"Created at: {created_at.isoformat()}")
+    return 0
+
+
+def _restore(
+    settings: Settings, in_path: Path, force: bool, read_passphrase: Callable[[str], str]
+) -> int:
+    try:
+        assert_secure_backend()
+        passphrase = read_passphrase("Backup passphrase: ")
+        restore_backup(in_path, settings.db_path, passphrase, KeyStore(), force=force)
+    except (InsecureKeyringError, BackupError) as exc:
+        return _refuse(str(exc))
+    print(f"Restored database: {settings.db_path}")
+    print("Re-pair the phone (pair) and re-authorise Google and the NVIDIA key before serving.")
+    return 0
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    read_passphrase: Callable[[str], str] = getpass.getpass,
+) -> int:
     parser = argparse.ArgumentParser(prog="agent")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("serve", help="run the server (default)")
     pair = sub.add_parser("pair", help="open a pairing window and print the code and QR")
     pair.add_argument("--url", help="server URL for the phone, e.g. a MagicDNS name")
+    backup = sub.add_parser(
+        "backup", help="write an encrypted backup of the database and its encryption key"
+    )
+    backup.add_argument("--out", required=True, type=Path, help="new backup file to create")
+    restore = sub.add_parser(
+        "restore",
+        help="restore a backup; STOP THE SERVER FIRST. Phone pairing and Google/NVIDIA "
+        "credentials are not in the backup and must be set up again",
+    )
+    restore.add_argument("--in", dest="in_path", required=True, type=Path, help="backup file")
+    restore.add_argument(
+        "--force",
+        action="store_true",
+        help="replace an existing database (kept aside as .pre-restore-<timestamp>) and db_key",
+    )
     args = parser.parse_args(argv)
     try:
         settings = Settings.from_env()
@@ -212,4 +263,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _refuse(f"invalid configuration: {exc}")
     if args.command == "pair":
         return _pair(settings, args.url)
+    if args.command == "backup":
+        return _backup(settings, args.out, read_passphrase)
+    if args.command == "restore":
+        return _restore(settings, args.in_path, args.force, read_passphrase)
     return _serve(settings)
