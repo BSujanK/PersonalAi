@@ -81,3 +81,44 @@ Secrets are never read from the environment; they live in the OS keyring.
 ### Evaluating the classifier
 
 `uv run python -m agent.mail.evaluate` runs the rules-only classifier over `tests/fixtures/mail_labelled.json` (synthetic mail; undecided mail counts as normal) and prints per-class precision, recall and F1 plus a confusion matrix. Add `--ollama` to include the local model, and `--fixtures PATH` to use your own labelled file (same format: `vip_senders`, `college_domains` and an `items` list).
+
+## Mobile app (M5)
+
+The Android app lives in `mobile/` (Expo SDK 57, TypeScript). It is a dev-client/prebuild app, not Expo Go, because it reads SMS and stores keys in the Android Keystore. `mobile/android` is generated and gitignored.
+
+### Build and install
+
+1. Prerequisites: Node 22, and either the Android SDK with JDK 17 (local build) or an Expo account (EAS build).
+2. From `mobile/` run `npm ci`.
+3. Get an APK, either way:
+   - Local: `npx expo prebuild --platform android`, then `npx expo run:android` with the phone connected over USB (debugging on).
+   - EAS: `npx eas-cli build -p android --profile preview`, then download the APK. The `development` profile builds a dev client instead.
+4. Sideload with `adb install path/to/app.apk`, or open the EAS download link on the phone.
+
+### Pair the phone
+
+1. On the laptop, bind the server to its Tailscale IP (`PERSONALAI_BIND_HOSTS` accepts only loopback or Tailscale addresses) and run `python -m agent pair`. It opens a short pairing window and prints a QR code.
+2. Install Tailscale on the phone and join the same tailnet.
+3. Open the app and scan the QR code (or type the `http://100.x.y.z:8765` URL and code by hand). The app refuses any host outside `100.64.0.0/10`, `fd7a:115c:a1e0::/48` and `*.ts.net`.
+4. Pairing needs a fingerprint or face unlock enrolled on the phone. The approval key is stored behind that unlock, so approving an action always prompts for it. If no biometric is enrolled, pairing fails; there is no fallback.
+5. Settings, then Unpair, wipes the token and key from the phone. Revoke the device on the laptop as well.
+
+### Permissions
+
+- SMS (read and receive): Settings, then "Import bank SMS" asks the first time. Only messages from the bank sender list (plus any sender starting with `BOB`) are stored and sent. Add your own sender IDs in Settings. Queued messages upload when the app opens, after an import and about every 15 minutes in the background.
+- Notifications: asked when you turn on push, and needed for reminders.
+- Camera: only for scanning the pairing QR.
+- Alarms and timers set by the agent are created through the Android clock app after you approve them. They run while the app is open (Android blocks launching the clock from the background), so open the app after approving.
+
+### Optional push
+
+Polling every 30 seconds while the app is open works with no setup. For push notifications ("1 approval pending", never any content):
+
+1. Create a Firebase project, add an Android app with package `com.bsujank.personalai`, and download `google-services.json`. Keep it out of git (it is gitignored). Pass its path as the `GOOGLE_SERVICES_JSON` environment variable for local builds, or as an EAS file secret of the same name.
+2. Run `npx eas-cli init` in `mobile/` and set the project id as `EAS_PROJECT_ID` (it feeds `extra.eas.projectId`) for local and EAS builds.
+3. Set `PERSONALAI_PUSH=expo` on the laptop and restart the server.
+4. Rebuild the APK, then turn on "Push notifications" in Settings. Without a project id the toggle is disabled and the app keeps polling.
+
+### Checks
+
+`cd mobile && npm ci && npx tsc --noEmit && npx eslint . && npx jest --ci`. The Kotlin SMS module (`mobile/modules/bank-sms`) is only compiled by an Android build, so test it on the phone.
