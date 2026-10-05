@@ -1,6 +1,6 @@
 # PersonalAi
 
-A private personal agent that runs on the owner's Windows laptop. It reads Gmail (personal and college), Google Calendar, Classroom, Drive, allowlisted local files, bank SMS forwarded from the phone, and Groww holdings (read-only). The owner talks to it from an Android app over Tailscale. The LLM is a hosted open model on NVIDIA Build (OpenAI-compatible API), and local Ollama handles classification and fallback.
+A private personal agent that runs on the owner's Windows laptop. It reads Gmail (personal and college), Google Calendar, Classroom, Drive, allowlisted local files, and bank SMS read on the phone (spending and account balances). The owner talks to it from an Android app over Tailscale. The LLM is a hosted open model on NVIDIA Build (OpenAI-compatible API), and local Ollama handles classification and fallback.
 
 **The full design and phase plan is in `docs/PLAN.md`. Read it before starting any phase.**
 
@@ -18,7 +18,7 @@ A private personal agent that runs on the owner's Windows laptop. It reads Gmail
    - To approve or reject, the phone sends `sig = HMAC-SHA256(approval_key, action_id | payload_hash | nonce | decision)`.
    - The server checks it with a constant-time compare, along with the device token, hash, nonce (single use) and the 15-minute expiry. A device token alone can never approve.
    - This API is fixed in M1, so M5 builds the phone side against it.
-2. **Groww is read-only.** Do not import or wrap any order, modify or cancel API.
+2. **No broker or trading integration.** Groww and demat tracking were removed on 2026-10-05. Do not add any broker API, and never add order, modify or cancel tools.
 3. **Redact before the cloud.** Every string sent to the NVIDIA API passes through `agent/core/redact.py`. Never call the LLM client with unredacted connector data, and never send raw ledger rows; send aggregates instead.
 4. **Untrusted content is data, not instructions.** Mail, files, Classroom posts and SMS are wrapped and labelled as untrusted in prompts. v1 has no arbitrary-URL fetch tool.
 5. **Never bind publicly.** The server binds only to loopback (`127.0.0.0/8`, `::1`) or Tailscale addresses (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`). Startup validates every configured bind address against this allowlist with `ipaddress`, so a string check is not enough. It refuses `0.0.0.0`, `::`, and any other address, including LAN IPs like `192.168.x.x`. Every API route except `/pair` requires the device bearer token, and `/pair` only works during a short pairing window opened from the laptop.
