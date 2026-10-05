@@ -6,11 +6,16 @@ import pytest
 
 from agent.connectors.google_auth import (
     CALENDAR_EVENTS,
+    CLASSROOM_ANNOUNCEMENTS,
+    CLASSROOM_COURSES,
+    CLASSROOM_COURSEWORK,
+    CLASSROOM_MATERIALS,
     CLIENT_SECRET_NAME,
     DRIVE_FILE,
     DRIVE_READONLY,
     GMAIL_MODIFY,
     IDENTITY_SCOPES,
+    SERVICE_SCOPES,
     GoogleAuth,
     GoogleNotConfigured,
     granted_scopes,
@@ -117,3 +122,19 @@ def test_granted_scopes_accepts_list_or_string(raw: list[str] | str) -> None:
 
 def test_granted_scopes_none() -> None:
     assert granted_scopes(None) == frozenset()
+
+
+# What Google actually returned for a real college account that requested coursework.me.readonly.
+GRANTED_WITH_OLD_NAME = [
+    CLASSROOM_COURSES,
+    CLASSROOM_ANNOUNCEMENTS,
+    CLASSROOM_MATERIALS,
+    "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
+]
+
+
+def test_old_coursework_scope_name_counts_as_classroom_granted() -> None:
+    granted = granted_scopes(json.dumps({"scopes": GRANTED_WITH_OLD_NAME}))
+    assert set(SERVICE_SCOPES["classroom"]) <= granted
+    creds = GoogleAuth(_store(GRANTED_WITH_OLD_NAME)).credentials(ACCOUNT, [CLASSROOM_COURSEWORK])
+    assert creds.refresh_token == "rt"
