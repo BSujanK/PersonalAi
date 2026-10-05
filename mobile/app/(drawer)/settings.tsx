@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import Constants from 'expo-constants';
+import { StyleSheet, Switch, Text, View } from 'react-native';
 
 import {
   Body,
   Button,
+  Caption,
   Card,
-  colors,
+  Chip,
   ErrorText,
-  Screen,
   SectionTitle,
-  Title,
+  TextField,
 } from '../../src/components/ui';
+import { Screen } from '../../src/components/Screen';
 import { health } from '../../src/lib/api';
 import {
   flushSmsQueue,
@@ -29,12 +31,19 @@ import { disablePush, enablePush, isPushEnabled, pushAvailable } from '../../src
 import { clearPairing } from '../../src/lib/secureKeys';
 import { normaliseSender } from '../../src/lib/smsSync';
 import { usePolling } from '../../src/lib/usePolling';
+import { fontFamily, size, useTheme, type ThemePreference } from '../../src/theme';
 
 const IMPORT_DAYS = 30;
 const SENDER_ID = /^[A-Z0-9]{3,16}$/;
+const THEMES: { value: ThemePreference; label: string }[] = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+];
 
 export default function Settings() {
   const { pairing, reload } = usePairing();
+  const { palette, preference, setPreference } = useTheme();
   const [online, setOnline] = useState<boolean | null>(null);
   const [defaults, setDefaults] = useState<string[]>([]);
   const [custom, setCustom] = useState<string[]>([]);
@@ -143,21 +152,47 @@ export default function Settings() {
     });
 
   return (
-    <Screen>
-      <Title>Settings</Title>
+    <Screen title="Settings" menu>
       <ErrorText message={error} />
       {status ? <Body muted>{status}</Body> : null}
 
-      <SectionTitle>Agent</SectionTitle>
+      <SectionTitle>Appearance</SectionTitle>
+      <Card>
+        <Body>Theme</Body>
+        <View style={styles.chips}>
+          {THEMES.map((t) => (
+            <Chip
+              key={t.value}
+              label={t.label}
+              selected={preference === t.value}
+              onPress={() => setPreference(t.value)}
+            />
+          ))}
+        </View>
+        <Caption>System follows the light or dark setting of your phone.</Caption>
+      </Card>
+
+      <SectionTitle>Server and pairing</SectionTitle>
       <Card>
         <Body>{pairing?.serverUrl}</Body>
-        <Text style={{ color: online ? colors.ok : colors.danger }}>
+        <Text
+          accessibilityRole="text"
+          style={{
+            fontFamily: fontFamily.bodyMedium,
+            fontSize: size.body,
+            color: online ? palette.ok : online === null ? palette.textMuted : palette.danger,
+          }}
+        >
           {online === null ? 'Checking...' : online ? 'Agent online' : 'Agent offline'}
         </Text>
+        <Caption>
+          Paired device {pairing?.deviceId.slice(0, 8)}. Reached over Tailscale only; approvals need
+          your fingerprint or face.
+        </Caption>
         <Button label="Unpair this phone" tone="danger" onPress={() => void unpair()} />
       </Card>
 
-      <SectionTitle>Bank SMS</SectionTitle>
+      <SectionTitle>SMS senders</SectionTitle>
       <Body muted>
         Only messages from the senders below (and any starting with BOB) are read and sent to your
         laptop.
@@ -178,13 +213,16 @@ export default function Settings() {
         </Body>
         <View style={styles.chips}>
           {custom.map((id) => (
-            <Pressable key={id} onPress={() => void removeSender(id)} style={styles.chip}>
-              <Body>{id} x</Body>
-            </Pressable>
+            <Chip
+              key={id}
+              label={`${id} ✕`}
+              accessibilityLabel={`Remove sender ${id}`}
+              onPress={() => void removeSender(id)}
+            />
           ))}
         </View>
-        <TextInput
-          style={styles.input}
+        <TextField
+          accessibilityLabel="New sender ID"
           value={newSender}
           onChangeText={setNewSender}
           placeholder="Add a sender ID, e.g. AD-MYBANK"
@@ -204,35 +242,36 @@ export default function Settings() {
         <View style={styles.row}>
           <Body>Push notifications</Body>
           <Switch
+            accessibilityLabel="Push notifications"
             value={push}
             onValueChange={(v) => void togglePush(v)}
             disabled={!pushAvailable()}
+            trackColor={{ true: palette.accent, false: palette.border }}
           />
         </View>
         {pushAvailable() ? null : (
           <Body muted>Not set up in this build. The app polls every 30 seconds.</Body>
         )}
       </Card>
+
+      <SectionTitle>About</SectionTitle>
+      <Card>
+        <Body>PersonalAi {Constants.expoConfig?.version ?? ''}</Body>
+        <Caption>
+          A private assistant that runs on your laptop. Nothing leaves it without your approval, and
+          the language model only ever sees redacted text.
+        </Caption>
+      </Card>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  chip: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 16,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: 10,
-    backgroundColor: colors.card,
-    color: colors.text,
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    minHeight: 44,
   },
 });

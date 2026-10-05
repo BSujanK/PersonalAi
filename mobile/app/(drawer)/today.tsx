@@ -1,14 +1,7 @@
 import { useCallback, useState } from 'react';
 
-import {
-  Body,
-  Card,
-  ErrorText,
-  Loading,
-  Screen,
-  SectionTitle,
-  Title,
-} from '../../src/components/ui';
+import { Body, Card, ErrorText, Loading, SectionTitle } from '../../src/components/ui';
+import { Screen } from '../../src/components/Screen';
 import { ApiError, getToday, type Today } from '../../src/lib/api';
 import { errorMessage, shortDateTime } from '../../src/lib/format';
 import { usePolling } from '../../src/lib/usePolling';
@@ -40,8 +33,7 @@ export default function TodayScreen() {
   const important = today?.mail?.important ?? [];
 
   return (
-    <Screen refreshing={refreshing} onRefresh={() => void refresh()}>
-      <Title>Today</Title>
+    <Screen title="Today" menu refreshing={refreshing} onRefresh={() => void refresh()}>
       <ErrorText message={error} />
       {!today && !error ? <Loading /> : null}
       {today ? (

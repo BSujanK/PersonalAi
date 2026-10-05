@@ -69,6 +69,7 @@ function setup() {
     onStart: (id) => calls.push(`start:${id}`),
     onToken: (t) => calls.push(`token:${t}`),
     onReset: () => calls.push('reset'),
+    onTool: (name, status) => calls.push(`tool:${name}:${status}`),
   });
   return { calls, promise };
 }
@@ -197,5 +198,70 @@ describe('chatStream', () => {
     await started();
     controller.abort();
     expect(await caught).toMatchObject({ name: 'AbortError' });
+  });
+
+  it('forwards tool events in order with the tokens around them', async () => {
+    const { calls, promise } = setup();
+    const xhr = await started();
+    xhr.respond(200, 'text/event-stream');
+    xhr.chunk(
+      ev('start', { conversation_id: 'c1' }) +
+        ev('token', { text: 'Checking.' }) +
+        ev('reset', {}) +
+        ev('tool', { name: 'mail_search', status: 'started' }),
+    );
+    xhr.chunk(
+      ev('tool', { name: 'mail_search', status: 'finished' }) +
+        ev('tool', { name: 'balances', status: 'started' }) +
+        ev('tool', { name: 'balances', status: 'failed' }) +
+        ev('token', { text: 'Done' }) +
+        ev('done', DONE),
+    );
+    await promise;
+    expect(calls).toEqual([
+      'start:c1',
+      'token:Checking.',
+      'reset',
+      'tool:mail_search:started',
+      'tool:mail_search:finished',
+      'tool:balances:started',
+      'tool:balances:failed',
+      'token:Done',
+    ]);
+  });
+
+  it('parses a tool event split across chunks', async () => {
+    const { calls, promise } = setup();
+    const xhr = await started();
+    xhr.respond(200, 'text/event-stream');
+    const raw = ev('tool', { name: 'drive_search', status: 'started' });
+    xhr.chunk(raw.slice(0, 15));
+    xhr.chunk(raw.slice(15) + ev('done', DONE));
+    await promise;
+    expect(calls).toEqual(['tool:drive_search:started']);
+  });
+
+  it('ignores malformed tool events and unknown statuses', async () => {
+    const { calls, promise } = setup();
+    const xhr = await started();
+    xhr.respond(200, 'text/event-stream');
+    xhr.chunk(
+      ev('tool', { name: 'mail_search', status: 'exploded' }) +
+        ev('tool', { status: 'started' }) +
+        ev('tool', { name: 7, status: 'started' }) +
+        'event: tool\ndata: not json\n\n' +
+        ev('done', DONE),
+    );
+    await promise;
+    expect(calls).toEqual([]);
+  });
+
+  it('still works for a server that sends no tool events', async () => {
+    const { calls, promise } = setup();
+    const xhr = await started();
+    xhr.respond(200, 'text/event-stream');
+    xhr.chunk(ev('token', { text: 'Hi' }) + ev('done', DONE));
+    await expect(promise).resolves.toEqual(DONE);
+    expect(calls).toEqual(['token:Hi']);
   });
 });

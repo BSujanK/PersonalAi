@@ -44,6 +44,43 @@ export interface Approval {
   expires_at: string;
 }
 
+export interface ToolRun {
+  name: string;
+  status: 'finished' | 'failed';
+}
+
+export type ToolStatus = 'started' | 'finished' | 'failed';
+
+/** One stored conversation, as the history list shows it. */
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  updated_at: string;
+  preview: string;
+}
+
+export interface ConversationPage {
+  items: ConversationSummary[];
+  next_cursor: string | null;
+}
+
+/** A message as the server rehydrates it for this phone: text only, never tool arguments. */
+export interface DisplayMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  created_at: string;
+  tools: ToolRun[];
+  pending_action_ids: string[];
+}
+
+export interface ConversationDetail {
+  id: string;
+  title: string;
+  updated_at: string;
+  messages: DisplayMessage[];
+}
+
 export interface ChatReply {
   conversation_id: string;
   reply: string;
@@ -256,6 +293,8 @@ export interface ChatStreamHandlers {
   onToken: (text: string) => void;
   /** Discard the reply text so far: the model moved on to tool calls or the server failed over. */
   onReset: () => void;
+  /** A tool call began or ended. The server sends the tool name and status only. */
+  onTool?: (name: string, status: ToolStatus) => void;
 }
 
 export interface ChatStreamOptions {
@@ -321,6 +360,14 @@ export async function chatStream(
         handlers.onToken(payload.text);
       } else if (event === 'reset') {
         handlers.onReset();
+      } else if (event === 'tool') {
+        const status = payload.status;
+        if (
+          typeof payload.name === 'string' &&
+          (status === 'started' || status === 'finished' || status === 'failed')
+        ) {
+          handlers.onTool?.(payload.name, status);
+        }
       } else if (event === 'done' && typeof payload.reply === 'string') {
         finish(() => resolve(payload as unknown as ChatReply));
       } else if (event === 'error') {
@@ -385,6 +432,31 @@ export async function chatStream(
 }
 
 export const listApprovals = () => call<Approval[]>('GET', '/approvals');
+
+export const getApproval = (id: string) =>
+  call<Approval>('GET', `/approvals/${encodeURIComponent(id)}`);
+
+export const listConversations = (
+  options: { cursor?: string | null; q?: string; limit?: number } = {},
+) => {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  if (options.cursor) params.set('cursor', options.cursor);
+  if (options.q?.trim()) params.set('q', options.q.trim());
+  const query = params.toString();
+  return call<ConversationPage>('GET', `/conversations${query ? `?${query}` : ''}`);
+};
+
+export const getConversation = (id: string) =>
+  call<ConversationDetail>('GET', `/conversations/${encodeURIComponent(id)}`);
+
+export const renameConversation = (id: string, title: string) =>
+  call<ConversationSummary>('PATCH', `/conversations/${encodeURIComponent(id)}`, {
+    body: { title },
+  });
+
+export const deleteConversation = (id: string) =>
+  call<unknown>('DELETE', `/conversations/${encodeURIComponent(id)}`);
 
 export const decideApproval = (
   id: string,
