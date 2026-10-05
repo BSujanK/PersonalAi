@@ -29,6 +29,21 @@ DRIVE_FILE = "https://www.googleapis.com/auth/drive.file"
 # Used only by the setup script to confirm which account signed in.
 IDENTITY_SCOPES = ("openid", "https://www.googleapis.com/auth/userinfo.email")
 
+# Google sometimes reports a granted scope under an older name than the one requested: asking
+# for classroom.coursework.me.readonly comes back as classroom.student-submissions.me.readonly
+# (the same "course work and grades" permission). Map old names to the ones we check for.
+_CLASSROOM_SUBMISSIONS_OLD = (
+    "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly"
+)
+SCOPE_ALIASES: dict[str, str] = {_CLASSROOM_SUBMISSIONS_OLD: CLASSROOM_COURSEWORK}
+
+
+def normalise_scopes(scopes: Iterable[str]) -> frozenset[str]:
+    """The scopes plus the current name of any aliased ones."""
+    names = frozenset(scopes)
+    return names | frozenset(SCOPE_ALIASES[s] for s in names if s in SCOPE_ALIASES)
+
+
 SERVICE_SCOPES: dict[str, tuple[str, ...]] = {
     "gmail": (GMAIL_MODIFY,),
     "calendar": (CALENDAR_EVENTS,),
@@ -75,7 +90,7 @@ def granted_scopes(token_json: str | None) -> frozenset[str]:
     raw = info.get("scopes") or []
     if isinstance(raw, str):
         raw = raw.split()
-    return frozenset(str(s) for s in raw)
+    return normalise_scopes(str(s) for s in raw)
 
 
 def client_config(raw: str) -> dict[str, Any]:
@@ -103,7 +118,7 @@ class GoogleAuth:
                 creds = self._load(account)
                 self._cache[account] = creds
                 self._saved[account] = creds.token
-            granted = frozenset(creds.scopes or ())
+            granted = normalise_scopes(creds.scopes or ())
             if not needed <= granted:
                 raise GoogleNotConfigured(
                     "account token lacks a required scope; re-run setup_google_oauth.py"
