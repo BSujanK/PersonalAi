@@ -29,7 +29,7 @@ from agent.core.audit import AuditLog
 from agent.core.clock import Clock
 from agent.core.llm import require_loopback
 from agent.core.netguard import validate_bind_hosts
-from agent.golive import probes
+from agent.golive import probes, service
 from agent.golive.system import System
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
@@ -47,6 +47,7 @@ _TAILSCALE_NETS = (
     ipaddress.ip_network("fd7a:115c:a1e0::/48"),
 )
 _STALE_FACTOR = 3
+AGENT_DIR = Path(__file__).resolve().parents[1]  # server/agent: the code the server runs
 _GOOGLE_FIX = (
     "fix the Google account checks above (token missing or scopes), "
     "then restart: uv run python -m agent restart"
@@ -70,6 +71,7 @@ class _Ctx:
     keystore: KeyStore
     clock: Clock
     db: Database | None
+    code_dir: Path
 
     @property
     def is_windows(self) -> bool:
@@ -431,7 +433,7 @@ def _check_database(ctx: _Ctx) -> CheckResult:
             "fail",
             True,
             "database file not found",
-            'start the server once: Start-ScheduledTask -TaskName "PersonalAi agent"',
+            "start the server once: uv run python -m agent restart",
         )
     key = ctx.keystore.get_bytes(DB_KEY_NAME)
     if key is None or len(key) != 32:
@@ -500,9 +502,36 @@ def _check_task(ctx: _Ctx) -> CheckResult:
             "fail",
             True,
             f"installed but {state.status}",
-            f'Start-ScheduledTask -TaskName "{probes.TASK_NAME}"',
+            "uv run python -m agent restart",
         )
     return CheckResult("scheduled_task", title, "pass", True, "Running")
+
+
+@_guard("server_code", "Running server is current", required=False)
+def _check_server_code(ctx: _Ctx) -> CheckResult:
+    """Warn when the running server started before the newest source file was modified."""
+    title = "Running server is current"
+    if not ctx.is_windows:
+        return _skip_non_windows("server_code", title, required=False)
+    procs = service.find_server_processes(ctx.system)
+    if procs is None:
+        return CheckResult("server_code", title, "warn", False, "could not list processes")
+    if not procs:
+        return CheckResult("server_code", title, "skip", False, "no running server process")
+    started = min(p.started for p in procs)
+    newest = service.newest_source_mtime(ctx.code_dir)
+    when = started.isoformat(timespec="minutes")
+    if newest is not None and newest > started:
+        return CheckResult(
+            "server_code",
+            title,
+            "warn",
+            False,
+            f"the server started {when}, before its code changed "
+            f"({newest.isoformat(timespec='minutes')}): it is running stale code",
+            "uv run python -m agent restart",
+        )
+    return CheckResult("server_code", title, "pass", False, f"started {when}")
 
 
 @_guard("power", "Power settings")
@@ -669,6 +698,7 @@ _CHECKS: tuple[_Check, ...] = (
     _check_database,
     _check_audit,
     _check_task,
+    _check_server_code,
     _check_power,
     _check_paired,
     _check_mail_sync,
@@ -688,9 +718,14 @@ def _open_existing_db(path: Path) -> Database | None:
 
 
 def run_checks(
-    settings: Settings, system: System, keystore: KeyStore, *, clock: Clock
+    settings: Settings,
+    system: System,
+    keystore: KeyStore,
+    *,
+    clock: Clock,
+    code_dir: Path = AGENT_DIR,
 ) -> list[CheckResult]:
-    ctx = _Ctx(settings, system, keystore, clock, _open_existing_db(settings.db_path))
+    ctx = _Ctx(settings, system, keystore, clock, _open_existing_db(settings.db_path), code_dir)
     results: list[CheckResult] = []
     try:
         for check in _CHECKS:
@@ -726,8 +761,9 @@ def run_doctor(
     as_json: bool,
     out: TextIO,
     clock: Clock,
+    code_dir: Path = AGENT_DIR,
 ) -> int:
-    results = run_checks(settings, system, keystore, clock=clock)
+    results = run_checks(settings, system, keystore, clock=clock, code_dir=code_dir)
     ok = not any(r.required and r.status == "fail" for r in results)
     if as_json:
         out.write(json.dumps({"ok": ok, "checks": [asdict(r) for r in results]}, indent=2) + "\n")

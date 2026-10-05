@@ -14,6 +14,7 @@ from agent.connectors.google_auth import (
     scopes_for,
     token_secret_name,
 )
+from agent.golive.service import LIST_PROCESSES
 from agent.golive.setup import run_setup
 from agent.golive.system import NOT_FOUND, CommandResult, HttpResult
 from agent.store.keystore import KeyStore
@@ -49,9 +50,17 @@ class FakeSystem:
         self.runs.append(list(argv))
         if argv[0] == "tailscale":
             return CommandResult(0, f"{TAILSCALE_IP}\n") if self.tailscale else CommandResult(1, "")
+        if tuple(argv) == LIST_PROCESSES:  # a server is up exactly while the task is running
+            row = {"pid": 1, "ppid": 0, "name": "python.exe", "cmd": "python -m agent serve"}
+            row["started"] = "2026-10-05T12:00:00+00:00"
+            return CommandResult(0, json.dumps([row] if self.task_status == "Running" else []))
         if argv[0] == "schtasks":
             if self.task_status is None:
                 return CommandResult(1, "")
+            if argv[1] == "/Run":
+                self.task_status = "Running"
+            elif argv[1] == "/End":
+                self.task_status = "Ready"
             return CommandResult(0, f"TaskName: x\nStatus: {self.task_status}\n")
         if argv[0] == "powercfg":
             index = "0x00000000" if self.power_ok else "0x00000708"
@@ -68,10 +77,6 @@ class FakeSystem:
             assert self.ollama is not None
             self.ollama.append(args[2])
         elif "install_task.ps1" in joined:
-            self.task_status = "Ready"
-        elif "Start-ScheduledTask" in joined:
-            self.task_status = "Running"
-        elif "Stop-ScheduledTask" in joined:
             self.task_status = "Ready"
         elif "setup_google_oauth.py" in joined:
             self._fake_oauth(args)
@@ -280,11 +285,9 @@ def test_first_run_on_blank_machine(harness: Harness) -> None:
             "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
             str(s / "scripts" / "install_task.ps1"),
         ],
-        [
-            "powershell", "-NoProfile", "-Command",
-            "Start-ScheduledTask -TaskName 'PersonalAi agent'",
-        ],
     ]  # fmt: skip
+    # Started through restart_server (schtasks /Run), never a bare Start-ScheduledTask.
+    assert ["schtasks", "/Run", "/TN", "PersonalAi agent"] in harness.system.runs
     assert dict(harness.system.env) == {
         "PERSONALAI_MODEL_PRIMARY": "vendor/model-a",
         "PERSONALAI_MODEL_FALLBACK": "vendor/model-b",
@@ -452,6 +455,7 @@ def test_task_restart_offered_when_settings_changed(harness: Harness) -> None:
     harness.complete_first_run()
     system = harness.system
     system.interactive.clear()
+    system.runs.clear()
     system.env.pop("PERSONALAI_BIND_HOSTS")
 
     code, _ = harness.run(
@@ -463,10 +467,10 @@ def test_task_restart_offered_when_settings_changed(harness: Harness) -> None:
     )
 
     assert code == 0
-    assert [a[-1] for a in system.interactive] == [
-        "Stop-ScheduledTask -TaskName 'PersonalAi agent'",
-        "Start-ScheduledTask -TaskName 'PersonalAi agent'",
-    ]
+    assert system.interactive == []
+    # Ended through the scheduler, then started again: the shared restart path.
+    task_calls = [r[1] for r in system.runs if r[0] == "schtasks" and r[1] != "/Query"]
+    assert task_calls == ["/End", "/Run"]
 
 
 def test_bad_nvidia_listing_skips_models_without_leaking(harness: Harness) -> None:

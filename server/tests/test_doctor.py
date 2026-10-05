@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from agent.connectors.google_auth import (
 from agent.core.audit import AuditLog
 from agent.golive.doctor import CheckResult, run_checks, run_doctor
 from agent.golive.probes import POWER_FIX_COMMANDS
+from agent.golive.service import LIST_PROCESSES
 from agent.golive.system import NOT_FOUND, CommandResult, HttpResult
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
@@ -106,10 +108,14 @@ class Env:
     keystore: KeyStore
     clock: FakeClock
     db_key: bytes
+    code_dir: Path
 
     def results(self) -> dict[str, CheckResult]:
         return {
-            r.id: r for r in run_checks(self.settings, self.system, self.keystore, clock=self.clock)
+            r.id: r
+            for r in run_checks(
+                self.settings, self.system, self.keystore, clock=self.clock, code_dir=self.code_dir
+            )
         }
 
     def result(self, check_id: str) -> CheckResult:
@@ -118,9 +124,37 @@ class Env:
     def doctor(self, *, as_json: bool = False) -> tuple[int, str]:
         out = io.StringIO()
         code = run_doctor(
-            self.settings, self.system, self.keystore, as_json=as_json, out=out, clock=self.clock
+            self.settings,
+            self.system,
+            self.keystore,
+            as_json=as_json,
+            out=out,
+            clock=self.clock,
+            code_dir=self.code_dir,
         )
         return code, out.getvalue()
+
+
+SERVER_STARTED = START - timedelta(hours=5)
+
+
+def _server_listing(started: datetime) -> str:
+    """What the process query prints: uv -> venv launcher -> interpreter, all `agent serve`."""
+    stamp = started.isoformat()
+    command = "python.exe -m agent serve"
+    rows = [
+        {"pid": 10, "ppid": 1, "name": "uv.exe", "started": stamp, "cmd": "uv.exe run " + command},
+        {"pid": 11, "ppid": 10, "name": "python.exe", "started": stamp, "cmd": command},
+        {"pid": 12, "ppid": 11, "name": "python.exe", "started": stamp, "cmd": command},
+        {
+            "pid": 99,
+            "ppid": 1,
+            "name": "python.exe",
+            "started": stamp,
+            "cmd": "python.exe -m pytest",
+        },
+    ]
+    return json.dumps(rows)
 
 
 def _token(scopes: list[str], refresh: str | None = REFRESH_TOKEN) -> str:
@@ -209,7 +243,14 @@ def env(tmp_path: Path) -> Env:
             OLLAMA_URL: HttpResult(200, {"models": [{"name": "qwen2.5:3b"}]}),
         },
     )
-    return Env(settings, system, keystore, clock, db_key)
+    code_dir = tmp_path / "agent_code"
+    (code_dir / "sub").mkdir(parents=True)
+    for name in ("a.py", "sub/b.py"):
+        source = code_dir / name
+        source.write_text("x = 1\n", encoding="utf-8")
+        os.utime(source, (SERVER_STARTED.timestamp() - 3600,) * 2)
+    system.commands[tuple(LIST_PROCESSES)] = CommandResult(0, _server_listing(SERVER_STARTED))
+    return Env(settings, system, keystore, clock, db_key, code_dir)
 
 
 def test_healthy_machine_passes_everything(env: Env) -> None:
@@ -228,6 +269,7 @@ def test_healthy_machine_passes_everything(env: Env) -> None:
         "database",
         "audit_chain",
         "scheduled_task",
+        "server_code",
         "power",
         "paired_device",
         "last_mail_sync",
@@ -501,7 +543,7 @@ def test_database_missing_is_not_created(env: Env, tmp_path: Path) -> None:
     env.settings = replace(env.settings, db_path=missing)
     results = env.results()
     assert results["database"].status == "fail"
-    assert "Start-ScheduledTask" in results["database"].fix
+    assert "agent restart" in results["database"].fix
     assert not missing.exists()
     assert not missing.parent.exists()
     assert results["audit_chain"].status == "skip"
@@ -567,7 +609,7 @@ def test_scheduled_task_not_running(env: Env) -> None:
     env.system.commands[SCHTASKS] = CommandResult(0, SCHTASKS_READY)
     result = env.result("scheduled_task")
     assert result.status == "fail"
-    assert result.fix == 'Start-ScheduledTask -TaskName "PersonalAi agent"'
+    assert result.fix == "uv run python -m agent restart"
 
 
 def test_scheduled_task_unreadable_status_warns(env: Env) -> None:
@@ -703,6 +745,58 @@ def test_a_good_run_after_a_failure_reads_as_pass_again(env: Env) -> None:
     record_ok(db, CLASSROOM, env.clock)
     db.close()
     assert env.result("last_classroom_sync").status == "pass"
+
+
+# --- stale server ----------------------------------------------------------------------------
+
+
+def _touch(path: Path, moment: datetime) -> None:
+    os.utime(path, (moment.timestamp(),) * 2)
+
+
+def test_server_started_after_the_last_code_change_passes(env: Env) -> None:
+    result = env.result("server_code")
+    assert result.status == "pass" and "started 2026-10-05T07:00" in result.detail
+
+
+def test_server_older_than_the_newest_source_file_warns(env: Env) -> None:
+    _touch(env.code_dir / "sub" / "b.py", SERVER_STARTED + timedelta(minutes=30))
+    result = env.result("server_code")
+    assert result.status == "warn" and not result.required
+    assert "stale code" in result.detail and result.fix == "uv run python -m agent restart"
+    code, text = env.doctor()
+    assert code == 0  # informational: never blocks the go-live checklist
+    assert "[WARN] Running server is current" in text
+
+
+def test_oldest_of_several_server_processes_decides(env: Env) -> None:
+    # An old orphan still holding the port, next to a fresh restart.
+    old = json.loads(_server_listing(SERVER_STARTED - timedelta(days=1)))
+    fresh = json.loads(_server_listing(SERVER_STARTED))
+    rows = old + [{**r, "pid": r["pid"] + 100} for r in fresh]
+    env.system.commands[tuple(LIST_PROCESSES)] = CommandResult(0, json.dumps(rows))
+    assert env.result("server_code").status == "warn"
+
+
+def test_server_check_skips_when_no_server_runs(env: Env) -> None:
+    env.system.commands[tuple(LIST_PROCESSES)] = CommandResult(0, "[]")
+    assert env.result("server_code").status == "skip"
+
+
+@pytest.mark.parametrize("output", ["not json", '{"unexpected": 1}', ""])
+def test_server_check_is_not_fooled_by_unreadable_output(env: Env, output: str) -> None:
+    env.system.commands[tuple(LIST_PROCESSES)] = CommandResult(0, output)
+    assert env.result("server_code").status in ("warn", "skip")
+
+
+def test_server_check_warns_when_processes_cannot_be_listed(env: Env) -> None:
+    env.system.commands[tuple(LIST_PROCESSES)] = CommandResult(1, "")
+    assert env.result("server_code").status == "warn"
+
+
+def test_server_check_is_windows_only(env: Env) -> None:
+    env.system.platform = "linux"
+    assert env.result("server_code").status == "skip"
 
 
 # --- crashes never leak ----------------------------------------------------------------------

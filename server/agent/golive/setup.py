@@ -8,6 +8,7 @@ go only from a hidden prompt into the OS keyring: never into argv, the environme
 from __future__ import annotations
 
 import getpass
+import io
 import os
 import re
 import sqlite3
@@ -26,6 +27,7 @@ from agent.connectors.google_auth import (
 )
 from agent.core.netguard import UnsafeBindAddress, validate_bind_hosts
 from agent.golive import probes
+from agent.golive.service import restart_server
 from agent.golive.system import System
 from agent.store.keystore import KeyStore
 
@@ -535,7 +537,6 @@ class _Wizard:
                 "Settings changed during setup; restart the task so it picks them up?", True
             )
         ):
-            self._powershell(["-Command", f"Stop-ScheduledTask -TaskName '{probes.TASK_NAME}'"])
             self._start_task()
 
     def _powershell(self, args: Sequence[str], *, bypass: bool = False) -> int:
@@ -545,9 +546,13 @@ class _Wizard:
         return self.system.run_interactive([*argv, *args])
 
     def _start_task(self) -> None:
-        code = self._powershell(["-Command", f"Start-ScheduledTask -TaskName '{probes.TASK_NAME}'"])
-        if code != 0:
-            self.p.say(f"Starting the task failed (exit {code}).")
+        """(Re)start through ``restart_server``: it also ends a stale server an older install of
+        the task left running, which would otherwise keep the port and make the new one exit."""
+        out = io.StringIO()
+        if restart_server(self.system, out) != 0:
+            self.p.say("Starting the task failed:")
+        for line in out.getvalue().splitlines():
+            self.p.say(f"  {line}")
 
     def power(self) -> None:
         self._header(9, "Power settings")

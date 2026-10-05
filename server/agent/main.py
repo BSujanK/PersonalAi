@@ -1,4 +1,4 @@
-"""Command-line entry point: ``serve`` (default) and ``pair``."""
+"""Command-line entry point: ``serve`` (default), ``pair``, ``restart``, ``doctor`` and more."""
 
 from __future__ import annotations
 
@@ -29,6 +29,8 @@ from agent.core.redact import Redactor
 from agent.core.tools import ToolRegistry
 from agent.finance.services import FinanceServices, setup_finance
 from agent.golive.doctor import run_doctor
+from agent.golive.probes import TASK_NAME
+from agent.golive.service import restart_server
 from agent.golive.setup import STEP_IDS, ConsolePrompter, run_setup
 from agent.golive.system import RealSystem
 from agent.mail.classify import MailClassifier, build_classifier_llm
@@ -289,6 +291,10 @@ def _doctor(settings: Settings, as_json: bool) -> int:
     )
 
 
+def _restart(task_name: str) -> int:
+    return restart_server(RealSystem(), sys.stdout, task_name=task_name)
+
+
 def _setup(redo: list[str]) -> int:
     try:
         assert_secure_backend()
@@ -352,9 +358,17 @@ def main(
     setup.add_argument(
         "--redo", action="append", default=[], choices=STEP_IDS, help="re-run a step (repeatable)"
     )
+    restart = sub.add_parser(
+        "restart",
+        help="stop every running server of this user, then start the scheduled task "
+        "(run this after updating the code)",
+    )
+    restart.add_argument("--task", default=TASK_NAME, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.command == "setup":
         return _setup(args.redo)
+    if args.command == "restart":
+        return _restart(args.task)
     try:
         settings = Settings.from_env()
     except ValueError as exc:
