@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 import uvicorn
 
 import agent.main as main_module
+from agent.connectors.google_auth import GoogleNotConfigured
+from agent.core.clock import utcnow
+from agent.mail.sync import SyncStats
 from agent.main import main
 from agent.scheduler import (
     DEADLINE_JOB_ID,
@@ -15,6 +19,15 @@ from agent.scheduler import (
     MAIL_JOB_ID,
     Job,
 )
+from agent.store.db import Database
+from agent.store.sync_status import (
+    CLASSROOM,
+    last_failure,
+    last_ok,
+    mail_status_name,
+    record_failure,
+)
+from agent.workspace.deadlines import DeadlineScanResult
 
 
 @pytest.fixture
@@ -235,3 +248,76 @@ def test_doctor_and_setup_subcommands_dispatch(monkeypatch: pytest.MonkeyPatch) 
     assert main_module.main(["doctor", "--json"]) == 0
     assert main_module.main(["setup", "--redo", "pair", "--redo", "power"]) == 0
     assert seen == [("doctor", True), ("setup", ["pair", "power"])]
+
+
+def _scan(result: DeadlineScanResult) -> Callable[[], DeadlineScanResult]:
+    return lambda: result
+
+
+def test_deadline_scan_where_every_account_fails_is_not_ok() -> None:
+    db = Database(":memory:")
+    failures = {"a@example.edu": "GoogleNotConfigured", "b@example.edu": "GoogleNotConfigured"}
+    main_module._run_deadline_scan(db, _scan(DeadlineScanResult(0, 0, failures)))
+    assert last_ok(db, CLASSROOM) is None
+    failure = last_failure(db, CLASSROOM)
+    assert failure is not None
+    assert failure[1] == "GoogleNotConfigured for 2 of 2 accounts"
+
+
+def test_deadline_scan_reason_lists_distinct_types_sorted() -> None:
+    db = Database(":memory:")
+    failures = {"a@example.edu": "ValueError", "b@example.edu": "GoogleNotConfigured"}
+    main_module._run_deadline_scan(db, _scan(DeadlineScanResult(0, 0, failures)))
+    failure = last_failure(db, CLASSROOM)
+    assert failure is not None
+    assert failure[1] == "GoogleNotConfigured, ValueError for 2 of 2 accounts"
+
+
+def test_deadline_scan_with_one_account_ok_records_ok_and_clears_failure() -> None:
+    db = Database(":memory:")
+    record_failure(db, CLASSROOM, "ValueError", utcnow)
+    main_module._run_deadline_scan(db, _scan(DeadlineScanResult(0, 1, {"b@example.edu": "X"})))
+    assert last_ok(db, CLASSROOM) is not None
+    assert last_failure(db, CLASSROOM) is None
+
+
+def test_deadline_scan_that_did_nothing_records_nothing() -> None:
+    db = Database(":memory:")
+    main_module._run_deadline_scan(db, _scan(DeadlineScanResult(0, 0, {})))
+    assert last_ok(db, CLASSROOM) is None
+    assert last_failure(db, CLASSROOM) is None
+
+
+def test_deadline_scan_that_raises_records_the_type_and_reraises() -> None:
+    db = Database(":memory:")
+
+    def boom() -> DeadlineScanResult:
+        raise GoogleNotConfigured("private detail")
+
+    with pytest.raises(GoogleNotConfigured):
+        main_module._run_deadline_scan(db, boom)
+    failure = last_failure(db, CLASSROOM)
+    assert failure is not None
+    assert failure[1] == "GoogleNotConfigured"
+    assert "private" not in failure[1]
+
+
+class _FakeSync:
+    def __init__(self, results: dict[str, SyncStats | str]) -> None:
+        self._results = results
+
+    def sync_all(self, accounts: object) -> dict[str, SyncStats | str]:
+        return self._results
+
+
+def test_mail_sync_records_each_account_separately() -> None:
+    db = Database(":memory:")
+    good, bad = "me@example.com", "second@example.org"
+    sync = _FakeSync({good: SyncStats(added=1), bad: "GoogleNotConfigured"})
+    main_module._run_mail_sync(db, sync, [good, bad])  # type: ignore[arg-type]
+    assert last_ok(db, mail_status_name(good)) is not None
+    assert last_failure(db, mail_status_name(good)) is None
+    assert last_ok(db, mail_status_name(bad)) is None
+    failure = last_failure(db, mail_status_name(bad))
+    assert failure is not None
+    assert failure[1] == "GoogleNotConfigured"

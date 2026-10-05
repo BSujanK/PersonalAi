@@ -38,6 +38,27 @@ jobs:
           uv run mypy agent
           uv run pytest -q
 
+  # The server runs on the owner's Windows laptop, so the same checks run on Windows too:
+  # PATH lookups, powercfg output, default text encodings (cp1252) and the OS keyring all
+  # differ from Linux. Python 3.13 matches the laptop.
+  server-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - working-directory: server
+        run: |
+          uv sync --all-extras --dev
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy agent
+          uv run pytest -q
+
   mobile:
     runs-on: ubuntu-latest
     steps:

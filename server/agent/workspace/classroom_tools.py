@@ -126,35 +126,61 @@ def register_classroom_tools(
             for item in api_for(account).list_materials(course_id, limit)
         ]
 
-    account_prop = {"account": {"type": "string"}}
+    account_prop = {
+        "account": {
+            "type": "string",
+            "description": "The course's account value from classroom_courses, copied exactly.",
+        }
+    }
+    course_id_prop = {
+        "type": "string",
+        "description": "The course's id value from classroom_courses (not its name).",
+    }
     course_props = {
         **account_prop,
-        "course_id": {"type": "string"},
+        "course_id": course_id_prop,
         "limit": {"type": "integer", "minimum": 1, "maximum": 20},
     }
     for name, description, props, required, run in (
-        ("classroom_courses", "List active Google Classroom courses.", account_prop, [], courses),
+        (
+            "classroom_courses",
+            "List the owner's active Google Classroom courses with each course's id, name and "
+            "account. Call this first whenever the owner mentions a course or class, then pass "
+            "the id and account to the other classroom tools.",
+            {"account": {"type": "string", "description": "Omit to list every account."}},
+            [],
+            courses,
+        ),
         (
             "classroom_coursework",
-            "List upcoming Classroom assignments with due dates, soonest first.",
+            "List upcoming Classroom assignments, tests and quizzes with due dates, soonest "
+            "first. Each item has a due value to use for a calendar event or reminder. Pass "
+            "course_id and account from classroom_courses for one course, or omit both for all.",
             {
                 **account_prop,
-                "course_id": {"type": "string"},
-                "days": {"type": "integer", "minimum": 1, "maximum": 60},
+                "course_id": course_id_prop,
+                "days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 60,
+                    "description": "How many days ahead to look (default 14).",
+                },
             },
             [],
             coursework,
         ),
         (
             "classroom_announcements",
-            "Recent announcements for one Classroom course.",
+            "Recent teacher announcements (posts) in one Classroom course, newest first. Needs "
+            "the course's id and account from classroom_courses.",
             course_props,
             ["account", "course_id"],
             announcements,
         ),
         (
             "classroom_materials",
-            "Recent class materials for one Classroom course.",
+            "Recent class materials (readings, slides, files) in one Classroom course. Needs the "
+            "course's id and account from classroom_courses.",
             course_props,
             ["account", "course_id"],
             materials,

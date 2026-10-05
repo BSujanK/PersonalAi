@@ -8,11 +8,13 @@ import re
 import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from agent.config import Settings
 from agent.core import policy
 from agent.core.approvals import ApprovalEngine
+from agent.core.clock import Clock, utcnow
 from agent.core.llm import ChatMessage, LLMClient, LLMResponse, StreamingLLMClient, ToolCall
 from agent.core.policy import Decision
 from agent.core.redact import Redacted, RedactionMap, Redactor, StreamRehydrator, from_model
@@ -27,9 +29,27 @@ SYSTEM_PROMPT = (
     "You cannot change anything yourself. Tools that write only propose an action, which the "
     "owner must approve on their phone.\n"
     "Values like ⟨ACCT_1⟩ are masked placeholders for sensitive data. Copy them verbatim; never "
-    "guess or alter them."
+    "guess or alter them. Pass them as tool arguments exactly as shown.\n"
+    "How to work:\n"
+    "- Look facts up with the tools; never guess dates, ids or accounts. Take every id and "
+    "account argument from an earlier tool result.\n"
+    "- Mail: mail_search with one topic word (exam, fee), then mail_read with that result's "
+    "account and id to read the full text before you answer.\n"
+    "- Classroom: call classroom_courses first, then use a course's id and account with "
+    "classroom_coursework, classroom_announcements or classroom_materials.\n"
+    "- To add a date to the calendar or set a reminder, first find the date with the read "
+    "tools, then call calendar_create_event or phone_reminder. Do not ask the owner to confirm "
+    "in chat: the approval on their phone is the confirmation.\n"
+    "- Times in tool arguments are ISO 8601 with a UTC offset, like the current time below.\n"
+    "- When you have the facts, answer briefly in plain words."
 )
 STEP_LIMIT_REPLY = "I stopped after too many steps."
+
+
+def system_prompt(now: datetime) -> str:
+    """The fixed rules plus the current local time, so relative dates resolve correctly."""
+    local = now.astimezone()
+    return f"{SYSTEM_PROMPT}\nCurrent time: {local.isoformat(timespec='minutes')} ({local:%A})."
 
 
 def _fullwidth(ch: str) -> str:
@@ -75,12 +95,14 @@ class AgentLoop:
         redactor: Redactor,
         approvals: ApprovalEngine,
         settings: Settings,
+        clock: Clock = utcnow,
     ) -> None:
         self._llm = llm
         self._registry = registry
         self._redactor = redactor
         self._approvals = approvals
         self._settings = settings
+        self._clock = clock
 
     def run(
         self,
@@ -92,7 +114,7 @@ class AgentLoop:
         on_text: Callable[[str], None] | None = None,
         on_reset: Callable[[], None] | None = None,
     ) -> LoopResult:
-        system = ChatMessage("system", from_model(SYSTEM_PROMPT))
+        system = ChatMessage("system", from_model(system_prompt(self._clock())))
         new: list[ChatMessage] = [ChatMessage("user", self._redactor.redact(user_text, rmap))]
         pending_ids: list[str] = []
         tools = self._registry.schemas()

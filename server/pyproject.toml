@@ -21,7 +21,12 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest", "ruff", "mypy"]
+dev = [
+    "pytest",
+    "ruff",
+    "mypy",
+    "httpx2>=2.13.1",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -46,6 +51,8 @@ files = ["agent"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# A Starlette deprecation fails the run, so it gets fixed before an upgrade removes the old path.
+filterwarnings = ["error::starlette.exceptions.StarletteDeprecationWarning"]
 
 [[tool.mypy.overrides]]
 module = ["googleapiclient.*", "defusedxml.*", "google_auth_oauthlib.*", "apscheduler.*"]

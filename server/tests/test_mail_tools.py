@@ -122,6 +122,9 @@ def test_digest_search_and_read() -> None:
         "m1",
         "m3",
     ]
+    # Every word must appear, in any order, so a small model's two-word query still matches.
+    assert [r["id"] for r in w.run_tool("mail_search", {"query": "report budget"})] == ["m1"]
+    assert w.run_tool("mail_search", {"query": "budget lunch"}) == []
     assert [r["id"] for r in w.run_tool("mail_search", {"category": "important"})] == ["m1"]
     assert [r["id"] for r in w.run_tool("mail_search", {"account": A2, "days": 30})] == ["m3"]
     assert len(w.run_tool("mail_search", {"limit": 1})) == 1

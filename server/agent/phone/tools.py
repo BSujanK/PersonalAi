@@ -139,11 +139,20 @@ def register_phone_tools(registry: ToolRegistry, queue: CommandQueue, clock: Clo
         ),
         (
             "phone_reminder",
-            "Schedule a reminder notification on the owner's phone (requires approval). "
-            "at is an ISO 8601 datetime with an explicit UTC offset.",
+            "Remind the owner with a notification on their phone at a set time (requires "
+            "approval). Use this for any 'remind me' request; use phone_set_alarm only to "
+            "wake them up.",
             {
-                "at": {"type": "string"},
-                "text": {"type": "string", "maxLength": 200},
+                "at": {
+                    "type": "string",
+                    "description": "When, as an ISO 8601 datetime with its UTC offset, e.g. "
+                    "the time the owner gave or a due time found with another tool.",
+                },
+                "text": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "What to remind about, e.g. 'Submit the lab record'.",
+                },
             },
             ["at", "text"],
             reminder_run,

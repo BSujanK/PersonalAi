@@ -17,7 +17,7 @@ from agent.finance.services import FinanceServices
 from agent.finance.sms_parsers.common import known_senders
 from agent.finance.summary import Period, format_inr, local_tz, resolve_period, spend_summary
 from agent.store.models import Device
-from agent.store.sync_status import SMS_INGEST, record_ok
+from agent.store.sync_status import SMS_INGEST, record_failure, record_ok
 
 router = APIRouter()
 
@@ -59,18 +59,29 @@ def ingest_sms(
     audit: AuditLog = request.app.state.audit
     latest = request.app.state.clock() + MAX_FUTURE
     items = [SmsIn(m.sender, m.body, _received(m, latest)) for m in body.messages]
-    with request.app.state.db.transaction():
-        result = finance.ingest.ingest_sms_batch(items)
-        audit.record(
-            "sms_batch",
-            actor=f"device:{device.id}",
-            detail=(
-                f"accepted={result.accepted} duplicates={result.duplicates} "
-                f"parsed={result.parsed} balances={result.balances} "
-                f"ignored={result.ignored} unparsed={result.unparsed}"
-            ),
-        )
-        record_ok(request.app.state.db, SMS_INGEST, request.app.state.clock)
+    db = request.app.state.db
+    clock = request.app.state.clock
+    try:
+        with db.transaction():
+            result = finance.ingest.ingest_sms_batch(items)
+            audit.record(
+                "sms_batch",
+                actor=f"device:{device.id}",
+                detail=(
+                    f"accepted={result.accepted} duplicates={result.duplicates} "
+                    f"parsed={result.parsed} balances={result.balances} "
+                    f"ignored={result.ignored} unparsed={result.unparsed}"
+                ),
+            )
+            if result.accepted > 0 and result.unparsed == result.accepted:
+                reason = f"none of {result.accepted} new bank messages could be parsed"
+                record_failure(db, SMS_INGEST, reason, clock)
+            else:
+                record_ok(db, SMS_INGEST, clock)
+    except Exception as exc:
+        with db.transaction():  # the failed batch rolled back; keep only the reason
+            record_failure(db, SMS_INGEST, type(exc).__name__, clock)
+        raise
     return {
         "accepted": result.accepted,
         "duplicates": result.duplicates,

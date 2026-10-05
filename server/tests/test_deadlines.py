@@ -8,7 +8,7 @@ import pytest
 
 from agent.core.policy import MAX_PENDING_ACTIONS
 from agent.store.models import ActionStatus
-from agent.workspace.deadlines import DeadlineProposer
+from agent.workspace.deadlines import DeadlineProposer, DeadlineScanResult
 from tests.fakes_workspace import FakeClassroomApi, Workspace, due_fields
 from tests.support import DEVICE_ID, request_for
 
@@ -153,7 +153,7 @@ def test_proposes_once_and_records_the_row() -> None:
     w = Workspace()
     _setup(w)
     proposer = _proposer(w)
-    assert proposer.run() == 1
+    assert proposer.run().proposed == 1
     row = _rows(w)[0]
     assert (row["classroom_account"], row["course_id"], row["coursework_id"]) == (
         COLLEGE,
@@ -166,7 +166,7 @@ def test_proposes_once_and_records_the_row() -> None:
     assert action.payload == _args()
     assert action.status is ActionStatus.PENDING
     assert w.calendars[ME].inserted == []
-    assert proposer.run() == 0
+    assert proposer.run().proposed == 0
     assert w.engine.pending_count() == 1
 
 
@@ -176,7 +176,7 @@ def test_no_calendar_account_proposes_nothing() -> None:
     proposer = DeadlineProposer(
         w.db, w.engine, w.classrooms.__getitem__, (COLLEGE,), None, w.clock, 14
     )
-    assert proposer.run() == 0
+    assert proposer.run().proposed == 0
     assert w.engine.pending_count() == 0
 
 
@@ -194,14 +194,14 @@ def test_skips_past_out_of_horizon_and_undated_items() -> None:
             {"id": "ok", "title": "OK", **due_fields(now + timedelta(days=14))},
         ]
     }
-    assert _proposer(w).run() == 1
+    assert _proposer(w).run().proposed == 1
     assert _rows(w)[0]["coursework_id"] == "ok"
 
 
 def test_date_only_due_today_is_still_proposed() -> None:
     w = Workspace()
     _setup(w, due=w.clock.now, date_only=True)
-    assert _proposer(w).run() == 1
+    assert _proposer(w).run().proposed == 1
     assert _only_action(w).payload["due"] == "2026-10-05"
 
 
@@ -210,19 +210,19 @@ def test_never_reproposes_decided_actions_even_after_a_day(status: str) -> None:
     w = Workspace()
     _setup(w, due=w.clock.now + timedelta(days=13))
     proposer = _proposer(w)
-    assert proposer.run() == 1
+    assert proposer.run().proposed == 1
     _set_status(w, _rows(w)[0]["action_id"], status)
     w.clock.advance(timedelta(days=3))
-    assert proposer.run() == 0
+    assert proposer.run().proposed == 0
 
 
 def test_does_not_repropose_while_pending() -> None:
     w = Workspace()
     _setup(w, due=w.clock.now + timedelta(days=13))
     proposer = _proposer(w)
-    assert proposer.run() == 1
+    assert proposer.run().proposed == 1
     w.clock.advance(timedelta(minutes=10))
-    assert proposer.run() == 0
+    assert proposer.run().proposed == 0
 
 
 @pytest.mark.parametrize("status", ["expired", "failed"])
@@ -230,13 +230,13 @@ def test_reproposes_expired_or_failed_only_after_24_hours(status: str) -> None:
     w = Workspace()
     _setup(w, due=w.clock.now + timedelta(days=13))
     proposer = _proposer(w)
-    assert proposer.run() == 1
+    assert proposer.run().proposed == 1
     first = _rows(w)[0]["action_id"]
     _set_status(w, first, status)
     w.clock.advance(timedelta(hours=23, minutes=59))
-    assert proposer.run() == 0
+    assert proposer.run().proposed == 0
     w.clock.advance(timedelta(minutes=2))
-    assert proposer.run() == 1
+    assert proposer.run().proposed == 1
     assert _rows(w)[0]["action_id"] != first
     assert len(_rows(w)) == 1
 
@@ -245,23 +245,23 @@ def test_pending_action_that_lapses_is_reproposed_after_24_hours() -> None:
     w = Workspace()
     _setup(w, due=w.clock.now + timedelta(days=13))
     proposer = _proposer(w)
-    assert proposer.run() == 1
+    assert proposer.run().proposed == 1
     w.clock.advance(timedelta(hours=1))
-    assert proposer.run() == 0  # now expired, but not yet 24 hours old
+    assert proposer.run().proposed == 0  # now expired, but not yet 24 hours old
     assert _only_action(w).status is ActionStatus.EXPIRED
     w.clock.advance(timedelta(hours=24))
-    assert proposer.run() == 1
+    assert proposer.run().proposed == 1
 
 
 def test_reproposes_when_the_due_date_moves_even_after_rejection() -> None:
     w = Workspace()
     _setup(w)
     proposer = _proposer(w)
-    assert proposer.run() == 1
+    assert proposer.run().proposed == 1
     _set_status(w, _rows(w)[0]["action_id"], "rejected")
-    assert proposer.run() == 0
+    assert proposer.run().proposed == 0
     _setup(w, due=DUE + timedelta(days=1))
-    assert proposer.run() == 1
+    assert proposer.run().proposed == 1
     assert _rows(w)[0]["due_at"] == (DUE + timedelta(days=1)).isoformat()
     assert _only_action(w).payload["due"] == "2026-10-09T09:30:00+00:00"
 
@@ -281,9 +281,9 @@ def test_stops_at_half_the_pending_cap() -> None:
     for i in range(3):
         w.engine.propose("calendar_add_deadline", _args(coursework_id=f"old{i}"), None)
     proposer = _proposer(w)
-    assert proposer.run() == half - 3
+    assert proposer.run().proposed == half - 3
     assert w.engine.pending_count() == half
-    assert proposer.run() == 0
+    assert proposer.run().proposed == 0
 
 
 def test_cap_already_reached_proposes_nothing() -> None:
@@ -291,7 +291,7 @@ def test_cap_already_reached_proposes_nothing() -> None:
     _setup(w)
     for i in range(MAX_PENDING_ACTIONS // 2):
         w.engine.propose("calendar_add_deadline", _args(coursework_id=f"old{i}"), None)
-    assert _proposer(w).run() == 0
+    assert _proposer(w).run().proposed == 0
     assert _rows(w) == []
 
 
@@ -301,12 +301,38 @@ def test_one_failing_account_does_not_stop_the_others(caplog: pytest.LogCaptureF
     w.classrooms[OTHER].fail = RuntimeError("secret title Essay for other@example.org")
     _setup(w)
     with caplog.at_level(logging.INFO, logger="agent.workspace.deadlines"):
-        assert _proposer(w, (OTHER, COLLEGE)).run() == 1
+        assert _proposer(w, (OTHER, COLLEGE)).run().proposed == 1
     text = caplog.text
     assert "deadline scan failed for an account: RuntimeError" in text
     for private in ("secret", "Essay", "example.org", "Intro"):
         assert private not in text
     assert "proposed 1 actions" in text
+
+
+def test_result_reports_scanned_and_failed_accounts() -> None:
+    w = Workspace()
+    w.classrooms[OTHER] = FakeClassroomApi()
+    w.classrooms[OTHER].fail = RuntimeError("private text")
+    _setup(w)
+    result = _proposer(w, (OTHER, COLLEGE)).run()
+    assert result == DeadlineScanResult(1, 1, {OTHER: "RuntimeError"})
+
+
+def test_result_when_every_account_fails() -> None:
+    w = Workspace()
+    w.classrooms[OTHER] = FakeClassroomApi()
+    for account in (COLLEGE, OTHER):
+        w.classrooms[account].fail = KeyError("private text")
+    result = _proposer(w, (OTHER, COLLEGE)).run()
+    assert result == DeadlineScanResult(0, 0, {OTHER: "KeyError", COLLEGE: "KeyError"})
+
+
+def test_full_queue_is_neither_scanned_nor_failed() -> None:
+    w = Workspace()
+    _setup(w)
+    for i in range(MAX_PENDING_ACTIONS // 2):
+        w.engine.propose("calendar_add_deadline", _args(coursework_id=f"f{i}"), None)
+    assert _proposer(w).run() == DeadlineScanResult(0, 0, {})
 
 
 def test_hostile_titles_are_flattened_and_bad_ids_skipped() -> None:
@@ -320,7 +346,7 @@ def test_hostile_titles_are_flattened_and_bad_ids_skipped() -> None:
             {"title": "No id", **due_fields(DUE)},
         ]
     }
-    assert _proposer(w).run() == 1
+    assert _proposer(w).run().proposed == 1
     payload = _only_action(w).payload
     assert payload["course"] == "Intro to Examples"
     assert payload["title"].startswith("Line one Line two ") and len(payload["title"]) == 200

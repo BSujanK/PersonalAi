@@ -117,11 +117,11 @@ def register_mail_tools(
         days = _check_int(args.get("days", 7), 1, 30, "days")
         limit = _check_int(args.get("limit", 10), 1, 20, "limit")
         since_ms = int((clock() - timedelta(days=days)).timestamp() * 1000)
-        needle = (query or "").lower()
+        words = (query or "").lower().split()
         found: list[dict[str, Any]] = []
         for mail in store.recent(since_ms, account=account, category=category, limit=_SEARCH_SCAN):
             haystack = f"{mail.subject}\n{mail.from_addr}\n{mail.from_name}\n{mail.snippet}"
-            if needle in haystack.lower():
+            if all(word in haystack.lower() for word in words):
                 found.append(_summary(mail))
                 if len(found) == limit:
                     break
@@ -157,14 +157,29 @@ def register_mail_tools(
     registry.register(
         Tool(
             name="mail_search",
-            description="Search recent mail by text in subject, sender or snippet.",
+            description=(
+                "Find recent mail. Returns id, account, sender, subject and a short snippet per "
+                "message, newest first; call mail_read with a result's account and id for the "
+                "full text."
+            ),
             parameters={
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "maxLength": 100},
+                    "query": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "description": "One or two topic words, such as exam or fee. Every word "
+                        "must appear in the subject, sender or snippet, so leave out words like "
+                        "email, professor or date.",
+                    },
                     "category": {"type": "string", "enum": list(CATEGORY_VALUES)},
-                    "account": {"type": "string"},
-                    "days": {"type": "integer", "minimum": 1, "maximum": 30},
+                    "account": {"type": "string", "description": "Omit to search every account."},
+                    "days": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 30,
+                        "description": "How many days back to search (default 7).",
+                    },
                     "limit": {"type": "integer", "minimum": 1, "maximum": 20},
                 },
                 "additionalProperties": False,
@@ -176,10 +191,16 @@ def register_mail_tools(
     registry.register(
         Tool(
             name="mail_read",
-            description="Read one message (headers and body) by account and message id.",
+            description=(
+                "Read the full text of one message. Use the account and id exactly as "
+                "mail_search or mail_digest returned them."
+            ),
             parameters={
                 "type": "object",
-                "properties": {"account": {"type": "string"}, "message_id": {"type": "string"}},
+                "properties": {
+                    "account": {"type": "string", "description": "The result's account value."},
+                    "message_id": {"type": "string", "description": "The result's id value."},
+                },
                 "required": ["account", "message_id"],
                 "additionalProperties": False,
             },

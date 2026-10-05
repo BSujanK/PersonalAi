@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 
 from agent.api.app import create_app
@@ -12,6 +13,7 @@ from agent.core.redact import Redactor
 from agent.finance.categorize import FinanceCategorizer
 from agent.finance.services import FinanceServices
 from agent.store.keystore import KeyStore
+from agent.store.sync_status import SMS_INGEST, last_failure, last_ok
 from tests.finance_support import SENDER, FinEnv, balance, make_fin, txn
 from tests.support import START, make_registry
 from tests.test_api import _auth
@@ -98,6 +100,50 @@ def test_sms_batch_ingests_dedups_and_audits_counts_only() -> None:
     rows = api.env.db.query("SELECT detail FROM audit_log WHERE event = 'sms_batch'")
     assert len(rows) == 2 and rows[0]["detail"].startswith("accepted=2 duplicates=0")
     assert BODY not in " ".join(r["detail"] for r in rows)
+
+
+def test_successful_batch_records_ok() -> None:
+    api = _api()
+    _sms(api, _item())
+    assert last_ok(api.env.db, SMS_INGEST) is not None
+    assert last_failure(api.env.db, SMS_INGEST) is None
+
+
+def test_batch_where_every_new_message_is_unparsed_is_a_failure_not_ok() -> None:
+    api = _api()
+    assert _sms(api, _item("Unknown format one"), _item("Unknown format two")).status_code == 200  # type: ignore[attr-defined]
+    assert last_ok(api.env.db, SMS_INGEST) is None
+    failure = last_failure(api.env.db, SMS_INGEST)
+    assert failure is not None
+    assert failure[1] == "none of 2 new bank messages could be parsed"
+    _sms(api, _item())
+    assert last_ok(api.env.db, SMS_INGEST) is not None
+    assert last_failure(api.env.db, SMS_INGEST) is None
+
+
+def test_batch_with_only_duplicates_does_not_count_as_unparsed() -> None:
+    api = _api()
+    _sms(api, _item("Unknown format one"))
+    _sms(api, _item("Unknown format one"))  # accepted == 0 this time, so it is not "all unparsed"
+    assert last_ok(api.env.db, SMS_INGEST) is not None
+
+
+def test_ingest_exception_rolls_back_records_the_type_and_reraises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    api = _api()
+
+    def boom(items: object) -> object:
+        raise ValueError("private body text")
+
+    monkeypatch.setattr(api.env.ingest, "ingest_sms_batch", boom)
+    with pytest.raises(ValueError):
+        _sms(api, _item())
+    assert last_ok(api.env.db, SMS_INGEST) is None
+    failure = last_failure(api.env.db, SMS_INGEST)
+    assert failure is not None
+    assert failure[1] == "ValueError"
+    assert api.env.db.query("SELECT 1 FROM audit_log WHERE event = 'sms_batch'") == []
 
 
 def test_invalid_batch_is_422_and_stores_nothing() -> None:

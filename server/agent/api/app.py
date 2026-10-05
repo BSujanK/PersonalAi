@@ -70,7 +70,7 @@ def create_app(
     app.state.commands = commands
     app.state.push = PushNotifier(db, keystore, enabled=settings.push == "expo")
     app.state.chat_locks = KeyedLocks()
-    app.state.loop = AgentLoop(llm, registry, redactor, approvals, settings)
+    app.state.loop = AgentLoop(llm, registry, redactor, approvals, settings, clock)
 
     # /pair is the only route without the device-token dependency.
     app.include_router(pair_routes.router)

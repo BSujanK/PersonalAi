@@ -200,6 +200,11 @@ CREATE TABLE IF NOT EXISTS sync_status (
     name TEXT PRIMARY KEY,
     last_ok_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS sync_failures (
+    name TEXT PRIMARY KEY,
+    reason TEXT NOT NULL,
+    failed_at TEXT NOT NULL
+);
 -- Holds keyed hashes of words, never plaintext; rowid = local_files.id.
 CREATE VIRTUAL TABLE IF NOT EXISTS local_files_fts USING fts5(tokens);
 """

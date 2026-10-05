@@ -10,7 +10,7 @@ from __future__ import annotations
 import functools
 import ipaddress
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -35,7 +35,13 @@ from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.devices import list_devices
 from agent.store.keystore import KeyStore, assert_secure_backend
-from agent.store.sync_status import CLASSROOM, SMS_INGEST, last_ok
+from agent.store.sync_status import (
+    CLASSROOM,
+    SMS_INGEST,
+    last_failure,
+    last_ok,
+    mail_status_name,
+)
 
 Status = Literal["pass", "fail", "warn", "skip"]
 
@@ -47,6 +53,7 @@ _TAILSCALE_NETS = (
     ipaddress.ip_network("fd7a:115c:a1e0::/48"),
 )
 _STALE_FACTOR = 3
+_SIGN_IN_ERRORS = ("GoogleNotConfigured", "RefreshError")
 
 
 @dataclass(frozen=True)
@@ -570,6 +577,15 @@ def _freshness(
     return CheckResult(check_id, title, "pass", False, detail)
 
 
+def _google_fix(ctx: _Ctx, accounts: Sequence[str]) -> str:
+    """The sign-in command doctor's Google check suggests, for the given accounts."""
+    return "\n".join(
+        f"uv run python scripts/setup_google_oauth.py --account {a} "
+        f"--services {','.join(_services_for(ctx.settings, a.lower()))}"
+        for a in accounts
+    )
+
+
 def _mail_last_sync(ctx: _Ctx) -> datetime | None:
     """The oldest per-account sync time; ``None`` if any configured account never synced."""
     if ctx.db is None:
@@ -584,11 +600,43 @@ def _mail_last_sync(ctx: _Ctx) -> datetime | None:
     return oldest
 
 
+def _failing_mail_accounts(ctx: _Ctx) -> list[tuple[str, str]]:
+    if ctx.db is None:
+        return []
+    failing: list[tuple[str, str]] = []
+    for account in ctx.settings.mail_accounts:
+        failure = last_failure(ctx.db, mail_status_name(account))
+        if failure is not None:
+            failing.append((account, failure[1]))
+    return failing
+
+
+def _failure_fix(reasons: Sequence[str], google_fix: str) -> str:
+    """Sign-in problems get the Google sign-in command; anything else, the log hint."""
+    if any(name in r for r in reasons for name in _SIGN_IN_ERRORS):
+        return google_fix
+    return "see the server log (stderr) for the failing job"
+
+
 @_guard("last_mail_sync", "Last mail sync", required=False)
 def _check_mail_sync(ctx: _Ctx) -> CheckResult:
     title = "Last mail sync"
-    if not ctx.settings.mail_accounts:
+    accounts = ctx.settings.mail_accounts
+    if not accounts:
         return CheckResult("last_mail_sync", title, "skip", False, "no mail accounts")
+    failing = _failing_mail_accounts(ctx)
+    if failing:
+        detail = f"{len(failing)} of {len(accounts)} accounts failing: " + "; ".join(
+            f"{account}: {reason}" for account, reason in failing
+        )
+        return CheckResult(
+            "last_mail_sync",
+            title,
+            "fail",
+            False,
+            detail,
+            _failure_fix([r for _, r in failing], _google_fix(ctx, [a for a, _ in failing])),
+        )
     return _freshness(
         "last_mail_sync", title, _mail_last_sync(ctx), ctx.clock(), ctx.settings.mail_poll_minutes
     )
@@ -597,6 +645,17 @@ def _check_mail_sync(ctx: _Ctx) -> CheckResult:
 @_guard("last_sms_ingest", "Last SMS ingest", required=False)
 def _check_sms(ctx: _Ctx) -> CheckResult:
     title = "Last SMS ingest"
+    failure = last_failure(ctx.db, SMS_INGEST) if ctx.db is not None else None
+    if failure is not None:
+        return CheckResult(
+            "last_sms_ingest",
+            title,
+            "fail",
+            False,
+            failure[1],
+            "check that the phone app is paired and its SMS permission is on, then open the "
+            "app to resend; see the server log (stderr) for the failing job",
+        )
     last = last_ok(ctx.db, SMS_INGEST) if ctx.db is not None else None
     return _freshness("last_sms_ingest", title, last, ctx.clock(), None)
 
@@ -606,6 +665,17 @@ def _check_classroom(ctx: _Ctx) -> CheckResult:
     title = "Last Classroom sync"
     if not ctx.settings.classroom_accounts:
         return CheckResult("last_classroom_sync", title, "skip", False, "no Classroom accounts")
+    failure = last_failure(ctx.db, CLASSROOM) if ctx.db is not None else None
+    if failure is not None:
+        accounts = ctx.settings.classroom_accounts
+        return CheckResult(
+            "last_classroom_sync",
+            title,
+            "fail",
+            False,
+            failure[1],
+            _failure_fix([failure[1]], _google_fix(ctx, accounts)),
+        )
     last = last_ok(ctx.db, CLASSROOM) if ctx.db is not None else None
     return _freshness(
         "last_classroom_sync", title, last, ctx.clock(), ctx.settings.deadline_poll_minutes

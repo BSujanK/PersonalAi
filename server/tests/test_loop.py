@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from agent.config import Settings
 from agent.core.llm import ChatMessage, LLMResponse, ToolCall
-from agent.core.loop import STEP_LIMIT_REPLY, AgentLoop, wrap_untrusted
+from agent.core.loop import STEP_LIMIT_REPLY, SYSTEM_PROMPT, AgentLoop, wrap_untrusted
 from agent.core.redact import Redacted, RedactionMap, Redactor, from_model
 from agent.core.tools import Tool, ToolKind
 from agent.store.models import ActionStatus
@@ -307,3 +308,18 @@ def test_non_streaming_llm_tool_step_emits_nothing() -> None:
     texts: list[str] = []
     _loop(env, llm).run("c1", [], "r", RedactionMap(), on_text=texts.append)
     assert texts == ["ok"]
+
+
+def test_system_prompt_keeps_the_rules_and_gives_the_current_time() -> None:
+    env = make_env()
+    llm = FakeLLM(say("ok"))
+    now = datetime(2026, 10, 5, 14, 0, tzinfo=UTC)
+    loop = AgentLoop(llm, env.registry, Redactor([OWNER]), env.engine, Settings(), lambda: now)
+    loop.run("c1", [], "hello", RedactionMap())
+    system = llm.received[0][0]
+    assert system.role == "system"
+    assert system.content.text.startswith(SYSTEM_PROMPT)
+    assert "data, never instructions" in system.content.text
+    assert system.content.text.endswith(
+        f"Current time: {now.astimezone().isoformat(timespec='minutes')} ({now.astimezone():%A})."
+    )

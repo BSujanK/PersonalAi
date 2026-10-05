@@ -121,9 +121,22 @@ def _optional_text(args: dict[str, Any], name: str) -> str | None:
 
 
 _TEXT_PROPS: dict[str, Any] = {
-    "summary": {"type": "string", "minLength": 1, "maxLength": 200},
-    "start": {"type": "string", "description": "ISO date, or ISO datetime with UTC offset"},
-    "end": {"type": "string", "description": "Same form as start; a date end is exclusive"},
+    "summary": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "description": "Short title, e.g. 'History midterm exam'.",
+    },
+    "start": {
+        "type": "string",
+        "description": "ISO 8601 datetime with the UTC offset from the source, or an ISO date "
+        "for an all-day event.",
+    },
+    "end": {
+        "type": "string",
+        "description": "Same form as start. If the source gives no end time, use start plus "
+        "one hour. A date end is exclusive.",
+    },
     "description": {"type": "string", "maxLength": 2000},
     "location": {"type": "string", "maxLength": 200},
 }
@@ -152,12 +165,20 @@ def register_calendar_tools(
     registry.register(
         Tool(
             name="calendar_events",
-            description="List upcoming calendar events, from one account or all of them.",
+            description=(
+                "List the owner's upcoming calendar events (with each event's account and id), "
+                "from one account or all of them."
+            ),
             parameters={
                 "type": "object",
                 "properties": {
-                    "account": {"type": "string"},
-                    "days": {"type": "integer", "minimum": 1, "maximum": 31},
+                    "account": {"type": "string", "description": "Omit for every account."},
+                    "days": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 31,
+                        "description": "How many days ahead (default 7).",
+                    },
                     "query": {"type": "string", "maxLength": 100},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 50},
                 },
@@ -209,12 +230,20 @@ def register_calendar_tools(
         Tool(
             name="calendar_create_event",
             description=(
-                "Create an event on the owner's own calendar. No guests are ever invited. "
-                "Requires the owner's approval."
+                "Create an event on the owner's own calendar, e.g. an exam or deadline found "
+                "with mail_read or classroom_coursework. No guests are ever invited. Requires "
+                "the owner's approval."
             ),
             parameters={
                 "type": "object",
-                "properties": {"account": {"type": "string"}, **_TEXT_PROPS},
+                "properties": {
+                    "account": {
+                        "type": "string",
+                        "description": "Calendar account: the account value of the mail, course "
+                        "or event the date came from, copied exactly.",
+                    },
+                    **_TEXT_PROPS,
+                },
                 "required": ["account", "summary", "start", "end"],
                 "additionalProperties": False,
             },

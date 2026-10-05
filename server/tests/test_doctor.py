@@ -25,7 +25,13 @@ from agent.golive.system import NOT_FOUND, CommandResult, HttpResult
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.keystore import KeyStore
-from agent.store.sync_status import CLASSROOM, SMS_INGEST, record_ok
+from agent.store.sync_status import (
+    CLASSROOM,
+    SMS_INGEST,
+    mail_status_name,
+    record_failure,
+    record_ok,
+)
 from tests.conftest import InMemoryKeyring
 from tests.support import START, FakeClock
 
@@ -771,3 +777,50 @@ def test_secrets_never_appear_with_everything_broken(env: Env, as_json: bool) ->
     _, text = env.doctor(as_json=as_json)
     for secret in (NVIDIA_KEY, ACCESS_TOKEN, REFRESH_TOKEN):
         assert secret not in text
+
+
+def _record(env: Env, name: str, reason: str | None) -> None:
+    db = Database(env.settings.db_path)
+    if reason is None:
+        record_ok(db, name, env.clock)
+    else:
+        record_failure(db, name, reason, env.clock)
+    db.close()
+
+
+def test_classroom_failure_fails_with_reason_and_google_fix(env: Env) -> None:
+    _record(env, CLASSROOM, "GoogleNotConfigured for 1 of 1 accounts")
+    result = env.result("last_classroom_sync")
+    assert (result.status, result.required) == ("fail", False)
+    assert result.detail == "GoogleNotConfigured for 1 of 1 accounts"
+    assert f"setup_google_oauth.py --account {ACCOUNT}" in result.fix
+    _record(env, CLASSROOM, None)
+    assert env.result("last_classroom_sync").status == "pass"
+
+
+def test_sms_failure_fails_with_reason_until_a_later_ok(env: Env) -> None:
+    _record(env, SMS_INGEST, "none of 3 new bank messages could be parsed")
+    result = env.result("last_sms_ingest")
+    assert (result.status, result.required) == ("fail", False)
+    assert result.detail == "none of 3 new bank messages could be parsed"
+    assert result.fix
+    _record(env, SMS_INGEST, None)
+    assert env.result("last_sms_ingest").status == "pass"
+
+
+def test_mail_failure_names_the_failing_accounts(env: Env) -> None:
+    env.settings = replace(env.settings, mail_accounts=(ACCOUNT, "second@example.com"))
+    _record(env, mail_status_name("second@example.com"), "GoogleNotConfigured")
+    result = env.result("last_mail_sync")
+    assert (result.status, result.required) == ("fail", False)
+    assert result.detail == "1 of 2 accounts failing: second@example.com: GoogleNotConfigured"
+    assert "setup_google_oauth.py --account second@example.com" in result.fix
+    _record(env, mail_status_name("second@example.com"), None)
+    assert env.result("last_mail_sync").status != "fail"
+
+
+def test_mail_failure_that_is_not_a_sign_in_problem_points_to_the_log(env: Env) -> None:
+    _record(env, mail_status_name(ACCOUNT), "TimeoutError")
+    result = env.result("last_mail_sync")
+    assert result.status == "fail"
+    assert "log" in result.fix

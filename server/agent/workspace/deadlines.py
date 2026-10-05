@@ -113,19 +113,26 @@ def register_deadline_tool(
         Tool(
             name=TOOL_NAME,
             description=(
-                "Add a Classroom assignment deadline to the owner's calendar. No guests are "
-                "invited. Requires the owner's approval."
+                "Add a Classroom assignment deadline to the owner's calendar, using the fields "
+                "of one classroom_coursework item. No guests are invited. Requires the owner's "
+                "approval."
             ),
             parameters={
                 "type": "object",
                 "properties": {
-                    "calendar_account": {"type": "string"},
-                    "classroom_account": {"type": "string"},
-                    "course_id": {"type": "string"},
-                    "coursework_id": {"type": "string"},
+                    "calendar_account": {
+                        "type": "string",
+                        "description": "Calendar account; usually the item's account.",
+                    },
+                    "classroom_account": {"type": "string", "description": "The item's account."},
+                    "course_id": {"type": "string", "description": "The item's course_id."},
+                    "coursework_id": {"type": "string", "description": "The item's id."},
                     "title": {"type": "string", "minLength": 1, "maxLength": 200},
                     "course": {"type": "string", "minLength": 1, "maxLength": 200},
-                    "due": {"type": "string", "description": "ISO datetime with offset, or date"},
+                    "due": {
+                        "type": "string",
+                        "description": "The item's due value: ISO datetime with offset, or date.",
+                    },
                 },
                 "required": [
                     "calendar_account",
@@ -149,6 +156,19 @@ def register_deadline_tool(
 class _Scan:
     pending: int
     proposed: int = 0
+    scanned: int = 0
+
+
+@dataclass(frozen=True)
+class DeadlineScanResult:
+    """``scanned`` counts accounts scanned without error; ``failures`` maps account to error type.
+
+    Accounts skipped because the pending queue was full are in neither.
+    """
+
+    proposed: int
+    scanned: int
+    failures: dict[str, str]
 
 
 def _line(text: Any, limit: int, default: str) -> str:
@@ -177,20 +197,24 @@ class DeadlineProposer:
         self._clock = clock
         self._horizon = timedelta(days=horizon_days)
 
-    def run(self) -> int:
-        """Propose new deadlines; returns how many proposals were created."""
+    def run(self) -> DeadlineScanResult:
+        """Propose new deadlines; reports how many were created and which accounts failed."""
         if self._calendar_account is None:
-            return 0
+            return DeadlineScanResult(0, 0, {})
         scan = _Scan(self._approvals.pending_count())
+        failures: dict[str, str] = {}
         for account in self._accounts:
             if self._full(scan):
                 break
             try:
                 self._scan_account(account, scan)
             except Exception as exc:  # one broken account must not stop the others
+                failures[account] = type(exc).__name__
                 log.warning("deadline scan failed for an account: %s", type(exc).__name__)
+            else:
+                scan.scanned += 1
         log.info("deadline scan proposed %d actions", scan.proposed)
-        return scan.proposed
+        return DeadlineScanResult(scan.proposed, scan.scanned, failures)
 
     @staticmethod
     def _full(scan: _Scan) -> bool:

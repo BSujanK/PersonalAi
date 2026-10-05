@@ -34,7 +34,7 @@ from agent.golive.system import RealSystem
 from agent.mail.classify import MailClassifier, build_classifier_llm
 from agent.mail.services import MailServices, cached_api_factory
 from agent.mail.store import MailStore
-from agent.mail.sync import MailSync
+from agent.mail.sync import MailSync, SyncStats
 from agent.mail.tools import register_mail_tools
 from agent.scheduler import (
     DEADLINE_JOB_ID,
@@ -49,7 +49,8 @@ from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.devices import list_devices, revoke_devices
 from agent.store.keystore import InsecureKeyringError, KeyStore, assert_secure_backend
-from agent.store.sync_status import CLASSROOM, record_ok
+from agent.store.sync_status import CLASSROOM, mail_status_name, record_failure, record_ok
+from agent.workspace.deadlines import DeadlineScanResult
 from agent.workspace.services import WorkspaceServices, deadline_proposer, setup_workspace
 
 EXIT_REFUSED = 2
@@ -88,6 +89,39 @@ def _setup_mail(
     return MailServices(store, sync, api_for)
 
 
+def _run_mail_sync(
+    db: Database, sync: MailSync, accounts: Sequence[str]
+) -> dict[str, SyncStats | str]:
+    """Sync every account and record each one's outcome for ``agent doctor``."""
+    results = sync.sync_all(accounts)
+    for account, outcome in results.items():
+        name = mail_status_name(account)
+        if isinstance(outcome, str):
+            record_failure(db, name, outcome, utcnow)
+        else:
+            record_ok(db, name, utcnow)
+    return results
+
+
+def _failure_reason(result: DeadlineScanResult) -> str:
+    kinds = ", ".join(sorted(set(result.failures.values())))
+    total = result.scanned + len(result.failures)
+    return f"{kinds} for {len(result.failures)} of {total} accounts"
+
+
+def _run_deadline_scan(db: Database, run: Callable[[], DeadlineScanResult]) -> None:
+    """Record Classroom as healthy only if at least one account was actually scanned."""
+    try:
+        result = run()
+    except Exception as exc:
+        record_failure(db, CLASSROOM, type(exc).__name__, utcnow)
+        raise
+    if result.scanned >= 1:
+        record_ok(db, CLASSROOM, utcnow)
+    elif result.failures:
+        record_failure(db, CLASSROOM, _failure_reason(result), utcnow)
+
+
 def _background_jobs(
     settings: Settings,
     db: Database,
@@ -102,7 +136,7 @@ def _background_jobs(
         jobs.append(
             Job(
                 MAIL_JOB_ID,
-                lambda: sync.sync_all(settings.mail_accounts),
+                lambda: _run_mail_sync(db, sync, settings.mail_accounts),
                 settings.mail_poll_minutes,
             )
         )
@@ -110,11 +144,13 @@ def _background_jobs(
     if proposer is not None:
         run_proposer = proposer.run
 
-        def propose_and_record() -> None:
-            run_proposer()
-            record_ok(db, CLASSROOM, utcnow)
-
-        jobs.append(Job(DEADLINE_JOB_ID, propose_and_record, settings.deadline_poll_minutes))
+        jobs.append(
+            Job(
+                DEADLINE_JOB_ID,
+                lambda: _run_deadline_scan(db, run_proposer),
+                settings.deadline_poll_minutes,
+            )
+        )
     if workspace.file_index is not None:
         jobs.append(
             Job(FILE_INDEX_JOB_ID, workspace.file_index.refresh, settings.file_index_minutes)
