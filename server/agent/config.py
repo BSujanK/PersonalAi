@@ -43,6 +43,8 @@ class Settings:
     deadline_horizon_days: int = 14
     file_roots: tuple[str, ...] = ()
     file_index_minutes: int = 30
+    finance_utc_offset_minutes: int = 330
+    finance_categorize_minutes: int = 15
 
     @property
     def google_accounts(self) -> tuple[str, ...]:
@@ -108,5 +110,11 @@ class Settings:
             file_roots=_split_paths(e.get("PERSONALAI_FILE_ROOTS", "")),
             file_index_minutes=int(
                 e.get("PERSONALAI_FILE_INDEX_MINUTES", defaults.file_index_minutes)
+            ),
+            finance_utc_offset_minutes=int(
+                e.get("PERSONALAI_FINANCE_UTC_OFFSET_MINUTES", defaults.finance_utc_offset_minutes)
+            ),
+            finance_categorize_minutes=int(
+                e.get("PERSONALAI_FINANCE_CATEGORIZE_MINUTES", defaults.finance_categorize_minutes)
             ),
         )

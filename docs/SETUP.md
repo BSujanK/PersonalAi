@@ -27,7 +27,7 @@ Placeholder checklist; the steps are filled in during phase M7, done on the lapt
 - [ ] Set `PERSONALAI_BIND_HOSTS` to `127.0.0.1,<tailscale ip>` and `PERSONALAI_OWNER_EMAILS` to your addresses.
 - [ ] Start with `uv run python -m agent serve`.
 - [ ] Pair the phone: `uv run python scripts/pair_phone.py`, then scan or enter the code in the app within 5 minutes.
-- [ ] Google OAuth, Groww and SMS forwarding setup (later phases).
+- [ ] Google OAuth and the phone's bank SMS reader (later phases).
 
 ## Configuration
 
@@ -52,6 +52,8 @@ Placeholder checklist; the steps are filled in during phase M7, done on the lapt
 | `PERSONALAI_DEADLINE_HORIZON_DAYS` | How far ahead deadlines are proposed | `14` |
 | `PERSONALAI_FILE_ROOTS` | Absolute folders the agent may read, separated by `;` on Windows (`:` elsewhere) | none |
 | `PERSONALAI_FILE_INDEX_MINUTES` | Local file index refresh interval | `30` |
+| `PERSONALAI_FINANCE_UTC_OFFSET_MINUTES` | Local time offset for finance periods (India is +330) | `330` |
+| `PERSONALAI_FINANCE_CATEGORIZE_MINUTES` | How often uncategorised transactions go to the local model | `15` |
 
 Secrets are never read from the environment; they live in the OS keyring.
 
@@ -68,6 +70,13 @@ Secrets are never read from the environment; they live in the OS keyring.
 1. Authorise the services per account, for example `uv run python scripts/setup_google_oauth.py --account you@example.com --services calendar,drive` and `--account you@college.example.edu --services gmail,classroom,drive`. Earlier scopes are kept.
 2. Set `PERSONALAI_CALENDAR_ACCOUNTS`, `PERSONALAI_CLASSROOM_ACCOUNTS` and `PERSONALAI_DRIVE_ACCOUNTS`. With both a calendar and a Classroom account, upcoming deadlines appear as pending approvals.
 3. Set `PERSONALAI_FILE_ROOTS` to the folders the agent may read, for example `C:\Users\you\Documents\College;C:\Users\you\Notes`. The index (txt, md, csv, pdf, docx) is built at startup and refreshed every `PERSONALAI_FILE_INDEX_MINUTES` minutes.
+
+## Finance (M4, finish with the phone app in M5 and on the laptop in M7)
+
+1. Nothing to configure on the laptop beyond the variables above. The phone app reads bank SMS (Bank of Baroda `BOBTXN`/`BOBSMS`, HDFC, SBI, ICICI, Axis, Kotak, Canara and UPI apps), queues them while the laptop is offline, and sends them in batches to `POST /sms`. Re-sending a batch is safe: duplicates are skipped.
+2. With mail configured, bank alert emails in the synced accounts are read too and merged with the matching SMS, so a payment is counted once.
+3. Uncategorised transactions are sent to the local Ollama model (the same `PERSONALAI_CLASSIFIER_MODEL` as mail). Corrections from the app can be remembered per payee.
+4. Balances are the latest "Avl Bal" figure from each account's bank messages, keyed by the masked account number. They are never estimated.
 
 ### Evaluating the classifier
 

@@ -1,0 +1,199 @@
+[
+ {
+  "from_local": "alerts",
+  "from_domain": "bankofbaroda.co.in",
+  "subject": "Transaction Alert",
+  "body": "Dear Customer, Rs.1,250.00 has been debited from your account XX1234 to VPA grocer@okicici on 05-10-26. Your UPI transaction reference number is 627900000001. Available balance: Rs.8,750.00.",
+  "expected": {
+   "kind": "txn",
+   "bank": "bob",
+   "account_mask": "XX1234",
+   "direction": "debit",
+   "amount_paise": 125000,
+   "channel": "upi",
+   "counterparty": "grocer@okicici",
+   "reference": "627900000001",
+   "txn_date": "2026-10-05",
+   "balance_paise": 875000
+  }
+ },
+ {
+  "from_local": "alerts",
+  "from_domain": "bobibanking.com",
+  "subject": "Credit Alert",
+  "body": "INR 5,000.00 credited to your A/c XX1234 on 05-Oct-2026 by NEFT UTR BARBN52026100500123 from BRIGHT SOLUTIONS. Available balance: INR 13,750.00.",
+  "expected": {
+   "kind": "txn",
+   "bank": "bob",
+   "account_mask": "XX1234",
+   "direction": "credit",
+   "amount_paise": 500000,
+   "channel": "neft",
+   "counterparty": "BRIGHT SOLUTIONS",
+   "reference": "BARBN52026100500123",
+   "txn_date": "2026-10-05",
+   "balance_paise": 1375000
+  }
+ },
+ {
+  "from_local": "noreply",
+  "from_domain": "bankofbaroda.com",
+  "subject": "Card transaction",
+  "body": "Thank you for using your Debit Card ending 5678 for Rs 499.00 at AMAZON on 06-10-26.",
+  "expected": {
+   "kind": "txn",
+   "bank": "bob",
+   "account_mask": "XX5678",
+   "direction": "debit",
+   "amount_paise": 49900,
+   "channel": "card",
+   "counterparty": "AMAZON",
+   "reference": null,
+   "txn_date": "2026-10-06",
+   "balance_paise": null
+  }
+ },
+ {
+  "from_local": "alerts",
+  "from_domain": "bankofbaroda.co.in",
+  "subject": "Your account statement for September 2026",
+  "body": "Dear Customer, your statement is attached. Total debits during the month: Rs.12,000.00.",
+  "expected": null
+ },
+ {
+  "from_local": "alerts",
+  "from_domain": "hdfcbank.net",
+  "subject": "You have done a UPI txn",
+  "body": "Dear Customer, Rs. 250.00 has been debited from account **1234 to VPA shop@okicici on 05-10-26. Your UPI transaction reference number is 627900000002.",
+  "expected": {
+   "kind": "txn",
+   "bank": "hdfc",
+   "account_mask": "XX1234",
+   "direction": "debit",
+   "amount_paise": 25000,
+   "channel": "upi",
+   "counterparty": "shop@okicici",
+   "reference": "627900000002",
+   "txn_date": "2026-10-05",
+   "balance_paise": null
+  }
+ },
+ {
+  "from_local": "alerts",
+  "from_domain": "alerts.sbi.co.in",
+  "subject": "Credit alert",
+  "body": "Dear Customer, your A/c XX1234 has been credited with Rs.2,000.00 on 05-Oct-2026 by UPI from VPA anil@ybl. Ref No 627900000003.",
+  "expected": {
+   "kind": "txn",
+   "bank": "sbi",
+   "account_mask": "XX1234",
+   "direction": "credit",
+   "amount_paise": 200000,
+   "channel": "upi",
+   "counterparty": "anil@ybl",
+   "reference": "627900000003",
+   "txn_date": "2026-10-05",
+   "balance_paise": null
+  }
+ },
+ {
+  "from_local": "alerts",
+  "from_domain": "icicibank.com",
+  "subject": "Debit alert",
+  "body": "Your ICICI Bank Account XX123 has been debited with INR 1,500.00 on 05-Oct-26 for NEFT to ACME TRADERS. UTR: ICIC52026100500123.",
+  "expected": {
+   "kind": "txn",
+   "bank": "icici",
+   "account_mask": "XX123",
+   "direction": "debit",
+   "amount_paise": 150000,
+   "channel": "neft",
+   "counterparty": "ACME TRADERS",
+   "reference": "ICIC52026100500123",
+   "txn_date": "2026-10-05",
+   "balance_paise": null
+  }
+ },
+ {
+  "from_local": "alerts",
+  "from_domain": "axisbank.com",
+  "subject": "Credit alert",
+  "body": "Dear Customer, INR 800.00 was credited to your A/c no. XX1234 on 06-10-2026 by IMPS from MEERA S. IMPS Ref no. 628000000001. Available balance: INR 5,000.00",
+  "expected": {
+   "kind": "txn",
+   "bank": "axis",
+   "account_mask": "XX1234",
+   "direction": "credit",
+   "amount_paise": 80000,
+   "channel": "imps",
+   "counterparty": "MEERA S",
+   "reference": "628000000001",
+   "txn_date": "2026-10-06",
+   "balance_paise": 500000
+  }
+ },
+ {
+  "from_local": "alerts",
+  "from_domain": "kotak.com",
+  "subject": "Card alert",
+  "body": "Rs.300.00 spent on your Kotak Credit Card ending 4321 at SWIGGY on 07-Oct-2026. Never share your OTP or PIN with anyone.",
+  "expected": {
+   "kind": "txn",
+   "bank": "kotak",
+   "account_mask": "XX4321",
+   "direction": "debit",
+   "amount_paise": 30000,
+   "channel": "card",
+   "counterparty": "SWIGGY",
+   "reference": null,
+   "txn_date": "2026-10-07",
+   "balance_paise": null
+  }
+ },
+ {
+  "from_local": "alerts",
+  "from_domain": "canarabank.com",
+  "subject": "Transaction alert",
+  "body": "An amount of INR 1,000.00 has been DEBITED to your account XXX234 on 08/10/2026. Total Avail.Bal INR 5,000.00.",
+  "expected": {
+   "kind": "txn",
+   "bank": "canara",
+   "account_mask": "XX234",
+   "direction": "debit",
+   "amount_paise": 100000,
+   "channel": "other",
+   "counterparty": null,
+   "reference": null,
+   "txn_date": "2026-10-08",
+   "balance_paise": 500000
+  }
+ },
+ {
+  "from_local": "alerts",
+  "from_domain": "bankofbaroda.co.in",
+  "subject": "Special offer",
+  "body": "Pre-approved loan offer just for you. Click here to apply now.",
+  "expected": null
+ },
+ {
+  "from_local": "alerts",
+  "from_domain": "hdfcbank.net",
+  "subject": "One time password",
+  "body": "Your OTP for transaction of Rs.500.00 is 123456. Do not share it with anyone.",
+  "expected": null
+ },
+ {
+  "from_local": "alerts",
+  "from_domain": "shop.example.com",
+  "subject": "Transaction Alert",
+  "body": "Rs.250.00 has been debited from your account XX1234 to VPA shop@okicici on 05-10-26.",
+  "expected": null
+ },
+ {
+  "from_local": "alerts",
+  "from_domain": "hdfcbank.net",
+  "subject": "Transaction failed",
+  "body": "Your UPI transaction of Rs.250.00 to VPA shop@okicici has failed. If debited, the amount will be reversed.",
+  "expected": null
+ }
+]

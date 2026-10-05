@@ -57,12 +57,14 @@ class MailSync:
         classifier: MessageClassifier | None,
         clock: Clock,
         initial_days: int,
+        on_new: Callable[[MailMessage], None] | None = None,
     ) -> None:
         self._store = store
         self._api_for = api_for
         self._classifier = classifier
         self._clock = clock
         self._initial_days = initial_days
+        self._on_new = on_new
 
     def sync_all(self, accounts: Iterable[str]) -> dict[str, SyncStats | str]:
         """Sync each account; a failure is recorded as the exception's type name."""
@@ -158,6 +160,7 @@ class MailSync:
         if is_new:
             counts.added += 1
             self._classify(msg)
+            self._notify_new(msg)
         else:
             counts.updated += 1
 
@@ -168,6 +171,14 @@ class MailSync:
             self._classifier.classify(msg)
         except Exception as exc:
             log.warning("classification failed for %s: %s", msg.id, type(exc).__name__)
+
+    def _notify_new(self, msg: MailMessage) -> None:
+        if self._on_new is None:
+            return
+        try:
+            self._on_new(msg)
+        except Exception as exc:
+            log.warning("new-mail hook failed for %s: %s", msg.id, type(exc).__name__)
 
     def _apply_label_change(
         self, account: str, message_id: str, entry: dict[str, Any], kind: str, counts: _Counts

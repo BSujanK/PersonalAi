@@ -20,12 +20,20 @@ from agent.core.llm import build_default_client
 from agent.core.netguard import UnsafeBindAddress, validate_bind_hosts
 from agent.core.redact import Redactor
 from agent.core.tools import ToolRegistry
+from agent.finance.services import FinanceServices, setup_finance
 from agent.mail.classify import MailClassifier, build_classifier_llm
 from agent.mail.services import MailServices, cached_api_factory
 from agent.mail.store import MailStore
 from agent.mail.sync import MailSync
 from agent.mail.tools import register_mail_tools
-from agent.scheduler import DEADLINE_JOB_ID, FILE_INDEX_JOB_ID, MAIL_JOB_ID, Job, start_jobs
+from agent.scheduler import (
+    DEADLINE_JOB_ID,
+    FILE_INDEX_JOB_ID,
+    FINANCE_CATEGORIZE_JOB_ID,
+    MAIL_JOB_ID,
+    Job,
+    start_jobs,
+)
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.keystore import InsecureKeyringError, KeyStore, assert_secure_backend
@@ -45,6 +53,7 @@ def _setup_mail(
     db_key: bytes,
     google_auth: GoogleAuth,
     registry: ToolRegistry,
+    finance: FinanceServices,
 ) -> MailServices:
     store = MailStore(db, FieldCipher(db_key), db_key)
     api_for = cached_api_factory(
@@ -53,7 +62,14 @@ def _setup_mail(
     classifier = MailClassifier(
         store, build_classifier_llm(settings), Redactor(settings.redaction_emails), settings
     )
-    sync = MailSync(store, api_for, classifier, utcnow, settings.mail_initial_days)
+    sync = MailSync(
+        store,
+        api_for,
+        classifier,
+        utcnow,
+        settings.mail_initial_days,
+        on_new=finance.ingest.ingest_email,
+    )
     register_mail_tools(registry, store, api_for, utcnow)
     return MailServices(store, sync, api_for)
 
@@ -64,6 +80,7 @@ def _background_jobs(
     approvals: ApprovalEngine,
     mail: MailServices | None,
     workspace: WorkspaceServices,
+    finance: FinanceServices,
 ) -> list[Job]:
     jobs: list[Job] = []
     if mail is not None:
@@ -82,6 +99,9 @@ def _background_jobs(
         jobs.append(
             Job(FILE_INDEX_JOB_ID, workspace.file_index.refresh, settings.file_index_minutes)
         )
+    jobs.append(
+        Job(FINANCE_CATEGORIZE_JOB_ID, finance.categorizer.run, settings.finance_categorize_minutes)
+    )
     return jobs
 
 
@@ -96,13 +116,18 @@ def _serve(settings: Settings) -> int:
         llm = build_default_client(settings, keystore)
         db_key = keystore.get_or_create_bytes("db_key")
         google_auth = GoogleAuth(keystore)
+        finance = setup_finance(settings, db, db_key, registry, utcnow)
         if settings.mail_accounts:
-            mail = _setup_mail(settings, db, db_key, google_auth, registry)
+            mail = _setup_mail(settings, db, db_key, google_auth, registry, finance)
         workspace = setup_workspace(settings, db, db_key, registry, google_auth, utcnow)
     except (InsecureKeyringError, UnsafeBindAddress, ValueError) as exc:
         return _refuse(str(exc))
-    app = create_app(settings, db=db, keystore=keystore, llm=llm, registry=registry, mail=mail)
-    scheduler = start_jobs(_background_jobs(settings, db, app.state.approvals, mail, workspace))
+    app = create_app(
+        settings, db=db, keystore=keystore, llm=llm, registry=registry, mail=mail, finance=finance
+    )
+    scheduler = start_jobs(
+        _background_jobs(settings, db, app.state.approvals, mail, workspace, finance)
+    )
     servers = [
         uvicorn.Server(
             uvicorn.Config(
