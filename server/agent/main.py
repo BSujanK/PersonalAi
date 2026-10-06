@@ -20,6 +20,7 @@ import uvicorn
 
 from agent.api.app import create_app
 from agent.api.pair import open_pairing_window
+from agent.api.today_cache import TodayCache
 from agent.config import Settings
 from agent.connectors.accounts import cached_factory
 from agent.connectors.gcal import OwnCalendarApi
@@ -63,6 +64,7 @@ from agent.scheduler import (
     MAIL_DEADLINE_SCAN_DELAY_SECONDS,
     MAIL_DEADLINE_SCAN_MINUTES,
     MAIL_JOB_ID,
+    TODAY_JOB_ID,
     Job,
     start_jobs,
 )
@@ -165,6 +167,7 @@ def _background_jobs(
     workspace: WorkspaceServices,
     finance: FinanceServices,
     proactive: ProactiveServices,
+    today: TodayCache,
 ) -> list[Job]:
     jobs: list[Job] = []
     if mail is not None:
@@ -203,6 +206,7 @@ def _background_jobs(
         Job(FINANCE_CATEGORIZE_JOB_ID, finance.categorizer.run, settings.finance_categorize_minutes)
     )
     jobs.append(Job(ALERT_JOB_ID, proactive.alert_job.run, settings.alert_poll_minutes))
+    jobs.append(Job(TODAY_JOB_ID, today.refresh, settings.today_refresh_minutes))
     return jobs
 
 
@@ -239,6 +243,36 @@ def _configure_logging(settings: Settings) -> None:
         handler.setFormatter(formatter)
         logger.addHandler(handler)
     logger.setLevel(logging.INFO)
+    _log_uvicorn_errors(logger)
+
+
+class _NoTraceback(logging.Filter):
+    """Keeps a traceback (whose frames and values can carry content) out of the log: the record
+    is written without it and the message ends with the exception type instead."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.exc_info and record.exc_info[0] is not None:
+            record.msg = f"{record.getMessage()} ({record.exc_info[0].__name__})"
+            record.args = None
+        record.exc_info = None
+        record.exc_text = None
+        record.stack_info = None
+        return True
+
+
+def _log_uvicorn_errors(agent_logger: logging.Logger) -> None:
+    """Send uvicorn's own warnings and errors (e.g. a crashed request) to the agent's handlers.
+
+    uvicorn is started with ``log_config=None``: its default config would replace these handlers.
+    """
+    uvicorn_logger = logging.getLogger("uvicorn.error")
+    for handler in agent_logger.handlers:
+        if handler not in uvicorn_logger.handlers:
+            uvicorn_logger.addHandler(handler)
+    if not any(isinstance(f, _NoTraceback) for f in uvicorn_logger.filters):
+        uvicorn_logger.addFilter(_NoTraceback())
+    uvicorn_logger.setLevel(logging.WARNING)
+    uvicorn_logger.propagate = False  # the handlers above already write it
 
 
 def _supervise(settings: Settings) -> int:
@@ -297,7 +331,12 @@ def _run_server(settings: Settings) -> int:
         finance=finance,
         proactive=proactive,
     )
-    scheduler = start_jobs(_background_jobs(settings, db, mail, workspace, finance, proactive))
+    today: TodayCache = app.state.today
+    if mail is not None:
+        hooks.pass_end.add(today.refresh_mail)  # new mail shows on /today without waiting
+    scheduler = start_jobs(
+        _background_jobs(settings, db, mail, workspace, finance, proactive, today)
+    )
     servers = [
         uvicorn.Server(
             uvicorn.Config(
@@ -308,6 +347,7 @@ def _run_server(settings: Settings) -> int:
                 proxy_headers=False,
                 access_log=False,
                 log_level="warning",
+                log_config=None,
             )
         )
         for host in hosts

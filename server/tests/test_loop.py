@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from agent.config import Settings
-from agent.core.llm import ChatMessage, LLMResponse, ToolCall
-from agent.core.loop import STEP_LIMIT_REPLY, AgentLoop, wrap_untrusted
+from agent.core.llm import ChatMessage, LLMResponse, LLMUnavailable, ToolCall
+from agent.core.loop import STEP_LIMIT_REPLY, AgentLoop, looks_like_fabricated_error, wrap_untrusted
 from agent.core.redact import Redacted, RedactionMap, Redactor, from_model
 from agent.core.tools import Tool, ToolKind
 from agent.store.models import ActionStatus
@@ -307,3 +310,211 @@ def test_non_streaming_llm_tool_step_emits_nothing() -> None:
     texts: list[str] = []
     _loop(env, llm).run("c1", [], "r", RedactionMap(), on_text=texts.append)
     assert texts == ["ok"]
+
+
+# --- invented errors ---------------------------------------------------------------------------
+
+INVENTED = "Function process_single_item_agent timed out after 90.0 seconds."
+
+
+class RoutedFakeLLM:
+    """Scripted model that names its route and records which routes each call excluded."""
+
+    def __init__(self, *steps: Script, fail_retry: bool = False) -> None:
+        self._steps = list(steps)
+        self._fail_retry = fail_retry
+        self.excluded: list[Collection[str] | None] = []
+        self.received: list[list[ChatMessage]] = []
+
+    def _answer(self, messages: Sequence[ChatMessage], exclude: Collection[str] | None) -> Any:
+        self.excluded.append(None if exclude is None else set(exclude))
+        self.received.append(list(messages))
+        if exclude and self._fail_retry:
+            raise LLMUnavailable("no other route")
+        step = self._steps.pop(0) if len(self._steps) > 1 else self._steps[0]
+        route = "fallback" if exclude else "primary"
+        return replace(step(messages), route=route)
+
+    def complete(
+        self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]
+    ) -> LLMResponse:
+        response: LLMResponse = self._answer(messages, None)
+        return response
+
+    def complete_excluding(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[dict[str, Any]],
+        exclude: Collection[str],
+    ) -> LLMResponse:
+        response: LLMResponse = self._answer(messages, exclude)
+        return response
+
+    def stream_complete(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[dict[str, Any]],
+        on_delta: Callable[[Redacted], None],
+        on_reset: Callable[[], None],
+    ) -> LLMResponse:
+        return self._stream(messages, on_delta, None)
+
+    def stream_complete_excluding(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[dict[str, Any]],
+        on_delta: Callable[[Redacted], None],
+        on_reset: Callable[[], None],
+        exclude: Collection[str],
+    ) -> LLMResponse:
+        return self._stream(messages, on_delta, exclude)
+
+    def _stream(
+        self,
+        messages: Sequence[ChatMessage],
+        on_delta: Callable[[Redacted], None],
+        exclude: Collection[str] | None,
+    ) -> LLMResponse:
+        response: LLMResponse = self._answer(messages, exclude)
+        if response.content is not None and not response.tool_calls:
+            on_delta(response.content)
+        return response
+
+
+def test_an_invented_error_is_retried_on_another_route_and_the_retry_runs_its_tool() -> None:
+    env = make_env(mail_body="Lunch at 1?")
+    llm = RoutedFakeLLM(say(INVENTED), call("read_mail", {}), say("You have one mail."))
+    result = _loop(env, llm).run("c1", [], "What is in my mail?", RedactionMap())
+    assert llm.excluded == [None, {"primary"}, None]
+    assert result.reply == "You have one mail."
+    assert [m.role for m in result.new_messages] == ["user", "assistant", "tool", "assistant"]
+    assert all(INVENTED not in m.content.text for m in result.new_messages)
+    assert all(INVENTED not in m.content.text for batch in llm.received[1:] for m in batch)
+    assert "Lunch at 1?" in result.new_messages[2].content.text
+
+
+def test_the_retry_logs_no_content(caplog: pytest.LogCaptureFixture) -> None:
+    env = make_env()
+    llm = RoutedFakeLLM(say(INVENTED), say("Fine."))
+    with caplog.at_level("WARNING", logger="agent.core.loop"):
+        _loop(env, llm).run("c1", [], "hello", RedactionMap())
+    assert [r.getMessage() for r in caplog.records] == [
+        "model reply looked like an invented error (route=primary); retrying"
+    ]
+
+
+def test_no_retry_once_a_tool_was_called_in_the_turn() -> None:
+    env = make_env()
+    llm = RoutedFakeLLM(call("read_mail", {}), say(INVENTED))
+    result = _loop(env, llm).run("c1", [], "read my mail", RedactionMap())
+    assert llm.excluded == [None, None]
+    assert result.reply == INVENTED
+
+
+def test_only_one_retry_per_turn() -> None:
+    env = make_env()
+    llm = RoutedFakeLLM(say(INVENTED), say("[Error] tool call failed"))
+    result = _loop(env, llm).run("c1", [], "hello", RedactionMap())
+    assert llm.excluded == [None, {"primary"}]
+    assert result.reply == "[Error] tool call failed"
+    assert len(llm.received) == 2
+
+
+def test_a_second_invented_error_after_the_retry_called_a_tool_is_accepted() -> None:
+    env = make_env()
+    llm = RoutedFakeLLM(say(INVENTED), call("read_mail", {}), say(INVENTED))
+    result = _loop(env, llm).run("c1", [], "hello", RedactionMap())
+    assert llm.excluded == [None, {"primary"}, None]
+    assert result.reply == INVENTED
+
+
+def test_a_benign_mention_of_errors_is_not_retried() -> None:
+    env = make_env()
+    llm = RoutedFakeLLM(say("No errors found in your mail."))
+    result = _loop(env, llm).run("c1", [], "any errors?", RedactionMap())
+    assert llm.excluded == [None]
+    assert result.reply == "No errors found in your mail."
+
+
+def test_a_client_without_route_exclusion_is_retried_once_on_the_same_client() -> None:
+    env = make_env()
+    llm = FakeLLM(say(INVENTED), say("Fine."))
+    result = _loop(env, llm).run("c1", [], "hello", RedactionMap())
+    assert len(llm.received) == 2
+    assert result.reply == "Fine."
+
+
+def test_the_original_reply_stands_when_the_retry_has_nowhere_to_go() -> None:
+    env = make_env()
+    llm = RoutedFakeLLM(say(INVENTED), fail_retry=True)
+    result = _loop(env, llm).run("c1", [], "hello", RedactionMap())
+    assert llm.excluded == [None, {"primary"}]
+    assert result.reply == INVENTED
+    assert [m.role for m in result.new_messages] == ["user", "assistant"]
+
+
+def test_streaming_resets_the_shown_text_before_the_retry() -> None:
+    env = make_env()
+    llm = RoutedFakeLLM(say(INVENTED), say("Fine."))
+    events: list[str] = []
+    result = _loop(env, llm).run(
+        "c1",
+        [],
+        "hello",
+        RedactionMap(),
+        on_text=lambda t: events.append(f"t:{t}"),
+        on_reset=lambda: events.append("reset"),
+    )
+    assert events == [f"t:{INVENTED}", "reset", "t:Fine."]
+    assert llm.excluded == [None, {"primary"}]
+    assert result.reply == "Fine."
+
+
+def test_streaming_shows_the_original_again_when_the_retry_fails() -> None:
+    env = make_env()
+    llm = RoutedFakeLLM(say(INVENTED), fail_retry=True)
+    events: list[str] = []
+    result = _loop(env, llm).run(
+        "c1",
+        [],
+        "hello",
+        RedactionMap(),
+        on_text=lambda t: events.append(f"t:{t}"),
+        on_reset=lambda: events.append("reset"),
+    )
+    assert events == [f"t:{INVENTED}", "reset", f"t:{INVENTED}"]
+    assert result.reply == INVENTED
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Function process_single_item_agent timed out after 90.0 seconds",
+        "  [Error] could not read the file",
+        "[ error: tool unavailable",
+        "The request failed, sorry.",
+        "Sorry, the API call failed.",
+        "function files_search failed",
+        "Traceback (most recent call last):\n  File",
+        "Internal Server Error",
+        "Error code: 500",
+        "error code 429",
+    ],
+)
+def test_looks_like_fabricated_error_matches(text: str) -> None:
+    assert looks_like_fabricated_error(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "No errors found in your mail.",
+        "Your mail about the error report is from Riya.",
+        "I could not find that file.",
+        "The call is at 3 pm.",
+        "x" * 400 + " timed out after 5 seconds",
+        "",
+    ],
+)
+def test_looks_like_fabricated_error_ignores_normal_replies(text: str) -> None:
+    assert not looks_like_fabricated_error(text)

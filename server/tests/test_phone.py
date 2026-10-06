@@ -334,11 +334,12 @@ def test_today_reports_configured_sources_and_failures() -> None:
     registry.register(Tool("calendar_events", "e", params, ToolKind.READ, events))
     registry.register(Tool("classroom_coursework", "c", params, ToolKind.READ, coursework))
     api = _phone_api(registry=registry)
+    api.client.app.state.today.refresh()  # type: ignore[attr-defined]
     body = api.client.get("/today", headers=api.headers).json()
     assert body["mail"] is None
     assert body["events"][0]["summary"] == "Lab"
     assert body["deadlines"] is None
-    assert body["unavailable"] == ["classroom_coursework"]
+    assert body["unavailable"] == ["deadlines"]
     assert body["generated_at"] == START.isoformat()
 
 
@@ -351,6 +352,8 @@ def test_today_with_nothing_configured() -> None:
         "deadlines": None,
         "events": None,
         "unavailable": [],
+        "stale": [],
+        "updated_at": {"mail": None, "deadlines": None, "events": None},
     }
 
 

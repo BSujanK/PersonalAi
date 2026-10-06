@@ -104,6 +104,13 @@ def test_every_scenario_is_satisfiable(scenario: Any) -> None:
     assert report.errors == 0
 
 
+def test_send_file_scenario_rejects_an_invented_error_reply() -> None:
+    scenario = BY_ID["multi_send_file"]
+    invented = em.says("Function mail_send timed out after 90.0 seconds.")
+    steps = [*scenario.reference[:-1], invented]
+    assert _run(ScriptedModel(steps), [scenario]).results == {"multi_send_file": False}
+
+
 class OnlyOk:
     def complete(
         self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]

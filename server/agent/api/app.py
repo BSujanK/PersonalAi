@@ -16,7 +16,9 @@ from agent.api import notifications as notifications_routes
 from agent.api import pair as pair_routes
 from agent.api import today as today_routes
 from agent.api.auth import require_device
+from agent.api.errors import ErrorLog
 from agent.api.limits import BodySizeLimit
+from agent.api.today_cache import TodayCache
 from agent.config import Settings
 from agent.core.approvals import ApprovalEngine
 from agent.core.audit import AuditLog
@@ -48,9 +50,11 @@ def create_app(
     mail: MailServices | None = None,
     finance: FinanceServices | None = None,
     proactive: ProactiveServices | None = None,
+    today: TodayCache | None = None,
 ) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(BodySizeLimit)
+    app.add_middleware(ErrorLog)
     cipher = FieldCipher(keystore.get_or_create_bytes("db_key"))
     audit = AuditLog(db, clock)
     approvals = ApprovalEngine(
@@ -75,6 +79,7 @@ def create_app(
     app.state.registry = registry
     app.state.commands = commands
     app.state.push = PushNotifier(db, keystore, enabled=settings.push == "expo")
+    app.state.today = today or TodayCache(registry, mail.store if mail else None, clock)
     app.state.chat_locks = KeyedLocks()
     app.state.loop = AgentLoop(llm, registry, redactor, approvals, settings, clock)
 

@@ -7,7 +7,7 @@ import json
 import logging
 import math
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol, TypeVar, runtime_checkable
 from urllib.parse import urlparse
@@ -87,6 +87,27 @@ class StreamingLLMClient(Protocol):
         tools: Sequence[dict[str, Any]],
         on_delta: DeltaSink,
         on_reset: Callable[[], None],
+    ) -> LLMResponse: ...
+
+
+@runtime_checkable
+class RouteExcludingLLMClient(Protocol):
+    """A client that can answer on a route other than the ones named (see ``LLMResponse.route``)."""
+
+    def complete_excluding(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[dict[str, Any]],
+        exclude: Collection[str],
+    ) -> LLMResponse: ...
+
+    def stream_complete_excluding(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[dict[str, Any]],
+        on_delta: DeltaSink,
+        on_reset: Callable[[], None],
+        exclude: Collection[str],
     ) -> LLMResponse: ...
 
 
@@ -353,7 +374,15 @@ class ModelRouter:
     def complete(
         self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]
     ) -> LLMResponse:
-        chain, estimate = self._build_chain(messages, tools)
+        return self.complete_excluding(messages, tools, ())
+
+    def complete_excluding(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[dict[str, Any]],
+        exclude: Collection[str],
+    ) -> LLMResponse:
+        chain, estimate = self._routes(messages, tools, exclude)
         for hops, (name, client, model) in enumerate(chain):
             try:
                 response = client.complete(messages, tools)
@@ -371,7 +400,17 @@ class ModelRouter:
         on_delta: DeltaSink,
         on_reset: Callable[[], None],
     ) -> LLMResponse:
-        chain, estimate = self._build_chain(messages, tools)
+        return self.stream_complete_excluding(messages, tools, on_delta, on_reset, ())
+
+    def stream_complete_excluding(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[dict[str, Any]],
+        on_delta: DeltaSink,
+        on_reset: Callable[[], None],
+        exclude: Collection[str],
+    ) -> LLMResponse:
+        chain, estimate = self._routes(messages, tools, exclude)
         for hops, (name, client, model) in enumerate(chain):
             emitted = False
 
@@ -390,6 +429,20 @@ class ModelRouter:
             self._on_served(name, model, estimate, hops)
             return replace(response, route=name)
         raise LLMUnavailable("all routes failed")
+
+    def _routes(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[dict[str, Any]],
+        exclude: Collection[str],
+    ) -> tuple[list[tuple[str, OpenAICompatClient, str]], int]:
+        """The routes to try in order, without the ones named in ``exclude``."""
+        chain, estimate = self._build_chain(messages, tools)
+        if exclude:
+            chain = [route for route in chain if route[0] not in exclude]
+            if not chain:
+                raise LLMUnavailable("no other route")
+        return chain, estimate
 
     def _on_failure(
         self, chain: list[tuple[str, OpenAICompatClient, str]], hops: int, exc: LLMUnavailable
