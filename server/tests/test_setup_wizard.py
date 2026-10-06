@@ -39,6 +39,7 @@ class FakeSystem:
         self.power_ok = False
         self.tailscale = True
         self.headers: list[Mapping[str, str]] = []
+        self.log = ""  # agent.log, as far as restart_server reads it
 
     def python_version(self) -> tuple[int, int, int]:
         return (3, 12, 4)
@@ -59,6 +60,7 @@ class FakeSystem:
                 return CommandResult(1, "")
             if argv[1] == "/Run":
                 self.task_status = "Running"
+                self.log += "server started pid=1\n"
             elif argv[1] == "/End":
                 self.task_status = "Ready"
             return CommandResult(0, f"TaskName: x\nStatus: {self.task_status}\n")
@@ -99,6 +101,15 @@ class FakeSystem:
             return HttpResult(200, {"models": [{"name": m} for m in self.ollama]})
         self.headers.append(dict(headers or {}))
         return HttpResult(200, {"data": [{"id": m} for m in MODELS]})
+
+    def port_is_free(self, host: str, port: int) -> bool:
+        return True
+
+    def file_size(self, path: Path) -> int:
+        return len(self.log.encode())
+
+    def read_text_from(self, path: Path, offset: int) -> str:
+        return self.log.encode()[offset:].decode()
 
     def user_env(self, name: str) -> str | None:
         return self.env.get(name)

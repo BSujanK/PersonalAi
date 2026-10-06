@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import io
+import socket
 import sys
 from pathlib import Path
 
@@ -116,3 +117,26 @@ def test_output_streams_survive_unencodable_characters() -> None:
     stream.write("done ✓ ⟨PHONE_1⟩\n")
     stream.flush()
     assert stream.errors == "replace"
+
+
+def test_port_is_free_sees_a_listener_and_ignores_unusable_addresses() -> None:
+    system = RealSystem()
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        port = listener.getsockname()[1]
+        assert system.port_is_free("127.0.0.1", port) is False
+    assert system.port_is_free("127.0.0.1", port) is True
+    assert system.port_is_free("not-an-address", port) is True
+    assert system.port_is_free("192.0.2.1", port) is True  # not an address of this machine
+
+
+def test_file_size_and_read_from_offset(tmp_path: Path) -> None:
+    log = tmp_path / "agent.log"
+    system = RealSystem()
+    assert system.file_size(log) == 0
+    assert system.read_text_from(log, 0) == ""
+    log.write_bytes("first\nsecond \u00e9\n".encode())
+    assert system.file_size(log) == len("first\nsecond \u00e9\n".encode())
+    assert system.read_text_from(log, len("first\n")) == "second \u00e9\n"
+    assert system.read_text_from(log, 10_000) == ""

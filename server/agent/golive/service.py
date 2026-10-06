@@ -7,8 +7,9 @@ scheduled task is the one ``scripts/install_task.ps1`` registers.
 Why this exists: stopping the scheduled task kills only its launcher. The task now ties the
 server to its supervisor (``agent supervise``, a job object), but a server started by an older
 install, or by hand in a terminal, can still be left running with stale code and the port taken, so
-the next start exits with code 3. ``restart`` stops every ``agent serve`` of this user, then
-starts the task.
+the next start exits with code 3. ``restart`` stops every ``agent serve`` of this user, waits until
+the task is idle and the port is free, then starts the task and checks that a new server logged
+itself.
 """
 
 from __future__ import annotations
@@ -19,15 +20,23 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import TextIO
 
+from agent.config import Settings
 from agent.golive import probes
 from agent.golive.system import System
 
 # ``python -m agent`` and ``python -m agent serve`` both run the server (serve is the default).
 _SERVE_CMD = re.compile(r"(?:^|\s)-m\s+agent(?:\s+serve)?\s*$")
 _RUNNERS = ("python.exe", "pythonw.exe", "uv.exe")
+
+STOP_TIMEOUT_SECONDS = 15.0
+START_TIMEOUT_SECONDS = 20.0
+POLL_SECONDS = 0.5
+MAX_RUNS = 2  # the first ``schtasks /Run`` and one retry
+SERVER_STARTED = "server started pid="  # written to agent.log by the supervisor
 
 # Only this user's session, only interpreters and uv; the command line is matched in Python, so
 # this script itself (a powershell.exe) can never match. Output is one compact JSON array.
@@ -121,11 +130,22 @@ def restart_server(
     system: System,
     out: TextIO,
     *,
+    settings: Settings | None = None,
     task_name: str = probes.TASK_NAME,
     sleep: Callable[[float], None] = time.sleep,
-    wait_seconds: int = 20,
+    clock: Callable[[], float] = time.monotonic,
+    stop_timeout: float = STOP_TIMEOUT_SECONDS,
+    start_timeout: float = START_TIMEOUT_SECONDS,
 ) -> int:
-    """Stop every running server and start the scheduled task. Returns the exit code."""
+    """Stop every running server, start the scheduled task and confirm a new server came up.
+
+    The server is only started once the old one is really gone: the task no longer reports
+    ``Running`` and the port is free on every bind address. Starting earlier is the race that
+    makes the new server exit with code 3 (port taken). A start is confirmed by a new
+    ``server started`` line in ``agent.log``; if none shows up, the task is run once more.
+    Returns the exit code (0 only when a new server is confirmed).
+    """
+    config = settings if settings is not None else Settings()
     if system.platform != "win32":
         _say(out, "restart is only available on Windows (the server runs from a scheduled task).")
         return 1
@@ -142,36 +162,77 @@ def restart_server(
     if running:
         _say(out, f"Stopped {len(running)} server process(es).")
 
-    def stopped() -> bool:
-        if find_server_processes(system):
-            return False
-        return not task.exists or probes.scheduled_task(system, task_name).status != "Running"
+    blockers: list[str] = []
 
-    if not _wait_until(stopped, sleep, wait_seconds):
-        _say(out, "The server is still running after being stopped; end it in Task Manager.")
+    def stopped() -> bool:
+        blockers[:] = _stop_blockers(system, task_name, task.exists, config)
+        return not blockers
+
+    if not _wait_until(stopped, clock, sleep, stop_timeout):
+        _say(out, f"The old server did not stop in {stop_timeout:.0f}s: {'; '.join(blockers)}.")
+        _say(out, "End it in Task Manager, then run restart again.")
         return 1
     if not task.exists:
         _say(out, f'The task "{task_name}" is not installed, so nothing was started.')
         _say(out, "Install it: powershell -ExecutionPolicy Bypass -File scripts\\install_task.ps1")
         return 1
-    started = system.run(["schtasks", "/Run", "/TN", task_name])
-    if started.returncode != 0:
-        _say(out, f'Could not start the task "{task_name}".')
-        return 1
-    if not _wait_until(lambda: bool(find_server_processes(system)), sleep, wait_seconds):
-        _say(
-            out, "The task started but no server is running yet. Run: uv run python -m agent doctor"
+    log_path = config.db_path.parent / "agent.log"
+    reason = ""
+    for attempt in range(MAX_RUNS):
+        offset = system.file_size(log_path)
+        started = system.run(["schtasks", "/Run", "/TN", task_name])
+        if started.returncode != 0:
+            _say(out, f'Could not start the task "{task_name}".')
+            return 1
+        up = partial(_new_server_up, system, log_path, offset)
+        confirmed = _wait_until(up, clock, sleep, start_timeout)
+        if confirmed:
+            _say(out, f'Restarted "{task_name}". Check it with: uv run python -m agent doctor')
+            return 0
+        reason = (
+            f"no new 'server started' line in agent.log within {start_timeout:.0f}s "
+            "(or the server exited again)"
         )
-        return 1
-    _say(out, f'Restarted "{task_name}". Check it with: uv run python -m agent doctor')
-    return 0
+        if attempt + 1 < MAX_RUNS:
+            _say(out, "No sign of the new server yet; starting the task once more.")
+    _say(out, f"The server did not start: {reason}.")
+    _say(out, "Run: uv run python -m agent doctor")
+    return 1
+
+
+def _stop_blockers(
+    system: System, task_name: str, task_exists: bool, config: Settings
+) -> list[str]:
+    """What still prevents a clean start: a server process, a running task or a taken port."""
+    blockers: list[str] = []
+    if find_server_processes(system):
+        blockers.append("a server process is still running")
+    if task_exists and probes.scheduled_task(system, task_name).status == "Running":
+        blockers.append(f'the task "{task_name}" still reports Running')
+    busy = [h for h in config.bind_hosts if not system.port_is_free(h, config.port)]
+    if busy:
+        blockers.append(f"port {config.port} is still in use on {', '.join(busy)}")
+    return blockers
+
+
+def _new_server_up(system: System, log_path: Path, offset: int) -> bool:
+    """A ``server started`` line written after ``offset`` and a server process that is alive."""
+    size = system.file_size(log_path)
+    text = system.read_text_from(log_path, offset if size >= offset else 0)  # rotated: reread
+    return SERVER_STARTED in text and bool(find_server_processes(system))
 
 
 def _wait_until(
-    condition: Callable[[], bool], sleep: Callable[[float], None], seconds: int
+    condition: Callable[[], bool],
+    clock: Callable[[], float],
+    sleep: Callable[[float], None],
+    seconds: float,
 ) -> bool:
-    for _ in range(max(seconds, 1)):
+    """Poll ``condition`` until it holds or ``seconds`` pass (one last check at the deadline)."""
+    deadline = clock() + seconds
+    while True:
         if condition():
             return True
-        sleep(1)
-    return condition()
+        if clock() >= deadline:
+            return False
+        sleep(POLL_SECONDS)

@@ -415,8 +415,8 @@ def _doctor(settings: Settings, as_json: bool) -> int:
     )
 
 
-def _restart(task_name: str) -> int:
-    return restart_server(RealSystem(), sys.stdout, task_name=task_name)
+def _restart(settings: Settings, task_name: str) -> int:
+    return restart_server(RealSystem(), sys.stdout, settings=settings, task_name=task_name)
 
 
 def _setup(redo: list[str]) -> int:
@@ -531,12 +531,12 @@ def main(
     args = parser.parse_args(argv)
     if args.command == "setup":
         return _setup(args.redo)
-    if args.command == "restart":
-        return _restart(args.task)
     try:
         settings = Settings.from_env()
     except ValueError as exc:
         return _refuse(f"invalid configuration: {exc}")
+    if args.command == "restart":
+        return _restart(settings, args.task)
     if args.command == "supervise":
         return _supervise(settings)
     if args.command == "doctor":
