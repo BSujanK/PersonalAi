@@ -1,5 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
+import * as Clipboard from 'expo-clipboard';
+
 import { decideApproval, getApproval, type Approval } from '../../../lib/api';
 import { processDeviceCommands } from '../../../lib/deviceCommands';
 import { signWithBiometrics } from '../../../lib/secureKeys';
@@ -15,6 +17,8 @@ jest.mock('../../../lib/secureKeys', () => ({
   signWithBiometrics: jest.fn(),
 }));
 jest.mock('../../../lib/deviceCommands', () => ({ processDeviceCommands: jest.fn() }));
+
+jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn().mockResolvedValue(true) }));
 
 jest.setTimeout(30_000);
 
@@ -130,5 +134,39 @@ describe('ApprovalCard', () => {
     expect(await screen.findByText('Could not load this approval')).toBeTruthy();
     await fireEvent.press(screen.getByText('Try again'));
     expect(await screen.findByText(PREVIEW)).toBeTruthy();
+  });
+
+  it('shows an https share link from the result with a copy button', async () => {
+    const link = 'https://drive.example.com/file/abc/view';
+    jest.mocked(getApproval).mockResolvedValueOnce(approval('pending'));
+    jest.mocked(getApproval).mockResolvedValue(approval('executed'));
+    jest.mocked(signWithBiometrics).mockResolvedValue('c'.repeat(64));
+    jest.mocked(decideApproval).mockResolvedValue({
+      id: ACTION_ID,
+      status: 'executed',
+      result: { link, file_id: 'abc' },
+    });
+    await render(<ApprovalCard actionId={ACTION_ID} />);
+    await fireEvent.press(await screen.findByLabelText('Approve this action'));
+
+    const text = await screen.findByText(link);
+    expect(text.props.selectable).toBe(true);
+    await fireEvent.press(screen.getByLabelText('Copy link'));
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(link);
+  });
+
+  it('does not show a link that is not https', async () => {
+    jest.mocked(getApproval).mockResolvedValueOnce(approval('pending'));
+    jest.mocked(getApproval).mockResolvedValue(approval('executed'));
+    jest.mocked(signWithBiometrics).mockResolvedValue('c'.repeat(64));
+    jest.mocked(decideApproval).mockResolvedValue({
+      id: ACTION_ID,
+      status: 'executed',
+      result: { link: 'javascript:alert(1)' },
+    });
+    await render(<ApprovalCard actionId={ACTION_ID} />);
+    await fireEvent.press(await screen.findByLabelText('Approve this action'));
+    expect(await screen.findByText('Approved')).toBeTruthy();
+    expect(screen.queryByLabelText('Copy link')).toBeNull();
   });
 });

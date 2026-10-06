@@ -17,6 +17,7 @@ _SCAN_LIMIT = 5000
 class DigestItem:
     account: str
     id: str
+    message_id: str  # same as ``id``; the phone opens GET /mail/{account}/{message_id}
     from_name: str
     from_addr: str
     subject: str
@@ -50,6 +51,7 @@ def build_digest(store: MailStore, now: datetime, hours: int = 24) -> Digest:
                 DigestItem(
                     account=mail.account,
                     id=mail.id,
+                    message_id=mail.id,
                     from_name=mail.from_name,
                     from_addr=mail.from_addr,
                     subject=mail.subject,

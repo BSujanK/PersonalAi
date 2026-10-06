@@ -69,7 +69,10 @@ function Gate() {
       <ConversationsProvider>
         <Stack
           screenOptions={{ headerShown: false, contentStyle: { backgroundColor: palette.bg } }}
-        />
+        >
+          <Stack.Screen name="(drawer)" />
+          <Stack.Screen name="mail/[account]/[id]" />
+        </Stack>
       </ConversationsProvider>
     </AgentStatusProvider>
   );

@@ -209,6 +209,14 @@ class MailStore:
             )
         )
 
+    def sent_to_any(self, addr: str) -> bool:
+        """Whether synced sent mail of any account went to ``addr``."""
+        return bool(
+            self._db.query(
+                "SELECT 1 FROM mail_replied WHERE addr_hash = ? LIMIT 1", (self.addr_hash(addr),)
+            )
+        )
+
     # --- sender rules and feedback --------------------------------------------------------
 
     def sender_rule(self, addr: str) -> str | None:

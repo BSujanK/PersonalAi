@@ -11,9 +11,9 @@ from googleapiclient.errors import HttpError
 from agent.connectors.gmail import MAX_BATCH_IDS, HistoryExpired, MessageNotFound
 from agent.connectors.google_auth import GMAIL_MODIFY, GoogleAuth
 
-# gmail.modify covers read, label, archive and trash, but Google also lets it send mail. Sending is
-# prevented by the agent having no send tool and no code that calls messages.send or drafts.send
-# (tests/test_gmail_google.py enforces this), not by the scope.
+# gmail.modify covers read, label, archive, trash and send. Sending happens only in ``send``,
+# which only the executors of the approval-gated mail_send and mail_reply tools call
+# (tests/test_gmail_google.py checks that no other module reaches it).
 _HISTORY_TYPES = ["messageAdded", "messageDeleted", "labelAdded", "labelRemoved"]
 _RETRIES = 3
 
@@ -91,6 +91,18 @@ class GoogleGmailApi:
 
     def trash(self, message_id: str) -> None:
         self._execute(self._service.users().messages().trash(userId="me", id=message_id))
+
+    def send(self, raw: str, thread_id: str | None) -> dict[str, Any]:
+        body: dict[str, Any] = {"raw": raw}
+        if thread_id:
+            body["threadId"] = thread_id
+        # No automatic retries: a retried send after a lost response could deliver twice.
+        result: dict[str, Any] = (
+            self._service.users().messages().send(userId="me", body=body).execute()
+        )
+        if self._after_call is not None:
+            self._after_call()
+        return result
 
 
 def build_gmail_api(account: str, auth: GoogleAuth) -> GoogleGmailApi:

@@ -1,4 +1,4 @@
-import { useNavigation } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import type { DrawerNavigationProp } from 'expo-router/drawer';
 import type { ReactNode } from 'react';
 import { RefreshControl, ScrollView, Text, View } from 'react-native';
@@ -32,23 +32,32 @@ function MenuButton() {
   return <IconButton icon="menu" label="Open menu" onPress={() => navigation.toggleDrawer()} />;
 }
 
+/** Pops back to where the screen was opened from. Only for screens pushed over the drawer. */
+function BackButton() {
+  const router = useRouter();
+  return <IconButton icon="arrow-left" label="Back" onPress={() => router.back()} />;
+}
+
 export function ScreenHeader({
   title,
   menu,
+  back,
   right,
 }: {
   title: string;
   menu?: boolean;
+  back?: boolean;
   right?: ReactNode;
 }) {
   const styles = useThemedStyles(makeStyles);
   return (
     <View style={[styles.header, styles.column]}>
       {menu ? <MenuButton /> : null}
+      {back ? <BackButton /> : null}
       <Text
         accessibilityRole="header"
         maxFontSizeMultiplier={MAX_CHROME_SCALE}
-        style={[styles.headerTitle, !menu && { paddingLeft: 8 }]}
+        style={[styles.headerTitle, !menu && !back && { paddingLeft: 8 }]}
         numberOfLines={1}
       >
         {title}
@@ -61,12 +70,14 @@ export function ScreenHeader({
 export function Screen({
   title,
   menu,
+  back,
   children,
   refreshing,
   onRefresh,
 }: {
   title?: string;
   menu?: boolean;
+  back?: boolean;
   children: ReactNode;
   refreshing?: boolean;
   onRefresh?: () => void;
@@ -74,7 +85,7 @@ export function Screen({
   const styles = useThemedStyles(makeStyles);
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      {title ? <ScreenHeader title={title} menu={menu} /> : null}
+      {title ? <ScreenHeader title={title} menu={menu} back={back} /> : null}
       <ScrollView
         contentContainerStyle={[styles.content, styles.column]}
         keyboardShouldPersistTaps="handled"

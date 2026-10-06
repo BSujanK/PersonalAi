@@ -25,7 +25,10 @@ CLASSROOM_COURSEWORK = "https://www.googleapis.com/auth/classroom.coursework.me.
 CLASSROOM_ANNOUNCEMENTS = "https://www.googleapis.com/auth/classroom.announcements.readonly"
 CLASSROOM_MATERIALS = "https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly"
 DRIVE_READONLY = "https://www.googleapis.com/auth/drive.readonly"
-DRIVE_FILE = "https://www.googleapis.com/auth/drive.file"
+DRIVE_FILE = "https://www.googleapis.com/auth/drive.file"  # granted before drive; no longer asked
+# Full Drive access: drive_share must add permissions to files the agent did not create, which
+# drive.file cannot do. Every use (upload, share, create) is still an approval-gated WRITE tool.
+DRIVE = "https://www.googleapis.com/auth/drive"
 # Used only by the setup script to confirm which account signed in.
 IDENTITY_SCOPES = ("openid", "https://www.googleapis.com/auth/userinfo.email")
 
@@ -53,7 +56,7 @@ SERVICE_SCOPES: dict[str, tuple[str, ...]] = {
         CLASSROOM_ANNOUNCEMENTS,
         CLASSROOM_MATERIALS,
     ),
-    "drive": (DRIVE_READONLY, DRIVE_FILE),
+    "drive": (DRIVE_READONLY, DRIVE),
 }
 _TOKEN_URI = "https://oauth2.googleapis.com/token"  # noqa: S105 - public endpoint
 

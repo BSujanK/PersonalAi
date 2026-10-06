@@ -78,7 +78,9 @@ class ApprovalEngine:
         if tool is None or tool.kind is not ToolKind.WRITE or tool.preview is None:
             raise ValueError("only registered WRITE tools can be proposed")
         action_id = uuid.uuid4().hex
-        preview = tool.preview(args)
+        # The prepared payload is what the owner sees, signs (via its hash) and what executes.
+        payload = tool.prepare(args) if tool.prepare is not None else args
+        preview = tool.preview(payload)
         now = self._clock()
         with self._db.transaction():
             self._db.execute(
@@ -89,10 +91,11 @@ class ApprovalEngine:
                     action_id,
                     tool_name,
                     self._cipher.encrypt(
-                        json.dumps(args, ensure_ascii=False), f"pending_actions.payload:{action_id}"
+                        json.dumps(payload, ensure_ascii=False),
+                        f"pending_actions.payload:{action_id}",
                     ),
                     self._cipher.encrypt(preview, f"pending_actions.preview:{action_id}"),
-                    policy.payload_hash(tool_name, args),
+                    policy.payload_hash(tool_name, payload),
                     secrets.token_urlsafe(32),
                     now.isoformat(),
                     conversation_id,
@@ -116,6 +119,18 @@ class ApprovalEngine:
     def get(self, action_id: str) -> PendingAction | None:
         rows = self._db.query("SELECT * FROM pending_actions WHERE id = ?", (action_id,))
         return self._to_action(rows[0]) if rows else None
+
+    def result(self, action_id: str) -> Any:
+        """The decrypted result of an executed action, or None."""
+        rows = self._db.query(
+            "SELECT result_enc FROM pending_actions WHERE id = ? AND status = 'executed'",
+            (action_id,),
+        )
+        if not rows or rows[0]["result_enc"] is None:
+            return None
+        return json.loads(
+            self._cipher.decrypt_str(rows[0]["result_enc"], f"pending_actions.result:{action_id}")
+        )
 
     def _expire_stale(self) -> None:
         cutoff = (self._clock() - policy.MAX_ACTION_AGE).isoformat()

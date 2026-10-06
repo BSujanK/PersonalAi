@@ -130,3 +130,12 @@ describe('approval outcome', () => {
     expect(outcomeOf('expired', later)).toBe('expired');
   });
 });
+
+describe('toolLabel for mail and Drive write tools', () => {
+  it('has friendly labels', () => {
+    expect(toolLabel('mail_send')).toBe('Proposed an email');
+    expect(toolLabel('mail_reply')).toBe('Proposed a reply');
+    expect(toolLabel('drive_upload')).toBe('Proposed a Drive upload');
+    expect(toolLabel('drive_share')).toBe('Proposed a Drive share');
+  });
+});

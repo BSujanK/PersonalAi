@@ -21,6 +21,7 @@ import keyring
 from agent.config import Settings
 from agent.connectors.google_auth import (
     CLIENT_SECRET_NAME,
+    DRIVE_FILE,
     SERVICE_SCOPES,
     granted_scopes,
     token_secret_name,
@@ -327,12 +328,18 @@ def _check_google_account(ctx: _Ctx, account: str) -> CheckResult:
         ok = [s for s in services if set(SERVICE_SCOPES[s]) <= granted]
         missing = [s for s in services if s not in ok]
         if missing:
+            detail = f"granted: {', '.join(ok) or 'none'}; missing: {', '.join(missing)}"
+            if "drive" in missing and DRIVE_FILE in granted:
+                detail += (
+                    " (Drive now needs full Drive access so drive_share can share existing "
+                    "files; re-consent once)"
+                )
             return CheckResult(
                 check_id,
                 title,
                 "fail",
                 True,
-                f"granted: {', '.join(ok) or 'none'}; missing: {', '.join(missing)}",
+                detail,
                 f"uv run python scripts/setup_google_oauth.py --account {account} "
                 f"--services {','.join(missing)}",
             )
@@ -505,6 +512,65 @@ def _check_task(ctx: _Ctx) -> CheckResult:
             "uv run python -m agent restart",
         )
     return CheckResult("scheduled_task", title, "pass", True, "Running")
+
+
+_TASK_RUNNING = 0x41301  # SCHED_S_TASK_RUNNING
+_TASK_NOT_YET_RUN = 0x41303  # SCHED_S_TASK_HAS_NOT_RUN
+_CONTROL_C_EXIT = 0xC000013A  # STATUS_CONTROL_C_EXIT: the console was closed or got Ctrl+C
+_REINSTALL = (
+    "powershell -ExecutionPolicy Bypass -File scripts\\install_task.ps1\n"
+    "uv run python -m agent restart"
+)
+
+
+@_guard("task_last_result", "Scheduled task last result", required=False)
+def _check_task_last_result(ctx: _Ctx) -> CheckResult:
+    title = "Scheduled task last result"
+    if not ctx.is_windows:
+        return _skip_non_windows("task_last_result", title, required=False)
+    run = probes.scheduled_task_run(ctx.system)
+    if run is None:
+        return CheckResult(
+            "task_last_result", title, "skip", False, "task not installed or not readable"
+        )
+    command = (run.command or "").lower()
+    if "powershell" in command or "run_agent.ps1" in command:
+        return CheckResult(
+            "task_last_result",
+            title,
+            "warn",
+            False,
+            "the task still uses the old PowerShell launcher, which a console close or Ctrl+C "
+            "event at logon can kill",
+            "reinstall the task to get the console-less launcher:\n" + _REINSTALL,
+        )
+    code = run.last_result
+    if code is None:
+        return CheckResult("task_last_result", title, "warn", False, "last result not readable")
+    if code == 0:
+        return CheckResult("task_last_result", title, "pass", False, "last run exited 0")
+    if code == _TASK_RUNNING:
+        return CheckResult("task_last_result", title, "pass", False, "running now")
+    if code == _TASK_NOT_YET_RUN:
+        return CheckResult("task_last_result", title, "skip", False, "the task has not run yet")
+    if code == _CONTROL_C_EXIT:
+        return CheckResult(
+            "task_last_result",
+            title,
+            "fail",
+            False,
+            "0xC000013A: the server was killed by a console close or Ctrl+C event",
+            "reinstall the task so it runs without a console:\n" + _REINSTALL,
+        )
+    return CheckResult(
+        "task_last_result",
+        title,
+        "fail",
+        False,
+        f"last run exited with 0x{code:08X}",
+        "see agent.log next to the database (default %USERPROFILE%\\.personalai\\agent.log), "
+        "then: uv run python -m agent restart",
+    )
 
 
 @_guard("server_code", "Running server is current", required=False)
@@ -698,6 +764,7 @@ _CHECKS: tuple[_Check, ...] = (
     _check_database,
     _check_audit,
     _check_task,
+    _check_task_last_result,
     _check_server_code,
     _check_power,
     _check_paired,

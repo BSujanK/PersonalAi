@@ -205,7 +205,7 @@ On the phone:
 
 ### A9. Start the server at logon (Task Scheduler)
 
-1. From `server\`: `powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1`. It registers the task "PersonalAi agent" for your user: it starts one minute after logon (so Tailscale has its address), restarts every minute if the server exits, keeps running on battery, and runs hidden. It needs no admin rights and stores no secrets. The task runs `scripts\run_agent.ps1`, which starts the virtualenv's `python.exe -m agent serve` and ties it to itself, so stopping the task (`Stop-ScheduledTask`, or Task Scheduler's **End**) really stops the server.
+1. From `server\`: `powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1`. It registers the task "PersonalAi agent" for your user: it starts one minute after logon (so Tailscale has its address), restarts every minute if the server exits, keeps running on battery, and runs hidden. It needs no admin rights and stores no secrets. The task runs the virtualenv's `pythonw.exe -m agent supervise`. `pythonw.exe` has no console, so no terminal can close it or send it Ctrl+C at logon (that used to kill the server with exit code `0xC000013A`). The supervisor starts `python.exe -m agent serve` in its own hidden console and ties it to itself with a job object, so stopping the task (`Stop-ScheduledTask`, or Task Scheduler's **End**) really stops the server. The task's exit code is the server's.
 2. `uv run python -m agent restart`, then repeat the check from step A7.3.
 3. Check after a reboot: log in, wait two minutes, repeat step A7.3. The task runs only while you are logged in, because the keys are in your user's Credential Manager.
 
@@ -213,7 +213,19 @@ On the phone:
 
 **After updating (a `git pull`, new dependencies, or any code change), run `uv run python -m agent restart`.** It first syncs the environment (as every `uv run` does), then stops every running `agent serve` of your user, including a stale one left over from an older version of the task or started by hand in a terminal, and starts the task again. Without it the old process keeps running the old code and holds port 8765, so a plain `Start-ScheduledTask` starts a second server that exits at once with code 3.
 
-`uv run python -m agent doctor` warns ("Running server is current") when the running server started before the newest file under `server\agent` was changed, which is the sign that you forgot. If you still have the task from before this change, run `powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1` once to switch it to the new wrapper, then `agent restart`.
+`uv run python -m agent doctor` warns ("Running server is current") when the running server started before the newest file under `server\agent` was changed, which is the sign that you forgot. If you still have the task from before the console-less launcher (it runs `powershell.exe` and `run_agent.ps1`), run `powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1` once to switch it, then `agent restart`. `agent doctor` warns about the old launcher under "Scheduled task last result".
+
+#### Logs and troubleshooting
+
+The server writes `agent.log` next to the database (`%USERPROFILE%\.personalai\agent.log` by default), rotated at 1 MB with 3 old files kept. It holds counts, routes and error type names only: never mail, SMS text, tokens or other content. The supervisor adds its own lines there (`supervisor started`, `server started pid=...`, `server exited code=0x...`). The task has no console window, so this file is where to look when the server does not come up.
+
+- **Task "Last Result" is `0xC000013A` (`-1073741510`), or `agent doctor` fails "Scheduled task last result":** the server was killed by a console close or Ctrl+C event, which the old PowerShell launcher is exposed to at logon. Reinstall the task, restart, and check:
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1
+  uv run python -m agent restart
+  uv run python -m agent doctor
+  ```
+- **Any other last result:** `agent doctor` shows it in hex; the matching `server exited code=0x...` line and the lines before it in `agent.log` say why (for example code 2 is a refused configuration, code 3 is a port already in use).
 
 ### A10. Power settings
 
@@ -282,7 +294,7 @@ uv run python -m agent restore --in D:\backups\personalai-2026-10-05.paibak     
 | `PERSONALAI_CLASSIFIER_MODEL` | Local Ollama model for classification | `qwen2.5:3b` |
 | `PERSONALAI_CALENDAR_ACCOUNTS` | Comma-separated Google accounts whose primary calendar the agent reads and proposes changes to | none |
 | `PERSONALAI_CLASSROOM_ACCOUNTS` | Comma-separated Google accounts to read Classroom from | none |
-| `PERSONALAI_DRIVE_ACCOUNTS` | Comma-separated Google accounts to search and read Drive from | none |
+| `PERSONALAI_DRIVE_ACCOUNTS` | Comma-separated Google accounts to search and read Drive from, and to upload to or share from (with approval) | none |
 | `PERSONALAI_DEADLINE_CALENDAR` | Calendar account that receives proposed Classroom deadlines | first calendar account |
 | `PERSONALAI_DEADLINE_POLL_MINUTES` | How often Classroom is checked for new deadlines | `60` |
 | `PERSONALAI_DEADLINE_HORIZON_DAYS` | How far ahead deadlines are proposed | `14` |
@@ -306,6 +318,22 @@ Secrets are never read from the environment; they live in the OS keyring.
 1. Authorise the services per account, for example `uv run python scripts/setup_google_oauth.py --account you@example.com --services calendar,drive` and `--account you@college.example.edu --services gmail,classroom,drive`. Earlier scopes are kept.
 2. Set `PERSONALAI_CALENDAR_ACCOUNTS`, `PERSONALAI_CLASSROOM_ACCOUNTS` and `PERSONALAI_DRIVE_ACCOUNTS`. With both a calendar and a Classroom account, upcoming deadlines appear as pending approvals.
 3. Set `PERSONALAI_FILE_ROOTS` to the folders the agent may read, for example `C:\Users\you\Documents\College;C:\Users\you\Notes`. The index (txt, md, csv, pdf, docx) is built at startup and refreshed every `PERSONALAI_FILE_INDEX_MINUTES` minutes.
+
+## Sending mail and sharing files (one-time re-consent for Drive)
+
+The agent can now propose `mail_send`, `mail_reply`, `drive_upload` and `drive_share`. Each one waits on the phone: the preview lists every recipient (marked NEW if you never mailed them, EXTERNAL if outside your own domains), every attachment with its size and where it comes from, and for a share the access level and whether anyone with the link can open it. Nothing leaves until you approve with your fingerprint. After approving a share, the app shows the link with a **Copy link** button.
+
+Sharing files you did not create through the agent needs full Drive access, which replaces the old `drive.file` permission. Accounts authorised before this change must re-consent once, from `server\`:
+
+```powershell
+uv run python scripts/setup_google_oauth.py --account you@example.com --services drive
+uv run python -m agent restart
+uv run python -m agent doctor
+```
+
+Google shows the consent screen again and asks to "See, edit, create and delete all of your Google Drive files"; allow it. Until you do, `agent doctor` reports the account with "missing: drive ... re-consent once" and the Drive tools refuse to run. Sending mail needs nothing new: the existing Gmail permission already covers it.
+
+Attachments come from the folders in `PERSONALAI_FILE_ROOTS` (any file type, hidden files excluded) or from Drive files of the accounts in `PERSONALAI_DRIVE_ACCOUNTS`, up to 20 MB per email. Google Docs, Sheets and Slides cannot be attached; ask the agent to share them instead.
 
 ## Finance (M4, finish with the phone app in M5 and on the laptop in M7)
 

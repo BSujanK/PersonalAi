@@ -15,6 +15,7 @@ from html.parser import HTMLParser
 from typing import Any, Protocol
 
 MAX_BODY_CHARS = 100_000
+MAX_DETAIL_BODY_CHARS = 500_000
 MAX_BATCH_IDS = 1000
 
 
@@ -63,6 +64,10 @@ class GmailApi(Protocol):
     def batch_modify(self, ids: list[str], add: list[str], remove: list[str]) -> None: ...
 
     def trash(self, message_id: str) -> None: ...
+
+    def send(self, raw: str, thread_id: str | None) -> dict[str, Any]:
+        """Send a base64url RFC 2822 message. Only approved mail_send/mail_reply actions call it."""
+        ...
 
 
 _BLOCK_TAGS = frozenset(
@@ -221,4 +226,100 @@ def parse_message(account: str, resource: dict[str, Any]) -> MailMessage:
         body=body[:MAX_BODY_CHARS],
         label_ids=tuple(labels),
         list_unsubscribe="list-unsubscribe" in headers,
+    )
+
+
+@dataclass(frozen=True)
+class Address:
+    name: str
+    addr: str
+
+
+@dataclass(frozen=True)
+class Attachment:
+    name: str
+    size: int
+    mime: str
+
+
+@dataclass(frozen=True)
+class MailDetail:
+    """Everything the phone's mail view shows, plus the headers a reply needs."""
+
+    account: str
+    id: str
+    thread_id: str
+    internal_date: int
+    sender: Address | None
+    reply_to: tuple[Address, ...]
+    to: tuple[Address, ...]
+    cc: tuple[Address, ...]
+    subject: str
+    label_ids: tuple[str, ...]
+    body: str
+    body_truncated: bool
+    attachments: tuple[Attachment, ...]
+    message_id_header: str
+    references: str
+
+
+def _collect_attachments(part: dict[str, Any], found: list[Attachment], depth: int = 0) -> None:
+    if depth > 20:
+        raise MalformedMessage("message nesting too deep")
+    sub_parts = part.get("parts")
+    if isinstance(sub_parts, list):
+        for sub in sub_parts:
+            if isinstance(sub, dict):
+                _collect_attachments(sub, found, depth + 1)
+        return
+    filename = part.get("filename")
+    body = part.get("body")
+    if not filename or not isinstance(filename, str) or not isinstance(body, dict):
+        return
+    size = body.get("size", 0)
+    found.append(
+        Attachment(
+            name=_decode_header_value(filename),
+            size=int(size) if isinstance(size, int | str) and str(size).isdigit() else 0,
+            mime=str(part.get("mimeType", "application/octet-stream")),
+        )
+    )
+
+
+def parse_detail(account: str, resource: dict[str, Any]) -> MailDetail:
+    """The full view of a Gmail ``format=full`` resource. Raises ``MalformedMessage``.
+
+    The body is plain text: a text/plain part when there is one, else the HTML converted to text
+    (scripts, styles and images dropped), so nothing remote is ever loaded to show it.
+    """
+    base = parse_message(account, resource)
+    payload: dict[str, Any] = resource["payload"]
+    headers = _headers(payload)
+    plain: list[str] = []
+    html: list[str] = []
+    _collect_bodies(payload, plain, html)
+    body = "\n".join(plain) if plain else html_to_text("\n".join(html))
+    attachments: list[Attachment] = []
+    _collect_attachments(payload, attachments)
+    senders = _addresses(headers.get("from"))
+
+    def addresses(name: str) -> tuple[Address, ...]:
+        return tuple(Address(n, a) for n, a in _addresses(headers.get(name)))
+
+    return MailDetail(
+        account=account,
+        id=base.id,
+        thread_id=base.thread_id,
+        internal_date=base.internal_date,
+        sender=Address(*senders[0]) if senders else None,
+        reply_to=addresses("reply-to"),
+        to=addresses("to"),
+        cc=addresses("cc"),
+        subject=base.subject,
+        label_ids=base.label_ids,
+        body=body[:MAX_DETAIL_BODY_CHARS],
+        body_truncated=len(body) > MAX_DETAIL_BODY_CHARS,
+        attachments=tuple(attachments),
+        message_id_header=headers.get("message-id", "").strip(),
+        references=headers.get("references", "").strip(),
     )

@@ -9,6 +9,7 @@ from agent.config import Settings
 from agent.connectors.accounts import cached_factory
 from agent.connectors.classroom import ClassroomApi
 from agent.connectors.classroom_google import build_classroom_api
+from agent.connectors.drive import DriveApi
 from agent.connectors.drive_google import build_drive_api
 from agent.connectors.files import FileIndex, FileRoots
 from agent.connectors.gcal_google import build_calendar_api
@@ -29,6 +30,8 @@ from agent.workspace.file_tools import register_file_tools
 class WorkspaceServices:
     classroom_api_for: Callable[[str], ClassroomApi] | None
     file_index: FileIndex | None
+    drive_api_for: Callable[[str], DriveApi] | None = None
+    file_roots: FileRoots | None = None
 
 
 def validate_workspace_settings(settings: Settings) -> None:
@@ -59,15 +62,17 @@ def setup_workspace(
             settings.classroom_accounts, lambda a: build_classroom_api(a, auth)
         )
         register_classroom_tools(registry, classroom_for, settings.classroom_accounts, clock)
+    drive_for: Callable[[str], DriveApi] | None = None
     if settings.drive_accounts:
         drive_for = cached_factory(settings.drive_accounts, lambda a: build_drive_api(a, auth))
         register_drive_tools(registry, drive_for, list(settings.drive_accounts))
     file_index: FileIndex | None = None
+    roots: FileRoots | None = None
     if settings.file_roots:
         roots = FileRoots(settings.file_roots)
         file_index = FileIndex(db, FieldCipher(db_key), db_key, roots, clock)
         register_file_tools(registry, file_index, roots)
-    return WorkspaceServices(classroom_for, file_index)
+    return WorkspaceServices(classroom_for, file_index, drive_for, roots)
 
 
 def deadline_proposer(

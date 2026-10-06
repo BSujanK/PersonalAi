@@ -1,6 +1,6 @@
 // The one place a decision is signed and sent. Used by the inline approval card in the chat and
 // by the Approvals screen, so both go through the same biometric prompt (CLAUDE.md rule 1).
-import { decideApproval, type Approval } from './api';
+import { decideApproval, type Approval, type DecisionResult } from './api';
 import { processDeviceCommands } from './deviceCommands';
 import { emitRefresh } from './refreshBus';
 import { signWithBiometrics } from './secureKeys';
@@ -16,7 +16,7 @@ export type Decision = 'approve' | 'reject';
 export async function decideWithBiometrics(
   approval: Approval,
   decision: Decision,
-): Promise<{ id: string; status: string }> {
+): Promise<DecisionResult> {
   const verb = decision === 'approve' ? 'Approve' : 'Reject';
   const sig = await signWithBiometrics(
     {
@@ -35,6 +35,13 @@ export async function decideWithBiometrics(
   if (decision === 'approve') await processDeviceCommands().catch(() => undefined);
   emitRefresh();
   return result;
+}
+
+/** The shareable link in an executed action's result, only if it is an https URL. */
+export function resultLink(result: unknown): string | null {
+  if (typeof result !== 'object' || result === null) return null;
+  const link = (result as { link?: unknown }).link;
+  return typeof link === 'string' && link.startsWith('https://') ? link : null;
 }
 
 export type ApprovalOutcome = 'pending' | 'approved' | 'rejected' | 'failed' | 'expired';

@@ -18,7 +18,7 @@ from agent.core.clock import Clock
 from agent.core.llm import ChatMessage, LLMClient, LLMResponse, StreamingLLMClient, ToolCall
 from agent.core.policy import Decision
 from agent.core.redact import Redacted, RedactionMap, Redactor, StreamRehydrator, from_model
-from agent.core.tools import ToolRegistry
+from agent.core.tools import ActionRejected, ToolRegistry
 
 log = logging.getLogger(__name__)
 
@@ -225,8 +225,13 @@ class AgentLoop:
         if decision is Decision.PROPOSE_WRITE:
             try:
                 action = self._approvals.propose(call.name, args, conversation_id)
+            except ActionRejected as exc:  # fixed text from our own checks; nothing is stored
+                return self._tool_message(call, f"error: {exc}")
             except ValueError:  # the tool's preview rejected the arguments; nothing is stored
                 return self._tool_message(call, "error: invalid arguments")
+            except Exception as exc:  # a connector failed while resolving the action
+                log.warning("tool %s could not be prepared: %s", call.name, type(exc).__name__)
+                return self._tool_message(call, "error: could not prepare the action")
             pending_ids.append(action.id)
             status = json.dumps({"status": "pending_approval", "action_id": action.id})
             return self._tool_message(call, status)

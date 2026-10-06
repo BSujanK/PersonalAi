@@ -1,6 +1,7 @@
 import {
   deleteConversation,
   getApproval,
+  getMailMessage,
   getConversation,
   listConversations,
   renameConversation,
@@ -119,5 +120,24 @@ describe('conversation API client', () => {
     jest.mocked(loadPairing).mockResolvedValue(null);
     await expect(listConversations()).rejects.toMatchObject({ status: 401, detail: 'not_paired' });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('getMailMessage', () => {
+  it('url-encodes the account and message id path segments', async () => {
+    reply(200, { id: 'm/1' });
+    await getMailMessage('student@example.com', 'm/1 x');
+    const { url, init, headers } = lastCall();
+    expect(url).toBe(`${BASE}/mail/student%40example.com/m%2F1%20x`);
+    expect(init.method).toBe('GET');
+    expect(headers.Authorization).toBe('Bearer tok');
+  });
+
+  it('surfaces a 404 as an ApiError', async () => {
+    reply(404, { detail: 'not_found' });
+    await expect(getMailMessage('student@example.com', 'gone')).rejects.toMatchObject({
+      status: 404,
+      detail: 'not_found',
+    });
   });
 });

@@ -40,6 +40,7 @@ TS_IP = "100.101.102.103"
 NVIDIA_URL = "https://integrate.api.nvidia.com/v1/models"
 OLLAMA_URL = "http://127.0.0.1:11434/api/tags"
 SCHTASKS = ("schtasks", "/Query", "/TN", "PersonalAi agent", "/FO", "LIST")
+SCHTASKS_V = (*SCHTASKS, "/V")
 TAILSCALE = ("tailscale", "ip", "-4")
 POWERCFG = {
     "STANDBYIDLE": ("SUB_SLEEP", "STANDBYIDLE"),
@@ -51,8 +52,22 @@ SCHTASKS_RUNNING = (
     "Folder: \\\nHostName:      LAPTOP-EXAMPLE\nTaskName:      \\PersonalAi agent\n"
     "Next Run Time: N/A\nStatus:        Running\nLogon Mode:    Interactive only\n"
 )
+SCHTASKS_V_OUTPUT = (
+    "TaskName:      \\PersonalAi agent\nStatus:        Running\n"
+    "Last Result:   {result}\n"
+    "Task To Run:   {command}\n"
+)
+PYTHONW_COMMAND = "C:\\x\\server\\.venv\\Scripts\\pythonw.exe -m agent supervise"
+POWERSHELL_COMMAND = (
+    "powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass "
+    '-File "C:\\x\\server\\scripts\\run_agent.ps1" -ServerDir "C:\\x\\server"'
+)
 SCHTASKS_READY = SCHTASKS_RUNNING.replace("Running", "Ready")
 SCHTASKS_LOCALISED = SCHTASKS_RUNNING.replace("Status:        Running\n", "")
+
+
+def task_v(result: int | str, command: str = PYTHONW_COMMAND) -> str:
+    return SCHTASKS_V_OUTPUT.format(result=result, command=command)
 
 
 def powercfg_output(value: int) -> str:
@@ -224,6 +239,7 @@ def env(tmp_path: Path) -> Env:
         commands={
             TAILSCALE: CommandResult(0, f"{TS_IP}\n"),
             SCHTASKS: CommandResult(0, SCHTASKS_RUNNING),
+            SCHTASKS_V: CommandResult(0, task_v(267009)),
             **{
                 ("powercfg", "/qh", "SCHEME_CURRENT", *args): CommandResult(0, powercfg_output(0))
                 for args in POWERCFG.values()
@@ -269,6 +285,7 @@ def test_healthy_machine_passes_everything(env: Env) -> None:
         "database",
         "audit_chain",
         "scheduled_task",
+        "task_last_result",
         "server_code",
         "power",
         "paired_device",
@@ -618,6 +635,59 @@ def test_scheduled_task_unreadable_status_warns(env: Env) -> None:
     assert (result.status, result.required) == ("warn", True)
 
 
+@pytest.mark.parametrize("result", [0, 267009])
+def test_task_last_result_passes_for_success_and_running(env: Env, result: int) -> None:
+    env.system.commands[SCHTASKS_V] = CommandResult(0, task_v(result))
+    assert env.result("task_last_result").status == "pass"
+
+
+def test_task_last_result_never_run_is_not_a_failure(env: Env) -> None:
+    env.system.commands[SCHTASKS_V] = CommandResult(0, task_v(267011))
+    result = env.result("task_last_result")
+    assert result.status == "skip"
+    assert "not run yet" in result.detail
+
+
+@pytest.mark.parametrize("code", [-1073741510, 3221225786, "0xC000013A"])
+def test_task_last_result_control_c_exit_fails_with_the_fix(env: Env, code: int | str) -> None:
+    env.system.commands[SCHTASKS_V] = CommandResult(0, task_v(code))
+    result = env.result("task_last_result")
+    assert result.status == "fail"
+    assert "0xC000013A" in result.detail and "Ctrl+C" in result.detail
+    assert "install_task.ps1" in result.fix
+    assert "agent restart" in result.fix
+
+
+def test_task_last_result_other_code_is_shown_in_hex(env: Env) -> None:
+    env.system.commands[SCHTASKS_V] = CommandResult(0, task_v(3))
+    result = env.result("task_last_result")
+    assert result.status == "fail"
+    assert "0x00000003" in result.detail
+    assert "agent.log" in result.fix
+
+
+def test_task_last_result_old_powershell_launcher_warns(env: Env) -> None:
+    env.system.commands[SCHTASKS_V] = CommandResult(0, task_v(0, POWERSHELL_COMMAND))
+    result = env.result("task_last_result")
+    assert result.status == "warn"
+    assert "install_task.ps1" in result.fix
+
+
+def test_task_last_result_unreadable_or_missing(env: Env) -> None:
+    env.system.commands[SCHTASKS_V] = CommandResult(0, "Status: Running\n")
+    assert env.result("task_last_result").status == "warn"
+    env.system.commands.pop(SCHTASKS_V)
+    assert env.result("task_last_result").status == "skip"
+
+
+def test_task_last_result_is_windows_only_and_advisory(env: Env) -> None:
+    env.system.commands[SCHTASKS_V] = CommandResult(0, task_v(3221225786))
+    result = env.result("task_last_result")
+    assert result.required is False
+    env.system.platform = "linux"
+    assert env.result("task_last_result").status == "skip"
+
+
 def test_power_sleep_enabled(env: Env) -> None:
     key = ("powercfg", "/qh", "SCHEME_CURRENT", *POWERCFG["STANDBYIDLE"])
     env.system.commands[key] = CommandResult(0, powercfg_output(1800))
@@ -903,3 +973,17 @@ def test_secrets_never_appear_with_everything_broken(env: Env, as_json: bool) ->
     _, text = env.doctor(as_json=as_json)
     for secret in (NVIDIA_KEY, ACCESS_TOKEN, REFRESH_TOKEN):
         assert secret not in text
+
+
+def test_google_drive_file_token_asks_for_the_one_time_reconsent(env: Env) -> None:
+    other = "other@example.com"
+    env.settings = replace(env.settings, drive_accounts=(other,))
+    old = [
+        "https://www.googleapis.com/auth/drive.readonly",
+        "https://www.googleapis.com/auth/drive.file",
+    ]
+    env.keystore.set(token_secret_name(other), _token(old))
+    result = env.results()[f"google:{other}"]
+    assert result.status == "fail"
+    assert "missing: drive" in result.detail and "re-consent once" in result.detail
+    assert result.fix.endswith("--services drive")

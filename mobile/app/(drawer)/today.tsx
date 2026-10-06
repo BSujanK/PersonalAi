@@ -1,4 +1,6 @@
+import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
+import { Pressable } from 'react-native';
 
 import { Body, Card, ErrorText, Loading, SectionTitle } from '../../src/components/ui';
 import { Screen } from '../../src/components/Screen';
@@ -9,6 +11,7 @@ import { usePolling } from '../../src/lib/usePolling';
 const NOT_CONFIGURED = 'Not configured on the laptop yet.';
 
 export default function TodayScreen() {
+  const router = useRouter();
   const [today, setToday] = useState<Today | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,11 +45,24 @@ export default function TodayScreen() {
           {today.mail === null ? <Body muted>{NOT_CONFIGURED}</Body> : null}
           {today.mail && important.length === 0 ? <Body muted>Nothing important.</Body> : null}
           {important.map((mail) => (
-            <Card key={`${mail.account}:${mail.id}`}>
-              <Body>{mail.subject}</Body>
-              <Body muted>{mail.from_name || mail.from_addr}</Body>
-              {mail.reason ? <Body muted>{mail.reason}</Body> : null}
-            </Card>
+            <Pressable
+              key={`${mail.account}:${mail.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Open mail: ${mail.subject} from ${mail.from_name || mail.from_addr}`}
+              onPress={() =>
+                router.push({
+                  pathname: '/mail/[account]/[id]',
+                  params: { account: mail.account, id: mail.id },
+                })
+              }
+              style={({ pressed }) => pressed && { opacity: 0.7 }}
+            >
+              <Card>
+                <Body>{mail.subject}</Body>
+                <Body muted>{mail.from_name || mail.from_addr}</Body>
+                {mail.reason ? <Body muted>{mail.reason}</Body> : null}
+              </Card>
+            </Pressable>
           ))}
 
           <SectionTitle>Deadlines</SectionTitle>
