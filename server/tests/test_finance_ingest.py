@@ -137,3 +137,26 @@ def test_email_time_comes_from_internal_date() -> None:
     )
     [row] = env.store.txns_between(at(170), at(190))
     assert row.occurred_at == at(180)
+
+
+def test_resent_balance_only_sms_is_upgraded_after_a_parser_fix() -> None:
+    env = make_fin()
+    env.parsers.sms[BODY_A] = balance()  # an older parser only saw the balance
+    first = env.ingest.ingest_sms_batch([SmsIn(SENDER, BODY_A, at())])
+    assert first.balances == 1
+    env.parsers.sms[BODY_A] = txn()  # the fixed parser reads the payment
+    again = env.ingest.ingest_sms_batch([SmsIn(SENDER, BODY_A, at())])
+    assert (again.accepted, again.duplicates, again.parsed) == (1, 0, 1)
+    assert len(env.store.txns_between(at(-5), at(5))) == 1
+    rows = env.db.query("SELECT status FROM finance_sms")
+    assert [r["status"] for r in rows] == ["parsed"]
+    third = env.ingest.ingest_sms_batch([SmsIn(SENDER, BODY_A, at())])
+    assert (third.accepted, third.duplicates) == (0, 1)
+
+
+def test_resent_unparsed_sms_stays_a_duplicate_while_still_unparsed() -> None:
+    env = make_fin()
+    body = "Unusual layout for Test Merchant 4242.00 somewhere"
+    env.ingest.ingest_sms_batch([SmsIn(SENDER, body, at())])
+    again = env.ingest.ingest_sms_batch([SmsIn(SENDER, body, at())])
+    assert (again.accepted, again.duplicates) == (0, 1)

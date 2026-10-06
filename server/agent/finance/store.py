@@ -113,6 +113,13 @@ class FinanceStore:
     def sms_exists(self, key_hash: str) -> bool:
         return bool(self._db.query("SELECT 1 FROM finance_sms WHERE key_hash = ?", (key_hash,)))
 
+    def sms_status(self, key_hash: str) -> str | None:
+        rows = self._db.query("SELECT status FROM finance_sms WHERE key_hash = ?", (key_hash,))
+        return str(rows[0]["status"]) if rows else None
+
+    def delete_sms(self, key_hash: str) -> None:
+        self._db.execute("DELETE FROM finance_sms WHERE key_hash = ?", (key_hash,))
+
     def insert_sms(
         self,
         key_hash: str,

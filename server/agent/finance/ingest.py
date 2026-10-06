@@ -27,6 +27,8 @@ _SECRET_LIKE = re.compile(
     r"\b(?:otp|one[- ]time|verification code|security code|passcode|password|mpin|cvv|pin)\b",
     re.IGNORECASE,
 )
+# Earlier outcomes that a later parser version may turn into a transaction.
+_REPARSABLE = frozenset({"balance", "unparsed"})
 
 
 @dataclass(frozen=True)
@@ -69,10 +71,16 @@ class FinanceIngest:
             for item in items:
                 received_at = item.received_at.astimezone(UTC)
                 key = self._store.sms_key(item.sender, item.body, received_at)
-                if self._store.sms_exists(key):
-                    duplicates += 1
-                else:
+                status = self._store.sms_status(key)
+                if status is None:
                     by_status[self._ingest_one(item, key, received_at)] += 1
+                elif status in _REPARSABLE and self._parses_as_txn(item):
+                    # A parser fix: an SMS stored as balance-only or unparsed is now a payment.
+                    # The phone re-sending it upgrades the row instead of counting a duplicate.
+                    self._store.delete_sms(key)
+                    by_status[self._ingest_one(item, key, received_at)] += 1
+                else:
+                    duplicates += 1
         return IngestResult(
             accepted=sum(by_status.values()),
             duplicates=duplicates,
@@ -81,6 +89,14 @@ class FinanceIngest:
             ignored=by_status["ignored"],
             unparsed=by_status["unparsed"],
         )
+
+    def _parses_as_txn(self, item: SmsIn) -> bool:
+        if self._bank_for_sender(item.sender) is None:
+            return False
+        try:
+            return isinstance(self._parse_sms(item.sender, item.body), ParsedTxn)
+        except Exception:  # the real ingest path logs parser failures; here it is just "no"
+            return False
 
     def _ingest_one(self, item: SmsIn, key: str, received_at: datetime) -> SmsStatus:
         if self._bank_for_sender(item.sender) is None:
