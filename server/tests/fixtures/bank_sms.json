@@ -1,1210 +1,1258 @@
 [
- {
-  "sender": "AD-BOBTXN",
-  "body": "Rs.250.00 debited from A/c XX1234 on 05-10-26 to VPA shop@okicici (UPI Ref No 627812345678). Not you? Call 18005700 -BOB",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 25000,
-   "channel": "upi",
-   "counterparty": "shop@okicici",
-   "reference": "627812345678",
-   "txn_date": "2026-10-05",
-   "balance_paise": null
+  {
+    "sender": "AD-BOBTXN",
+    "body": "Rs.250.00 debited from A/c XX1234 on 05-10-26 to VPA shop@okicici (UPI Ref No 627812345678). Not you? Call 18005700 -BOB",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 25000,
+      "channel": "upi",
+      "counterparty": "shop@okicici",
+      "reference": "627812345678",
+      "txn_date": "2026-10-05",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "BOBSMS",
+    "body": "Rs.500.00 Credited to A/c ...1234 thru UPI/627812345679 by riya.sen@ybl. Total Bal:Rs.10,500.00CR. Avlbl Amt:Rs.10,500.00(05-10-2026 10:15:32) - Bank of Baroda",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 50000,
+      "channel": "upi",
+      "counterparty": "riya.sen@ybl",
+      "reference": "627812345679",
+      "txn_date": "2026-10-05",
+      "balance_paise": 1050000
+    }
+  },
+  {
+    "sender": "VM-BOBTXN-S",
+    "body": "Rs.1,200.00 Credited to your A/c XX1234 on 06-10-26 by UPI/627812345680 from NEHA P. Avlbl Amt:Rs.11,700.00 -BOB",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 120000,
+      "channel": "upi",
+      "counterparty": "NEHA P",
+      "reference": "627812345680",
+      "txn_date": "2026-10-06",
+      "balance_paise": 1170000
+    }
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "Rs.1,499.00 debited from A/c XX1234 on 07-10-26 at AMAZON INDIA using Debit Card ending 5678 (POS). Avl Bal Rs.8,201.00 -Bank of Baroda",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 149900,
+      "channel": "card",
+      "counterparty": "AMAZON INDIA",
+      "reference": null,
+      "txn_date": "2026-10-07",
+      "balance_paise": 820100
+    }
+  },
+  {
+    "sender": "JD-BARODA-S",
+    "body": "Rs.2000 withdrawn from A/c XX1234 on 08-10-2026 at ATM. Avl Bal Rs.6201.00 -Bank of Baroda",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 200000,
+      "channel": "atm",
+      "counterparty": null,
+      "reference": null,
+      "txn_date": "2026-10-08",
+      "balance_paise": 620100
+    }
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "Your A/c XX1234 credited Rs.25,000.00 on 01-10-26 by NEFT UTR SBIN526275000123 from ACME TRADERS. Avl Bal Rs.31,201.00 -BOB",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 2500000,
+      "channel": "neft",
+      "counterparty": "ACME TRADERS",
+      "reference": "SBIN526275000123",
+      "txn_date": "2026-10-01",
+      "balance_paise": 3120100
+    }
+  },
+  {
+    "sender": "BOBTXN",
+    "body": "Rs.5,000.00 debited from A/c XX1234 on 09-10-26 via IMPS to RAHUL K. IMPS Ref No 628012345678. Avl Bal Rs.1,201.00 -BOB",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 500000,
+      "channel": "imps",
+      "counterparty": "RAHUL K",
+      "reference": "628012345678",
+      "txn_date": "2026-10-09",
+      "balance_paise": 120100
+    }
+  },
+  {
+    "sender": "AX-BOBTXN-S",
+    "body": "Rs.3,000.00 credited to A/c XX1234 on 10-10-26 by IMPS from MEERA S. Ref 628012345699. Avl Bal Rs.4,201.00 -Bank of Baroda",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 300000,
+      "channel": "imps",
+      "counterparty": "MEERA S",
+      "reference": "628012345699",
+      "txn_date": "2026-10-10",
+      "balance_paise": 420100
+    }
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "Avl Bal for A/c XX1234 is Rs.4,201.00 as on 10-10-26. -Bank of Baroda",
+    "expected": {
+      "kind": "balance",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "balance_paise": 420100
+    }
+  },
+  {
+    "sender": "BOBSMS",
+    "body": "Your A/c XX1234 Clr Bal is Rs.4,201.00 -BOB",
+    "expected": {
+      "kind": "balance",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "balance_paise": 420100
+    }
+  },
+  {
+    "sender": "AD-BOBUPI",
+    "body": "Rs.75.00 debited from A/c XX1234 on 11-10-26 to VPA chaiwala@paytm (UPI Ref No 628112345001). Avlbl Amt:Rs.4,126.00 -BOB",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 7500,
+      "channel": "upi",
+      "counterparty": "chaiwala@paytm",
+      "reference": "628112345001",
+      "txn_date": "2026-10-11",
+      "balance_paise": 412600
+    }
+  },
+  {
+    "sender": "BOBSMS",
+    "body": "Rs.1,000.00 Debited from A/c ...1234 thru UPI/628112345002 to ASHA R. Total Bal:Rs.3,126.00CR. Avlbl Amt:Rs.3,126.00(11-10-2026 18:02:11) - Bank of Baroda",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 100000,
+      "channel": "upi",
+      "counterparty": "ASHA R",
+      "reference": "628112345002",
+      "txn_date": "2026-10-11",
+      "balance_paise": 312600
+    }
+  },
+  {
+    "sender": "VM-BOBCRD",
+    "body": "Rs.899.00 spent on Card XX5678 at FLIPKART on 12-10-26. Avl Bal Rs.2,227.00 -BOB",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX5678",
+      "direction": "debit",
+      "amount_paise": 89900,
+      "channel": "card",
+      "counterparty": "FLIPKART",
+      "reference": null,
+      "txn_date": "2026-10-12",
+      "balance_paise": 222700
+    }
+  },
+  {
+    "sender": "VM-BOBCRD",
+    "body": "Rs.2,350.00 spent on your BOBCARD ending 4321 at BIGBASKET on 12-10-26. Avl Limit Rs.47,650.00",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX4321",
+      "direction": "debit",
+      "amount_paise": 235000,
+      "channel": "card",
+      "counterparty": "BIGBASKET",
+      "reference": null,
+      "txn_date": "2026-10-12",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "Rs.10,000.00 deposited in A/c XX1234 on 13-10-26 by Cash Dep. Avl Bal Rs.12,227.00 -Bank of Baroda",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 1000000,
+      "channel": "cash",
+      "counterparty": null,
+      "reference": null,
+      "txn_date": "2026-10-13",
+      "balance_paise": 1222700
+    }
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "Rs.1,500.00 debited from A/c XX1234 on 14-10-26 through NetBanking txn to MOHAN D. Avl Bal Rs.10,727.00 -BOB",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 150000,
+      "channel": "netbanking",
+      "counterparty": "MOHAN D",
+      "reference": null,
+      "txn_date": "2026-10-14",
+      "balance_paise": 1072700
+    }
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "Rs.2,00,000.00 credited to A/c XX1234 on 15-10-26 by RTGS UTR HDFCR52026101500123 from GREENFIELD LLP. Avl Bal Rs.2,10,727.00 -BOB",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 20000000,
+      "channel": "rtgs",
+      "counterparty": "GREENFIELD LLP",
+      "reference": "HDFCR52026101500123",
+      "txn_date": "2026-10-15",
+      "balance_paise": 21072700
+    }
+  },
+  {
+    "sender": "BOBSMS",
+    "body": "Rs.320.00 debited from A/c XX1234 on 16-10-26 to VPA zomato@icici (UPI Ref No 628612345003). Not you? Call 18005700",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 32000,
+      "channel": "upi",
+      "counterparty": "zomato@icici",
+      "reference": "628612345003",
+      "txn_date": "2026-10-16",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "Rs.150.00 debited from A/c XX1234 on 05Oct26 to VPA metro@ybl (UPI Ref No 628712345004). Not you? Call 18005700 -BOB",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 15000,
+      "channel": "upi",
+      "counterparty": "metro@ybl",
+      "reference": "628712345004",
+      "txn_date": "2026-10-05",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "Rs.800.00 Credited to A/c ...1234 thru UPI/628812345004 by karan.m@okhdfcbank. Total Bal:Rs.5,000.00CR",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 80000,
+      "channel": "upi",
+      "counterparty": "karan.m@okhdfcbank",
+      "reference": "628812345004",
+      "txn_date": null,
+      "balance_paise": 500000
+    }
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "Rs.200.00 debited from A/c XX1234 on 18-10-26 to VPA vendor1@ybl (UPI Ref No 628912345005). Avl Bal Rs.1,500.00 Dr",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 20000,
+      "channel": "upi",
+      "counterparty": "vendor1@ybl",
+      "reference": "628912345005",
+      "txn_date": "2026-10-18",
+      "balance_paise": -150000
+    }
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "Rs.1,000.00 debited from A/c XX1234 on 19-10-26 towards SIP FUND via NACH. Avl Bal Rs.2,000.00 -BOB",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 100000,
+      "channel": "other",
+      "counterparty": "SIP FUND",
+      "reference": null,
+      "txn_date": "2026-10-19",
+      "balance_paise": 200000
+    }
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "Rs.17.70 debited from A/c XX1234 on 20-10-26 towards SMS Alert Charges. Avl Bal Rs.1,982.30 -BOB",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 1770,
+      "channel": "other",
+      "counterparty": "SMS Alert Charges",
+      "reference": null,
+      "txn_date": "2026-10-20",
+      "balance_paise": 198230
+    }
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "Rs.62.00 credited to A/c XX1234 on 30-09-26 towards Interest. Avl Bal Rs.2,044.30 -Bank of Baroda",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 6200,
+      "channel": "other",
+      "counterparty": null,
+      "reference": null,
+      "txn_date": "2026-09-30",
+      "balance_paise": 204430
+    }
+  },
+  {
+    "sender": "BOBSMS",
+    "body": "Rs.99.00 debited from a/c no. ...1234 on 21-10-2026 to VPA hotstar@ybl UPI Ref 628912345006",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 9900,
+      "channel": "upi",
+      "counterparty": "hotstar@ybl",
+      "reference": "628912345006",
+      "txn_date": "2026-10-21",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "BOBSMS",
+    "body": "INR 1,200.00 credited to A/c XX1234 on 22-Oct-2026 by UPI Ref 629012345006 from VPA ritu@okaxis",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 120000,
+      "channel": "upi",
+      "counterparty": "ritu@okaxis",
+      "reference": "629012345006",
+      "txn_date": "2026-10-22",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "Rs.250.00 credited to A/c XX1234 on 12-10-26 as refund of reversed UPI txn Ref 627812345678. Avl Bal Rs.4,376.00 -BOB",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 25000,
+      "channel": "upi",
+      "counterparty": null,
+      "reference": "627812345678",
+      "txn_date": "2026-10-12",
+      "balance_paise": 437600
+    }
+  },
+  {
+    "sender": "BP-BOBTXN-S",
+    "body": "Rs.40.00 debited from A/c XX1234 on 23-10-26 to VPA parking@ybl (UPI Ref No 629112345007). Avlbl Amt:Rs.4,336.00 -BOB",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 4000,
+      "channel": "upi",
+      "counterparty": "parking@ybl",
+      "reference": "629112345007",
+      "txn_date": "2026-10-23",
+      "balance_paise": 433600
+    }
+  },
+  {
+    "sender": "VM-HDFCBK",
+    "body": "Rs. 1,250.00 debited from a/c **1234 on 05-10-26 to VPA grocer@okhdfcbank (UPI Ref No 627100000001). Not you? Call 18002586161 -HDFC Bank",
+    "expected": {
+      "kind": "txn",
+      "bank": "hdfc",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 125000,
+      "channel": "upi",
+      "counterparty": "grocer@okhdfcbank",
+      "reference": "627100000001",
+      "txn_date": "2026-10-05",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "AX-HDFCBK-S",
+    "body": "Sent Rs.1250.00 From HDFC Bank A/c *1234 To GROCER STORE On 05/10/26 Ref 627100000011 Not You? Call 18002586161/SMS BLOCK UPI to 7308080808",
+    "expected": {
+      "kind": "txn",
+      "bank": "hdfc",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 125000,
+      "channel": "upi",
+      "counterparty": "GROCER STORE",
+      "reference": "627100000011",
+      "txn_date": "2026-10-05",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "HDFCBK",
+    "body": "Credit Alert! Rs.5000.00 credited to HDFC Bank A/c XX1234 on 06-10-26 from VPA ananya@ybl (UPI 627100000002)",
+    "expected": {
+      "kind": "txn",
+      "bank": "hdfc",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 500000,
+      "channel": "upi",
+      "counterparty": "ananya@ybl",
+      "reference": "627100000002",
+      "txn_date": "2026-10-06",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "VM-HDFCBN",
+    "body": "Spent Rs.2499.00 On HDFC Bank CREDIT Card 5678 At AMAZON On 07-Oct-2026",
+    "expected": {
+      "kind": "txn",
+      "bank": "hdfc",
+      "account_mask": "XX5678",
+      "direction": "debit",
+      "amount_paise": 249900,
+      "channel": "card",
+      "counterparty": "AMAZON",
+      "reference": null,
+      "txn_date": "2026-10-07",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "VM-HDFCBK",
+    "body": "Rs.5000.00 withdrawn from HDFC Bank Card x5678 at ATM on 08-10-2026. Avl Bal Rs.12,345.67",
+    "expected": {
+      "kind": "txn",
+      "bank": "hdfc",
+      "account_mask": "XX5678",
+      "direction": "debit",
+      "amount_paise": 500000,
+      "channel": "atm",
+      "counterparty": null,
+      "reference": null,
+      "txn_date": "2026-10-08",
+      "balance_paise": 1234567
+    }
+  },
+  {
+    "sender": "VM-HDFCBK",
+    "body": "Update! INR 15,000.00 deposited in HDFC Bank A/c XX1234 on 09-OCT-26 for NEFT Cr-HDFC0000001-BRIGHT SOLUTIONS-MR XYZ-UTR HDFCN52026100900045. Avl bal INR 27,345.67.",
+    "expected": {
+      "kind": "txn",
+      "bank": "hdfc",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 1500000,
+      "channel": "neft",
+      "counterparty": "BRIGHT SOLUTIONS",
+      "reference": "HDFCN52026100900045",
+      "txn_date": "2026-10-09",
+      "balance_paise": 2734567
+    }
+  },
+  {
+    "sender": "VM-HDFCBK",
+    "body": "Avl Bal in A/c XX1234 is INR 27,345.67 as of 10-OCT-26 -HDFC Bank",
+    "expected": {
+      "kind": "balance",
+      "bank": "hdfc",
+      "account_mask": "XX1234",
+      "balance_paise": 2734567
+    }
+  },
+  {
+    "sender": "JD-SBIUPI-S",
+    "body": "Dear UPI user A/C X1234 debited by 250.0 on date 05Oct26 trf to RAHUL K Refno 627200000001. If not you? Call 1800111109. -SBI",
+    "expected": {
+      "kind": "txn",
+      "bank": "sbi",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 25000,
+      "channel": "upi",
+      "counterparty": "RAHUL K",
+      "reference": "627200000001",
+      "txn_date": "2026-10-05",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "AD-SBIUPI",
+    "body": "Dear UPI user A/C X1234 credited by Rs.1,000.0 on date 06Oct26 trf from MEENA T Refno 627200000002 -SBI",
+    "expected": {
+      "kind": "txn",
+      "bank": "sbi",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 100000,
+      "channel": "upi",
+      "counterparty": "MEENA T",
+      "reference": "627200000002",
+      "txn_date": "2026-10-06",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "ATMSBI",
+    "body": "Rs.2000.00 withdrawn at SBI ATM ATMID01 from A/c XXXX1234 on 08Oct26. Avl Bal Rs.8,000.00 -SBI",
+    "expected": {
+      "kind": "txn",
+      "bank": "sbi",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 200000,
+      "channel": "atm",
+      "counterparty": null,
+      "reference": null,
+      "txn_date": "2026-10-08",
+      "balance_paise": 800000
+    }
+  },
+  {
+    "sender": "VM-SBIPSG",
+    "body": "Rs.499.00 spent on your SBI Card ending 5678 at SWIGGY on 09/10/26.",
+    "expected": {
+      "kind": "txn",
+      "bank": "sbi",
+      "account_mask": "XX5678",
+      "direction": "debit",
+      "amount_paise": 49900,
+      "channel": "card",
+      "counterparty": "SWIGGY",
+      "reference": null,
+      "txn_date": "2026-10-09",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "VK-SBIINB-S",
+    "body": "Dear Customer, Your A/C XXXXXXXX1234 has balance of Rs.5,432.10 as on 10Oct26 -SBI",
+    "expected": {
+      "kind": "balance",
+      "bank": "sbi",
+      "account_mask": "XX1234",
+      "balance_paise": 543210
+    }
+  },
+  {
+    "sender": "SBIBNK",
+    "body": "Dear SBI User, your A/c X1234-credited by Rs.12,000.00 on 11Oct26 NEFT UTR SBIN526285000777 from ACME TRADERS -SBI",
+    "expected": {
+      "kind": "txn",
+      "bank": "sbi",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 1200000,
+      "channel": "neft",
+      "counterparty": "ACME TRADERS",
+      "reference": "SBIN526285000777",
+      "txn_date": "2026-10-11",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "CBSSBI",
+    "body": "Dear Customer, Rs.8,000.00 debited from A/c X1234 on 12Oct26 IMPS to MEERA S Ref No 628300000009 -SBI",
+    "expected": {
+      "kind": "txn",
+      "bank": "sbi",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 800000,
+      "channel": "imps",
+      "counterparty": "MEERA S",
+      "reference": "628300000009",
+      "txn_date": "2026-10-12",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "VM-ICICIB",
+    "body": "ICICI Bank Acct XX123 debited for Rs 1,500.00 on 05-Oct-26; RAHUL K credited. UPI:627300000001. Call 18002662 for dispute.",
+    "expected": {
+      "kind": "txn",
+      "bank": "icici",
+      "account_mask": "XX123",
+      "direction": "debit",
+      "amount_paise": 150000,
+      "channel": "upi",
+      "counterparty": "RAHUL K",
+      "reference": "627300000001",
+      "txn_date": "2026-10-05",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "ICICIT",
+    "body": "ICICI Bank Acct XX123 credited with Rs 2,000.00 on 06-Oct-26 from AMIT S. IMPS Ref no. 628400000002",
+    "expected": {
+      "kind": "txn",
+      "bank": "icici",
+      "account_mask": "XX123",
+      "direction": "credit",
+      "amount_paise": 200000,
+      "channel": "imps",
+      "counterparty": "AMIT S",
+      "reference": "628400000002",
+      "txn_date": "2026-10-06",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "VM-ICICIB-S",
+    "body": "Rs 499.00 spent on ICICI Bank Card XX5678 on 07-Oct-26 at AMAZON. Avl Limit: Rs 80,000.00",
+    "expected": {
+      "kind": "txn",
+      "bank": "icici",
+      "account_mask": "XX5678",
+      "direction": "debit",
+      "amount_paise": 49900,
+      "channel": "card",
+      "counterparty": "AMAZON",
+      "reference": null,
+      "txn_date": "2026-10-07",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "ICICIB",
+    "body": "Rs 3,000.00 withdrawn from ICICI Bank Acct XX123 at ATM on 08-Oct-26. Avl Bal Rs 15,500.00",
+    "expected": {
+      "kind": "txn",
+      "bank": "icici",
+      "account_mask": "XX123",
+      "direction": "debit",
+      "amount_paise": 300000,
+      "channel": "atm",
+      "counterparty": null,
+      "reference": null,
+      "txn_date": "2026-10-08",
+      "balance_paise": 1550000
+    }
+  },
+  {
+    "sender": "VM-ICICIO",
+    "body": "ICICI Bank Acct XX123 credited with Rs 40,000.00 on 09-Oct-26 by NEFT UTR ICIC526282000123 from BRIGHT SOLUTIONS. Avl Bal Rs 55,500.00",
+    "expected": {
+      "kind": "txn",
+      "bank": "icici",
+      "account_mask": "XX123",
+      "direction": "credit",
+      "amount_paise": 4000000,
+      "channel": "neft",
+      "counterparty": "BRIGHT SOLUTIONS",
+      "reference": "ICIC526282000123",
+      "txn_date": "2026-10-09",
+      "balance_paise": 5550000
+    }
+  },
+  {
+    "sender": "VM-ICICIB",
+    "body": "Dear Customer, Acct XX123 is credited with Rs 750.00 on 10-Oct-26 from VPA kiran@okaxis (UPI 628500000003).",
+    "expected": {
+      "kind": "txn",
+      "bank": "icici",
+      "account_mask": "XX123",
+      "direction": "credit",
+      "amount_paise": 75000,
+      "channel": "upi",
+      "counterparty": "kiran@okaxis",
+      "reference": "628500000003",
+      "txn_date": "2026-10-10",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "VM-ICICIB",
+    "body": "Avl Bal in ICICI Bank Acct XX123 is Rs 55,500.00",
+    "expected": {
+      "kind": "balance",
+      "bank": "icici",
+      "account_mask": "XX123",
+      "balance_paise": 5550000
+    }
+  },
+  {
+    "sender": "AX-AXISBK-S",
+    "body": "INR 500.00 debited from A/c no. XX1234 on 05-10-26 15:20:11 UPI/P2M/627400000001/SHOP NAME. Not you? SMS BLOCK UPI to 18001035577 -Axis Bank",
+    "expected": {
+      "kind": "txn",
+      "bank": "axis",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 50000,
+      "channel": "upi",
+      "counterparty": "SHOP NAME",
+      "reference": "627400000001",
+      "txn_date": "2026-10-05",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "AXISBK",
+    "body": "INR 5000.00 credited to A/c no. XX1234 on 06-10-2026 at 10:15:32 IST. Info: NEFT-AXISN52026100600123-BRIGHT SOLUTIONS. Avl Bal INR 12,345.00 -Axis Bank",
+    "expected": {
+      "kind": "txn",
+      "bank": "axis",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 500000,
+      "channel": "neft",
+      "counterparty": "BRIGHT SOLUTIONS",
+      "reference": "AXISN52026100600123",
+      "txn_date": "2026-10-06",
+      "balance_paise": 1234500
+    }
+  },
+  {
+    "sender": "VM-AXISBK",
+    "body": "Spent Card no. XX5678 INR 499.00 07-10-26 15:20:11 AMAZON Avl Lmt INR 50,000.00 SMS BLOCK 5678 to 18001035577 -Axis Bank",
+    "expected": {
+      "kind": "txn",
+      "bank": "axis",
+      "account_mask": "XX5678",
+      "direction": "debit",
+      "amount_paise": 49900,
+      "channel": "card",
+      "counterparty": "AMAZON",
+      "reference": null,
+      "txn_date": "2026-10-07",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "AXISMR",
+    "body": "INR 1,200.00 credited to A/c no. XX1234 on 08-10-26 by UPI from VPA ritu@okaxis (UPI Ref 628600000002). Avl Bal INR 13,545.00 -Axis Bank",
+    "expected": {
+      "kind": "txn",
+      "bank": "axis",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 120000,
+      "channel": "upi",
+      "counterparty": "ritu@okaxis",
+      "reference": "628600000002",
+      "txn_date": "2026-10-08",
+      "balance_paise": 1354500
+    }
+  },
+  {
+    "sender": "AXISBK",
+    "body": "INR 4,000.00 withdrawn from A/c no. XX1234 on 09-10-26 at ATM. Avl Bal INR 9,545.00 -Axis Bank",
+    "expected": {
+      "kind": "txn",
+      "bank": "axis",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 400000,
+      "channel": "atm",
+      "counterparty": null,
+      "reference": null,
+      "txn_date": "2026-10-09",
+      "balance_paise": 954500
+    }
+  },
+  {
+    "sender": "AXISBK",
+    "body": "INR 2,500.00 debited from A/c no. XX1234 on 10-10-26 IMPS/P2A/628700000003/MOHAN D. Avl Bal INR 7,045.00 -Axis Bank",
+    "expected": {
+      "kind": "txn",
+      "bank": "axis",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 250000,
+      "channel": "imps",
+      "counterparty": "MOHAN D",
+      "reference": "628700000003",
+      "txn_date": "2026-10-10",
+      "balance_paise": 704500
+    }
+  },
+  {
+    "sender": "KOTAKB",
+    "body": "Sent Rs.250.00 from Kotak Bank AC X1234 to shop@okicici on 05-10-26.UPI Ref 627500000001. Not you, https://kotak.com/KBANKT/Fraud",
+    "expected": {
+      "kind": "txn",
+      "bank": "kotak",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 25000,
+      "channel": "upi",
+      "counterparty": "shop@okicici",
+      "reference": "627500000001",
+      "txn_date": "2026-10-05",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "VM-KOTAKB",
+    "body": "Received Rs.500.00 in your Kotak Bank AC X1234 from ritu@okaxis on 06-10-26.UPI Ref:627500000002.",
+    "expected": {
+      "kind": "txn",
+      "bank": "kotak",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 50000,
+      "channel": "upi",
+      "counterparty": "ritu@okaxis",
+      "reference": "627500000002",
+      "txn_date": "2026-10-06",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "KOTAKM",
+    "body": "Spent Rs.1,200.00 on Kotak Credit Card XX5678 at SWIGGY on 07-Oct-26. Avl limit Rs.60,000.00.",
+    "expected": {
+      "kind": "txn",
+      "bank": "kotak",
+      "account_mask": "XX5678",
+      "direction": "debit",
+      "amount_paise": 120000,
+      "channel": "card",
+      "counterparty": "SWIGGY",
+      "reference": null,
+      "txn_date": "2026-10-07",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "KOTAKB",
+    "body": "Rs.30,000.00 credited to your Kotak Bank AC X1234 on 08-10-26 by NEFT UTR KKBK52026100800123 from BRIGHT SOLUTIONS. Bal Rs.45,000.00",
+    "expected": {
+      "kind": "txn",
+      "bank": "kotak",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 3000000,
+      "channel": "neft",
+      "counterparty": "BRIGHT SOLUTIONS",
+      "reference": "KKBK52026100800123",
+      "txn_date": "2026-10-08",
+      "balance_paise": 4500000
+    }
+  },
+  {
+    "sender": "KOTAKB",
+    "body": "Rs.2,000.00 withdrawn from Kotak Bank AC X1234 at ATM on 09-10-26. Avl Bal Rs.43,000.00",
+    "expected": {
+      "kind": "txn",
+      "bank": "kotak",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 200000,
+      "channel": "atm",
+      "counterparty": null,
+      "reference": null,
+      "txn_date": "2026-10-09",
+      "balance_paise": 4300000
+    }
+  },
+  {
+    "sender": "VM-KOTAKB",
+    "body": "Rs.1,000.00 debited from Kotak Bank AC X1234 on 10-10-26 via IMPS to MEERA S. IMPS Ref 628800000004. Avl Bal Rs.42,000.00",
+    "expected": {
+      "kind": "txn",
+      "bank": "kotak",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 100000,
+      "channel": "imps",
+      "counterparty": "MEERA S",
+      "reference": "628800000004",
+      "txn_date": "2026-10-10",
+      "balance_paise": 4200000
+    }
+  },
+  {
+    "sender": "CANBNK",
+    "body": "An amount of INR 250.00 has been DEBITED to your account XXX234 on 05/10/2026 Total Avail.Bal INR 5,000.00. - Canara Bank",
+    "expected": {
+      "kind": "txn",
+      "bank": "canara",
+      "account_mask": "XX234",
+      "direction": "debit",
+      "amount_paise": 25000,
+      "channel": "other",
+      "counterparty": null,
+      "reference": null,
+      "txn_date": "2026-10-05",
+      "balance_paise": 500000
+    }
+  },
+  {
+    "sender": "VM-CANBNK",
+    "body": "An amount of INR 1,000.00 has been CREDITED to your account XXX234 on 06/10/2026 Total Avail.Bal INR 6,000.00. -Canara Bank",
+    "expected": {
+      "kind": "txn",
+      "bank": "canara",
+      "account_mask": "XX234",
+      "direction": "credit",
+      "amount_paise": 100000,
+      "channel": "other",
+      "counterparty": null,
+      "reference": null,
+      "txn_date": "2026-10-06",
+      "balance_paise": 600000
+    }
+  },
+  {
+    "sender": "CANARA",
+    "body": "Rs.150.00 debited from your a/c XXX234 on 07-10-26 to VPA cafe@ybl UPI Ref No 627600000003 -Canara Bank",
+    "expected": {
+      "kind": "txn",
+      "bank": "canara",
+      "account_mask": "XX234",
+      "direction": "debit",
+      "amount_paise": 15000,
+      "channel": "upi",
+      "counterparty": "cafe@ybl",
+      "reference": "627600000003",
+      "txn_date": "2026-10-07",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "VM-CANBNK",
+    "body": "Rs.300.00 credited to your a/c XXX234 on 08-10-26 from VPA tara@okicici. UPI Ref No 628900000004. Avl Bal Rs.6,300.00 -Canara Bank",
+    "expected": {
+      "kind": "txn",
+      "bank": "canara",
+      "account_mask": "XX234",
+      "direction": "credit",
+      "amount_paise": 30000,
+      "channel": "upi",
+      "counterparty": "tara@okicici",
+      "reference": "628900000004",
+      "txn_date": "2026-10-08",
+      "balance_paise": 630000
+    }
+  },
+  {
+    "sender": "CANBNK",
+    "body": "Rs.1,000.00 withdrawn from A/c XXX234 at ATM on 09-10-26. Avl Bal Rs.5,300.00 -Canara Bank",
+    "expected": {
+      "kind": "txn",
+      "bank": "canara",
+      "account_mask": "XX234",
+      "direction": "debit",
+      "amount_paise": 100000,
+      "channel": "atm",
+      "counterparty": null,
+      "reference": null,
+      "txn_date": "2026-10-09",
+      "balance_paise": 530000
+    }
+  },
+  {
+    "sender": "CANBNK",
+    "body": "INR 8,000.00 credited to your account XXX234 on 10/10/2026 by NEFT UTR CNRB52026101000123 from ACME TRADERS. Total Avail.Bal INR 13,300.00 -Canara Bank",
+    "expected": {
+      "kind": "txn",
+      "bank": "canara",
+      "account_mask": "XX234",
+      "direction": "credit",
+      "amount_paise": 800000,
+      "channel": "neft",
+      "counterparty": "ACME TRADERS",
+      "reference": "CNRB52026101000123",
+      "txn_date": "2026-10-10",
+      "balance_paise": 1330000
+    }
+  },
+  {
+    "sender": "AD-PAYTMB",
+    "body": "Paid Rs.120 to ZOMATO from Paytm Balance. UPI Ref No 628900000005.",
+    "expected": {
+      "kind": "txn",
+      "bank": "upi",
+      "account_mask": null,
+      "direction": "debit",
+      "amount_paise": 12000,
+      "channel": "upi",
+      "counterparty": "ZOMATO",
+      "reference": "628900000005",
+      "txn_date": null,
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "PHONPE",
+    "body": "Paid ₹250 to RAHUL K. UPI Ref 628900000006",
+    "expected": {
+      "kind": "txn",
+      "bank": "upi",
+      "account_mask": null,
+      "direction": "debit",
+      "amount_paise": 25000,
+      "channel": "upi",
+      "counterparty": "RAHUL K",
+      "reference": "628900000006",
+      "txn_date": null,
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "VM-GPAY",
+    "body": "You sent Rs.500.00 to kiran@okaxis using Google Pay. UPI Ref No 628900000007",
+    "expected": {
+      "kind": "txn",
+      "bank": "upi",
+      "account_mask": null,
+      "direction": "debit",
+      "amount_paise": 50000,
+      "channel": "upi",
+      "counterparty": "kiran@okaxis",
+      "reference": "628900000007",
+      "txn_date": null,
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "BHIMUP",
+    "body": "Rs.1,000.00 received from ananya@ybl in your a/c XX1234. UPI Ref No 628900000008",
+    "expected": {
+      "kind": "txn",
+      "bank": "upi",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 100000,
+      "channel": "upi",
+      "counterparty": "ananya@ybl",
+      "reference": "628900000008",
+      "txn_date": null,
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "PAYTMB",
+    "body": "Received Rs.75 from MEERA S in your Paytm Wallet. UPI Ref 628900000009",
+    "expected": {
+      "kind": "txn",
+      "bank": "upi",
+      "account_mask": null,
+      "direction": "credit",
+      "amount_paise": 7500,
+      "channel": "upi",
+      "counterparty": "MEERA S",
+      "reference": "628900000009",
+      "txn_date": null,
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "GPAY",
+    "body": "Rs.300.00 debited from your Google Pay UPI a/c XX1234 on 11-10-26 to VPA chai@paytm (UPI Ref No 628900000010)",
+    "expected": {
+      "kind": "txn",
+      "bank": "upi",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 30000,
+      "channel": "upi",
+      "counterparty": "chai@paytm",
+      "reference": "628900000010",
+      "txn_date": "2026-10-11",
+      "balance_paise": null
+    }
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "123456 is the OTP for your Bank of Baroda transaction of Rs.500.00. Do not share with anyone.",
+    "expected": null
+  },
+  {
+    "sender": "BOBSMS",
+    "body": "Pre-approved personal loan of Rs.5,00,000 for you! Click to apply. T&C apply -BOB",
+    "expected": null
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "Your UPI transaction of Rs.250.00 to VPA shop@okicici has failed. If debited, amount will be reversed within 3 days -BOB",
+    "expected": null
+  },
+  {
+    "sender": "VM-HDFCBK",
+    "body": "Rahul K has requested money Rs.500.00 from you on UPI. Approve in your app. -HDFC Bank",
+    "expected": null
+  },
+  {
+    "sender": "AD-SHOPXX",
+    "body": "Rs.250.00 debited from A/c XX1234 on 05-10-26 to VPA shop@okicici (UPI Ref No 627812345678).",
+    "expected": null
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "asdf qwer ;;; 123 Rs. Rs.. Bal bal : - ,,, A/c",
+    "expected": null
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "",
+    "expected": null
+  },
+  {
+    "sender": "JD-SBIUPI-S",
+    "body": "Your Debit Card txn of Rs.499.00 has been reversed. -SBI",
+    "expected": null
+  },
+  {
+    "sender": "VM-ICICIB",
+    "body": "Your transaction of Rs 1,200.00 at AMAZON was declined on ICICI Bank Card XX5678.",
+    "expected": null
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "Rs.0.00 debited from A/c XX1234 on 05-10-26 to VPA shop@okicici (UPI Ref No 627812345678).",
+    "expected": null
+  },
+  {
+    "sender": "AD-BOBTXN",
+    "body": "Dear Customer, you have logged in to BoB mobile banking at 10:15. -BOB",
+    "expected": null
+  },
+  {
+    "sender": "SBIBNK",
+    "body": "Use OTP 482913 to log in to SBI YONO. Never share OTP with anyone. -SBI",
+    "expected": null
+  },
+  {
+    "sender": "KOTAKB",
+    "body": "Get a 10% cashback offer on your next spend of Rs.500 with Kotak Card. Limited period -Kotak",
+    "expected": null
+  },
+  {
+    "sender": "VM-AXISBK",
+    "body": "Dear Customer, your statement for Sep 2026 is ready. Total debits Rs.12,000.00 -Axis Bank",
+    "expected": null
+  },
+  {
+    "sender": "JK-BOBSMS-S",
+    "body": "Rs.149.00 Dr. from A/C XXXXXX1234 and Cr. to shop.example@okaxis. Ref:627812340001. AvlBal:Rs10431.50(2026:10:05 14:22:10). Not you? Call 18005700/5000-BOB",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 14900,
+      "channel": "upi",
+      "counterparty": "shop.example@okaxis",
+      "reference": "627812340001",
+      "txn_date": "2026-10-05",
+      "balance_paise": 1043150
+    }
+  },
+  {
+    "sender": "VM-BOBSMS-S",
+    "body": "Rs.75.50 Dr. from A/C XXXXXX1234 and Cr. to Riya Example. Ref:627812340002. AvlBal:Rs10356.00(2026:10:05 18:02:44). Not you? Call 18005700/5000-BOB",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "debit",
+      "amount_paise": 7550,
+      "channel": "other",
+      "counterparty": "Riya Example",
+      "reference": "627812340002",
+      "txn_date": "2026-10-05",
+      "balance_paise": 1035600
+    }
+  },
+  {
+    "sender": "JX-BOBSMS-S",
+    "body": "Rs.500.00 Cr. to A/C XXXXXX1234 and Dr. from riya.example@ybl. Ref:627812340003. AvlBal:Rs10856.00(2026:10:06 09:10:00). Not you? Call 18005700/5000-BOB",
+    "expected": {
+      "kind": "txn",
+      "bank": "bob",
+      "account_mask": "XX1234",
+      "direction": "credit",
+      "amount_paise": 50000,
+      "channel": "upi",
+      "counterparty": "riya.example@ybl",
+      "reference": "627812340003",
+      "txn_date": "2026-10-06",
+      "balance_paise": 1085600
+    }
   }
- },
- {
-  "sender": "BOBSMS",
-  "body": "Rs.500.00 Credited to A/c ...1234 thru UPI/627812345679 by riya.sen@ybl. Total Bal:Rs.10,500.00CR. Avlbl Amt:Rs.10,500.00(05-10-2026 10:15:32) - Bank of Baroda",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 50000,
-   "channel": "upi",
-   "counterparty": "riya.sen@ybl",
-   "reference": "627812345679",
-   "txn_date": "2026-10-05",
-   "balance_paise": 1050000
-  }
- },
- {
-  "sender": "VM-BOBTXN-S",
-  "body": "Rs.1,200.00 Credited to your A/c XX1234 on 06-10-26 by UPI/627812345680 from NEHA P. Avlbl Amt:Rs.11,700.00 -BOB",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 120000,
-   "channel": "upi",
-   "counterparty": "NEHA P",
-   "reference": "627812345680",
-   "txn_date": "2026-10-06",
-   "balance_paise": 1170000
-  }
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "Rs.1,499.00 debited from A/c XX1234 on 07-10-26 at AMAZON INDIA using Debit Card ending 5678 (POS). Avl Bal Rs.8,201.00 -Bank of Baroda",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 149900,
-   "channel": "card",
-   "counterparty": "AMAZON INDIA",
-   "reference": null,
-   "txn_date": "2026-10-07",
-   "balance_paise": 820100
-  }
- },
- {
-  "sender": "JD-BARODA-S",
-  "body": "Rs.2000 withdrawn from A/c XX1234 on 08-10-2026 at ATM. Avl Bal Rs.6201.00 -Bank of Baroda",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 200000,
-   "channel": "atm",
-   "counterparty": null,
-   "reference": null,
-   "txn_date": "2026-10-08",
-   "balance_paise": 620100
-  }
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "Your A/c XX1234 credited Rs.25,000.00 on 01-10-26 by NEFT UTR SBIN526275000123 from ACME TRADERS. Avl Bal Rs.31,201.00 -BOB",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 2500000,
-   "channel": "neft",
-   "counterparty": "ACME TRADERS",
-   "reference": "SBIN526275000123",
-   "txn_date": "2026-10-01",
-   "balance_paise": 3120100
-  }
- },
- {
-  "sender": "BOBTXN",
-  "body": "Rs.5,000.00 debited from A/c XX1234 on 09-10-26 via IMPS to RAHUL K. IMPS Ref No 628012345678. Avl Bal Rs.1,201.00 -BOB",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 500000,
-   "channel": "imps",
-   "counterparty": "RAHUL K",
-   "reference": "628012345678",
-   "txn_date": "2026-10-09",
-   "balance_paise": 120100
-  }
- },
- {
-  "sender": "AX-BOBTXN-S",
-  "body": "Rs.3,000.00 credited to A/c XX1234 on 10-10-26 by IMPS from MEERA S. Ref 628012345699. Avl Bal Rs.4,201.00 -Bank of Baroda",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 300000,
-   "channel": "imps",
-   "counterparty": "MEERA S",
-   "reference": "628012345699",
-   "txn_date": "2026-10-10",
-   "balance_paise": 420100
-  }
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "Avl Bal for A/c XX1234 is Rs.4,201.00 as on 10-10-26. -Bank of Baroda",
-  "expected": {
-   "kind": "balance",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "balance_paise": 420100
-  }
- },
- {
-  "sender": "BOBSMS",
-  "body": "Your A/c XX1234 Clr Bal is Rs.4,201.00 -BOB",
-  "expected": {
-   "kind": "balance",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "balance_paise": 420100
-  }
- },
- {
-  "sender": "AD-BOBUPI",
-  "body": "Rs.75.00 debited from A/c XX1234 on 11-10-26 to VPA chaiwala@paytm (UPI Ref No 628112345001). Avlbl Amt:Rs.4,126.00 -BOB",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 7500,
-   "channel": "upi",
-   "counterparty": "chaiwala@paytm",
-   "reference": "628112345001",
-   "txn_date": "2026-10-11",
-   "balance_paise": 412600
-  }
- },
- {
-  "sender": "BOBSMS",
-  "body": "Rs.1,000.00 Debited from A/c ...1234 thru UPI/628112345002 to ASHA R. Total Bal:Rs.3,126.00CR. Avlbl Amt:Rs.3,126.00(11-10-2026 18:02:11) - Bank of Baroda",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 100000,
-   "channel": "upi",
-   "counterparty": "ASHA R",
-   "reference": "628112345002",
-   "txn_date": "2026-10-11",
-   "balance_paise": 312600
-  }
- },
- {
-  "sender": "VM-BOBCRD",
-  "body": "Rs.899.00 spent on Card XX5678 at FLIPKART on 12-10-26. Avl Bal Rs.2,227.00 -BOB",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX5678",
-   "direction": "debit",
-   "amount_paise": 89900,
-   "channel": "card",
-   "counterparty": "FLIPKART",
-   "reference": null,
-   "txn_date": "2026-10-12",
-   "balance_paise": 222700
-  }
- },
- {
-  "sender": "VM-BOBCRD",
-  "body": "Rs.2,350.00 spent on your BOBCARD ending 4321 at BIGBASKET on 12-10-26. Avl Limit Rs.47,650.00",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX4321",
-   "direction": "debit",
-   "amount_paise": 235000,
-   "channel": "card",
-   "counterparty": "BIGBASKET",
-   "reference": null,
-   "txn_date": "2026-10-12",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "Rs.10,000.00 deposited in A/c XX1234 on 13-10-26 by Cash Dep. Avl Bal Rs.12,227.00 -Bank of Baroda",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 1000000,
-   "channel": "cash",
-   "counterparty": null,
-   "reference": null,
-   "txn_date": "2026-10-13",
-   "balance_paise": 1222700
-  }
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "Rs.1,500.00 debited from A/c XX1234 on 14-10-26 through NetBanking txn to MOHAN D. Avl Bal Rs.10,727.00 -BOB",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 150000,
-   "channel": "netbanking",
-   "counterparty": "MOHAN D",
-   "reference": null,
-   "txn_date": "2026-10-14",
-   "balance_paise": 1072700
-  }
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "Rs.2,00,000.00 credited to A/c XX1234 on 15-10-26 by RTGS UTR HDFCR52026101500123 from GREENFIELD LLP. Avl Bal Rs.2,10,727.00 -BOB",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 20000000,
-   "channel": "rtgs",
-   "counterparty": "GREENFIELD LLP",
-   "reference": "HDFCR52026101500123",
-   "txn_date": "2026-10-15",
-   "balance_paise": 21072700
-  }
- },
- {
-  "sender": "BOBSMS",
-  "body": "Rs.320.00 debited from A/c XX1234 on 16-10-26 to VPA zomato@icici (UPI Ref No 628612345003). Not you? Call 18005700",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 32000,
-   "channel": "upi",
-   "counterparty": "zomato@icici",
-   "reference": "628612345003",
-   "txn_date": "2026-10-16",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "Rs.150.00 debited from A/c XX1234 on 05Oct26 to VPA metro@ybl (UPI Ref No 628712345004). Not you? Call 18005700 -BOB",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 15000,
-   "channel": "upi",
-   "counterparty": "metro@ybl",
-   "reference": "628712345004",
-   "txn_date": "2026-10-05",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "Rs.800.00 Credited to A/c ...1234 thru UPI/628812345004 by karan.m@okhdfcbank. Total Bal:Rs.5,000.00CR",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 80000,
-   "channel": "upi",
-   "counterparty": "karan.m@okhdfcbank",
-   "reference": "628812345004",
-   "txn_date": null,
-   "balance_paise": 500000
-  }
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "Rs.200.00 debited from A/c XX1234 on 18-10-26 to VPA vendor1@ybl (UPI Ref No 628912345005). Avl Bal Rs.1,500.00 Dr",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 20000,
-   "channel": "upi",
-   "counterparty": "vendor1@ybl",
-   "reference": "628912345005",
-   "txn_date": "2026-10-18",
-   "balance_paise": -150000
-  }
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "Rs.1,000.00 debited from A/c XX1234 on 19-10-26 towards SIP FUND via NACH. Avl Bal Rs.2,000.00 -BOB",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 100000,
-   "channel": "other",
-   "counterparty": "SIP FUND",
-   "reference": null,
-   "txn_date": "2026-10-19",
-   "balance_paise": 200000
-  }
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "Rs.17.70 debited from A/c XX1234 on 20-10-26 towards SMS Alert Charges. Avl Bal Rs.1,982.30 -BOB",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 1770,
-   "channel": "other",
-   "counterparty": "SMS Alert Charges",
-   "reference": null,
-   "txn_date": "2026-10-20",
-   "balance_paise": 198230
-  }
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "Rs.62.00 credited to A/c XX1234 on 30-09-26 towards Interest. Avl Bal Rs.2,044.30 -Bank of Baroda",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 6200,
-   "channel": "other",
-   "counterparty": null,
-   "reference": null,
-   "txn_date": "2026-09-30",
-   "balance_paise": 204430
-  }
- },
- {
-  "sender": "BOBSMS",
-  "body": "Rs.99.00 debited from a/c no. ...1234 on 21-10-2026 to VPA hotstar@ybl UPI Ref 628912345006",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 9900,
-   "channel": "upi",
-   "counterparty": "hotstar@ybl",
-   "reference": "628912345006",
-   "txn_date": "2026-10-21",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "BOBSMS",
-  "body": "INR 1,200.00 credited to A/c XX1234 on 22-Oct-2026 by UPI Ref 629012345006 from VPA ritu@okaxis",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 120000,
-   "channel": "upi",
-   "counterparty": "ritu@okaxis",
-   "reference": "629012345006",
-   "txn_date": "2026-10-22",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "Rs.250.00 credited to A/c XX1234 on 12-10-26 as refund of reversed UPI txn Ref 627812345678. Avl Bal Rs.4,376.00 -BOB",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 25000,
-   "channel": "upi",
-   "counterparty": null,
-   "reference": "627812345678",
-   "txn_date": "2026-10-12",
-   "balance_paise": 437600
-  }
- },
- {
-  "sender": "BP-BOBTXN-S",
-  "body": "Rs.40.00 debited from A/c XX1234 on 23-10-26 to VPA parking@ybl (UPI Ref No 629112345007). Avlbl Amt:Rs.4,336.00 -BOB",
-  "expected": {
-   "kind": "txn",
-   "bank": "bob",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 4000,
-   "channel": "upi",
-   "counterparty": "parking@ybl",
-   "reference": "629112345007",
-   "txn_date": "2026-10-23",
-   "balance_paise": 433600
-  }
- },
- {
-  "sender": "VM-HDFCBK",
-  "body": "Rs. 1,250.00 debited from a/c **1234 on 05-10-26 to VPA grocer@okhdfcbank (UPI Ref No 627100000001). Not you? Call 18002586161 -HDFC Bank",
-  "expected": {
-   "kind": "txn",
-   "bank": "hdfc",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 125000,
-   "channel": "upi",
-   "counterparty": "grocer@okhdfcbank",
-   "reference": "627100000001",
-   "txn_date": "2026-10-05",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "AX-HDFCBK-S",
-  "body": "Sent Rs.1250.00 From HDFC Bank A/c *1234 To GROCER STORE On 05/10/26 Ref 627100000011 Not You? Call 18002586161/SMS BLOCK UPI to 7308080808",
-  "expected": {
-   "kind": "txn",
-   "bank": "hdfc",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 125000,
-   "channel": "upi",
-   "counterparty": "GROCER STORE",
-   "reference": "627100000011",
-   "txn_date": "2026-10-05",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "HDFCBK",
-  "body": "Credit Alert! Rs.5000.00 credited to HDFC Bank A/c XX1234 on 06-10-26 from VPA ananya@ybl (UPI 627100000002)",
-  "expected": {
-   "kind": "txn",
-   "bank": "hdfc",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 500000,
-   "channel": "upi",
-   "counterparty": "ananya@ybl",
-   "reference": "627100000002",
-   "txn_date": "2026-10-06",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "VM-HDFCBN",
-  "body": "Spent Rs.2499.00 On HDFC Bank CREDIT Card 5678 At AMAZON On 07-Oct-2026",
-  "expected": {
-   "kind": "txn",
-   "bank": "hdfc",
-   "account_mask": "XX5678",
-   "direction": "debit",
-   "amount_paise": 249900,
-   "channel": "card",
-   "counterparty": "AMAZON",
-   "reference": null,
-   "txn_date": "2026-10-07",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "VM-HDFCBK",
-  "body": "Rs.5000.00 withdrawn from HDFC Bank Card x5678 at ATM on 08-10-2026. Avl Bal Rs.12,345.67",
-  "expected": {
-   "kind": "txn",
-   "bank": "hdfc",
-   "account_mask": "XX5678",
-   "direction": "debit",
-   "amount_paise": 500000,
-   "channel": "atm",
-   "counterparty": null,
-   "reference": null,
-   "txn_date": "2026-10-08",
-   "balance_paise": 1234567
-  }
- },
- {
-  "sender": "VM-HDFCBK",
-  "body": "Update! INR 15,000.00 deposited in HDFC Bank A/c XX1234 on 09-OCT-26 for NEFT Cr-HDFC0000001-BRIGHT SOLUTIONS-MR XYZ-UTR HDFCN52026100900045. Avl bal INR 27,345.67.",
-  "expected": {
-   "kind": "txn",
-   "bank": "hdfc",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 1500000,
-   "channel": "neft",
-   "counterparty": "BRIGHT SOLUTIONS",
-   "reference": "HDFCN52026100900045",
-   "txn_date": "2026-10-09",
-   "balance_paise": 2734567
-  }
- },
- {
-  "sender": "VM-HDFCBK",
-  "body": "Avl Bal in A/c XX1234 is INR 27,345.67 as of 10-OCT-26 -HDFC Bank",
-  "expected": {
-   "kind": "balance",
-   "bank": "hdfc",
-   "account_mask": "XX1234",
-   "balance_paise": 2734567
-  }
- },
- {
-  "sender": "JD-SBIUPI-S",
-  "body": "Dear UPI user A/C X1234 debited by 250.0 on date 05Oct26 trf to RAHUL K Refno 627200000001. If not you? Call 1800111109. -SBI",
-  "expected": {
-   "kind": "txn",
-   "bank": "sbi",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 25000,
-   "channel": "upi",
-   "counterparty": "RAHUL K",
-   "reference": "627200000001",
-   "txn_date": "2026-10-05",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "AD-SBIUPI",
-  "body": "Dear UPI user A/C X1234 credited by Rs.1,000.0 on date 06Oct26 trf from MEENA T Refno 627200000002 -SBI",
-  "expected": {
-   "kind": "txn",
-   "bank": "sbi",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 100000,
-   "channel": "upi",
-   "counterparty": "MEENA T",
-   "reference": "627200000002",
-   "txn_date": "2026-10-06",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "ATMSBI",
-  "body": "Rs.2000.00 withdrawn at SBI ATM ATMID01 from A/c XXXX1234 on 08Oct26. Avl Bal Rs.8,000.00 -SBI",
-  "expected": {
-   "kind": "txn",
-   "bank": "sbi",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 200000,
-   "channel": "atm",
-   "counterparty": null,
-   "reference": null,
-   "txn_date": "2026-10-08",
-   "balance_paise": 800000
-  }
- },
- {
-  "sender": "VM-SBIPSG",
-  "body": "Rs.499.00 spent on your SBI Card ending 5678 at SWIGGY on 09/10/26.",
-  "expected": {
-   "kind": "txn",
-   "bank": "sbi",
-   "account_mask": "XX5678",
-   "direction": "debit",
-   "amount_paise": 49900,
-   "channel": "card",
-   "counterparty": "SWIGGY",
-   "reference": null,
-   "txn_date": "2026-10-09",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "VK-SBIINB-S",
-  "body": "Dear Customer, Your A/C XXXXXXXX1234 has balance of Rs.5,432.10 as on 10Oct26 -SBI",
-  "expected": {
-   "kind": "balance",
-   "bank": "sbi",
-   "account_mask": "XX1234",
-   "balance_paise": 543210
-  }
- },
- {
-  "sender": "SBIBNK",
-  "body": "Dear SBI User, your A/c X1234-credited by Rs.12,000.00 on 11Oct26 NEFT UTR SBIN526285000777 from ACME TRADERS -SBI",
-  "expected": {
-   "kind": "txn",
-   "bank": "sbi",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 1200000,
-   "channel": "neft",
-   "counterparty": "ACME TRADERS",
-   "reference": "SBIN526285000777",
-   "txn_date": "2026-10-11",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "CBSSBI",
-  "body": "Dear Customer, Rs.8,000.00 debited from A/c X1234 on 12Oct26 IMPS to MEERA S Ref No 628300000009 -SBI",
-  "expected": {
-   "kind": "txn",
-   "bank": "sbi",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 800000,
-   "channel": "imps",
-   "counterparty": "MEERA S",
-   "reference": "628300000009",
-   "txn_date": "2026-10-12",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "VM-ICICIB",
-  "body": "ICICI Bank Acct XX123 debited for Rs 1,500.00 on 05-Oct-26; RAHUL K credited. UPI:627300000001. Call 18002662 for dispute.",
-  "expected": {
-   "kind": "txn",
-   "bank": "icici",
-   "account_mask": "XX123",
-   "direction": "debit",
-   "amount_paise": 150000,
-   "channel": "upi",
-   "counterparty": "RAHUL K",
-   "reference": "627300000001",
-   "txn_date": "2026-10-05",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "ICICIT",
-  "body": "ICICI Bank Acct XX123 credited with Rs 2,000.00 on 06-Oct-26 from AMIT S. IMPS Ref no. 628400000002",
-  "expected": {
-   "kind": "txn",
-   "bank": "icici",
-   "account_mask": "XX123",
-   "direction": "credit",
-   "amount_paise": 200000,
-   "channel": "imps",
-   "counterparty": "AMIT S",
-   "reference": "628400000002",
-   "txn_date": "2026-10-06",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "VM-ICICIB-S",
-  "body": "Rs 499.00 spent on ICICI Bank Card XX5678 on 07-Oct-26 at AMAZON. Avl Limit: Rs 80,000.00",
-  "expected": {
-   "kind": "txn",
-   "bank": "icici",
-   "account_mask": "XX5678",
-   "direction": "debit",
-   "amount_paise": 49900,
-   "channel": "card",
-   "counterparty": "AMAZON",
-   "reference": null,
-   "txn_date": "2026-10-07",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "ICICIB",
-  "body": "Rs 3,000.00 withdrawn from ICICI Bank Acct XX123 at ATM on 08-Oct-26. Avl Bal Rs 15,500.00",
-  "expected": {
-   "kind": "txn",
-   "bank": "icici",
-   "account_mask": "XX123",
-   "direction": "debit",
-   "amount_paise": 300000,
-   "channel": "atm",
-   "counterparty": null,
-   "reference": null,
-   "txn_date": "2026-10-08",
-   "balance_paise": 1550000
-  }
- },
- {
-  "sender": "VM-ICICIO",
-  "body": "ICICI Bank Acct XX123 credited with Rs 40,000.00 on 09-Oct-26 by NEFT UTR ICIC526282000123 from BRIGHT SOLUTIONS. Avl Bal Rs 55,500.00",
-  "expected": {
-   "kind": "txn",
-   "bank": "icici",
-   "account_mask": "XX123",
-   "direction": "credit",
-   "amount_paise": 4000000,
-   "channel": "neft",
-   "counterparty": "BRIGHT SOLUTIONS",
-   "reference": "ICIC526282000123",
-   "txn_date": "2026-10-09",
-   "balance_paise": 5550000
-  }
- },
- {
-  "sender": "VM-ICICIB",
-  "body": "Dear Customer, Acct XX123 is credited with Rs 750.00 on 10-Oct-26 from VPA kiran@okaxis (UPI 628500000003).",
-  "expected": {
-   "kind": "txn",
-   "bank": "icici",
-   "account_mask": "XX123",
-   "direction": "credit",
-   "amount_paise": 75000,
-   "channel": "upi",
-   "counterparty": "kiran@okaxis",
-   "reference": "628500000003",
-   "txn_date": "2026-10-10",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "VM-ICICIB",
-  "body": "Avl Bal in ICICI Bank Acct XX123 is Rs 55,500.00",
-  "expected": {
-   "kind": "balance",
-   "bank": "icici",
-   "account_mask": "XX123",
-   "balance_paise": 5550000
-  }
- },
- {
-  "sender": "AX-AXISBK-S",
-  "body": "INR 500.00 debited from A/c no. XX1234 on 05-10-26 15:20:11 UPI/P2M/627400000001/SHOP NAME. Not you? SMS BLOCK UPI to 18001035577 -Axis Bank",
-  "expected": {
-   "kind": "txn",
-   "bank": "axis",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 50000,
-   "channel": "upi",
-   "counterparty": "SHOP NAME",
-   "reference": "627400000001",
-   "txn_date": "2026-10-05",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "AXISBK",
-  "body": "INR 5000.00 credited to A/c no. XX1234 on 06-10-2026 at 10:15:32 IST. Info: NEFT-AXISN52026100600123-BRIGHT SOLUTIONS. Avl Bal INR 12,345.00 -Axis Bank",
-  "expected": {
-   "kind": "txn",
-   "bank": "axis",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 500000,
-   "channel": "neft",
-   "counterparty": "BRIGHT SOLUTIONS",
-   "reference": "AXISN52026100600123",
-   "txn_date": "2026-10-06",
-   "balance_paise": 1234500
-  }
- },
- {
-  "sender": "VM-AXISBK",
-  "body": "Spent Card no. XX5678 INR 499.00 07-10-26 15:20:11 AMAZON Avl Lmt INR 50,000.00 SMS BLOCK 5678 to 18001035577 -Axis Bank",
-  "expected": {
-   "kind": "txn",
-   "bank": "axis",
-   "account_mask": "XX5678",
-   "direction": "debit",
-   "amount_paise": 49900,
-   "channel": "card",
-   "counterparty": "AMAZON",
-   "reference": null,
-   "txn_date": "2026-10-07",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "AXISMR",
-  "body": "INR 1,200.00 credited to A/c no. XX1234 on 08-10-26 by UPI from VPA ritu@okaxis (UPI Ref 628600000002). Avl Bal INR 13,545.00 -Axis Bank",
-  "expected": {
-   "kind": "txn",
-   "bank": "axis",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 120000,
-   "channel": "upi",
-   "counterparty": "ritu@okaxis",
-   "reference": "628600000002",
-   "txn_date": "2026-10-08",
-   "balance_paise": 1354500
-  }
- },
- {
-  "sender": "AXISBK",
-  "body": "INR 4,000.00 withdrawn from A/c no. XX1234 on 09-10-26 at ATM. Avl Bal INR 9,545.00 -Axis Bank",
-  "expected": {
-   "kind": "txn",
-   "bank": "axis",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 400000,
-   "channel": "atm",
-   "counterparty": null,
-   "reference": null,
-   "txn_date": "2026-10-09",
-   "balance_paise": 954500
-  }
- },
- {
-  "sender": "AXISBK",
-  "body": "INR 2,500.00 debited from A/c no. XX1234 on 10-10-26 IMPS/P2A/628700000003/MOHAN D. Avl Bal INR 7,045.00 -Axis Bank",
-  "expected": {
-   "kind": "txn",
-   "bank": "axis",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 250000,
-   "channel": "imps",
-   "counterparty": "MOHAN D",
-   "reference": "628700000003",
-   "txn_date": "2026-10-10",
-   "balance_paise": 704500
-  }
- },
- {
-  "sender": "KOTAKB",
-  "body": "Sent Rs.250.00 from Kotak Bank AC X1234 to shop@okicici on 05-10-26.UPI Ref 627500000001. Not you, https://kotak.com/KBANKT/Fraud",
-  "expected": {
-   "kind": "txn",
-   "bank": "kotak",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 25000,
-   "channel": "upi",
-   "counterparty": "shop@okicici",
-   "reference": "627500000001",
-   "txn_date": "2026-10-05",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "VM-KOTAKB",
-  "body": "Received Rs.500.00 in your Kotak Bank AC X1234 from ritu@okaxis on 06-10-26.UPI Ref:627500000002.",
-  "expected": {
-   "kind": "txn",
-   "bank": "kotak",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 50000,
-   "channel": "upi",
-   "counterparty": "ritu@okaxis",
-   "reference": "627500000002",
-   "txn_date": "2026-10-06",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "KOTAKM",
-  "body": "Spent Rs.1,200.00 on Kotak Credit Card XX5678 at SWIGGY on 07-Oct-26. Avl limit Rs.60,000.00.",
-  "expected": {
-   "kind": "txn",
-   "bank": "kotak",
-   "account_mask": "XX5678",
-   "direction": "debit",
-   "amount_paise": 120000,
-   "channel": "card",
-   "counterparty": "SWIGGY",
-   "reference": null,
-   "txn_date": "2026-10-07",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "KOTAKB",
-  "body": "Rs.30,000.00 credited to your Kotak Bank AC X1234 on 08-10-26 by NEFT UTR KKBK52026100800123 from BRIGHT SOLUTIONS. Bal Rs.45,000.00",
-  "expected": {
-   "kind": "txn",
-   "bank": "kotak",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 3000000,
-   "channel": "neft",
-   "counterparty": "BRIGHT SOLUTIONS",
-   "reference": "KKBK52026100800123",
-   "txn_date": "2026-10-08",
-   "balance_paise": 4500000
-  }
- },
- {
-  "sender": "KOTAKB",
-  "body": "Rs.2,000.00 withdrawn from Kotak Bank AC X1234 at ATM on 09-10-26. Avl Bal Rs.43,000.00",
-  "expected": {
-   "kind": "txn",
-   "bank": "kotak",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 200000,
-   "channel": "atm",
-   "counterparty": null,
-   "reference": null,
-   "txn_date": "2026-10-09",
-   "balance_paise": 4300000
-  }
- },
- {
-  "sender": "VM-KOTAKB",
-  "body": "Rs.1,000.00 debited from Kotak Bank AC X1234 on 10-10-26 via IMPS to MEERA S. IMPS Ref 628800000004. Avl Bal Rs.42,000.00",
-  "expected": {
-   "kind": "txn",
-   "bank": "kotak",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 100000,
-   "channel": "imps",
-   "counterparty": "MEERA S",
-   "reference": "628800000004",
-   "txn_date": "2026-10-10",
-   "balance_paise": 4200000
-  }
- },
- {
-  "sender": "CANBNK",
-  "body": "An amount of INR 250.00 has been DEBITED to your account XXX234 on 05/10/2026 Total Avail.Bal INR 5,000.00. - Canara Bank",
-  "expected": {
-   "kind": "txn",
-   "bank": "canara",
-   "account_mask": "XX234",
-   "direction": "debit",
-   "amount_paise": 25000,
-   "channel": "other",
-   "counterparty": null,
-   "reference": null,
-   "txn_date": "2026-10-05",
-   "balance_paise": 500000
-  }
- },
- {
-  "sender": "VM-CANBNK",
-  "body": "An amount of INR 1,000.00 has been CREDITED to your account XXX234 on 06/10/2026 Total Avail.Bal INR 6,000.00. -Canara Bank",
-  "expected": {
-   "kind": "txn",
-   "bank": "canara",
-   "account_mask": "XX234",
-   "direction": "credit",
-   "amount_paise": 100000,
-   "channel": "other",
-   "counterparty": null,
-   "reference": null,
-   "txn_date": "2026-10-06",
-   "balance_paise": 600000
-  }
- },
- {
-  "sender": "CANARA",
-  "body": "Rs.150.00 debited from your a/c XXX234 on 07-10-26 to VPA cafe@ybl UPI Ref No 627600000003 -Canara Bank",
-  "expected": {
-   "kind": "txn",
-   "bank": "canara",
-   "account_mask": "XX234",
-   "direction": "debit",
-   "amount_paise": 15000,
-   "channel": "upi",
-   "counterparty": "cafe@ybl",
-   "reference": "627600000003",
-   "txn_date": "2026-10-07",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "VM-CANBNK",
-  "body": "Rs.300.00 credited to your a/c XXX234 on 08-10-26 from VPA tara@okicici. UPI Ref No 628900000004. Avl Bal Rs.6,300.00 -Canara Bank",
-  "expected": {
-   "kind": "txn",
-   "bank": "canara",
-   "account_mask": "XX234",
-   "direction": "credit",
-   "amount_paise": 30000,
-   "channel": "upi",
-   "counterparty": "tara@okicici",
-   "reference": "628900000004",
-   "txn_date": "2026-10-08",
-   "balance_paise": 630000
-  }
- },
- {
-  "sender": "CANBNK",
-  "body": "Rs.1,000.00 withdrawn from A/c XXX234 at ATM on 09-10-26. Avl Bal Rs.5,300.00 -Canara Bank",
-  "expected": {
-   "kind": "txn",
-   "bank": "canara",
-   "account_mask": "XX234",
-   "direction": "debit",
-   "amount_paise": 100000,
-   "channel": "atm",
-   "counterparty": null,
-   "reference": null,
-   "txn_date": "2026-10-09",
-   "balance_paise": 530000
-  }
- },
- {
-  "sender": "CANBNK",
-  "body": "INR 8,000.00 credited to your account XXX234 on 10/10/2026 by NEFT UTR CNRB52026101000123 from ACME TRADERS. Total Avail.Bal INR 13,300.00 -Canara Bank",
-  "expected": {
-   "kind": "txn",
-   "bank": "canara",
-   "account_mask": "XX234",
-   "direction": "credit",
-   "amount_paise": 800000,
-   "channel": "neft",
-   "counterparty": "ACME TRADERS",
-   "reference": "CNRB52026101000123",
-   "txn_date": "2026-10-10",
-   "balance_paise": 1330000
-  }
- },
- {
-  "sender": "AD-PAYTMB",
-  "body": "Paid Rs.120 to ZOMATO from Paytm Balance. UPI Ref No 628900000005.",
-  "expected": {
-   "kind": "txn",
-   "bank": "upi",
-   "account_mask": null,
-   "direction": "debit",
-   "amount_paise": 12000,
-   "channel": "upi",
-   "counterparty": "ZOMATO",
-   "reference": "628900000005",
-   "txn_date": null,
-   "balance_paise": null
-  }
- },
- {
-  "sender": "PHONPE",
-  "body": "Paid ₹250 to RAHUL K. UPI Ref 628900000006",
-  "expected": {
-   "kind": "txn",
-   "bank": "upi",
-   "account_mask": null,
-   "direction": "debit",
-   "amount_paise": 25000,
-   "channel": "upi",
-   "counterparty": "RAHUL K",
-   "reference": "628900000006",
-   "txn_date": null,
-   "balance_paise": null
-  }
- },
- {
-  "sender": "VM-GPAY",
-  "body": "You sent Rs.500.00 to kiran@okaxis using Google Pay. UPI Ref No 628900000007",
-  "expected": {
-   "kind": "txn",
-   "bank": "upi",
-   "account_mask": null,
-   "direction": "debit",
-   "amount_paise": 50000,
-   "channel": "upi",
-   "counterparty": "kiran@okaxis",
-   "reference": "628900000007",
-   "txn_date": null,
-   "balance_paise": null
-  }
- },
- {
-  "sender": "BHIMUP",
-  "body": "Rs.1,000.00 received from ananya@ybl in your a/c XX1234. UPI Ref No 628900000008",
-  "expected": {
-   "kind": "txn",
-   "bank": "upi",
-   "account_mask": "XX1234",
-   "direction": "credit",
-   "amount_paise": 100000,
-   "channel": "upi",
-   "counterparty": "ananya@ybl",
-   "reference": "628900000008",
-   "txn_date": null,
-   "balance_paise": null
-  }
- },
- {
-  "sender": "PAYTMB",
-  "body": "Received Rs.75 from MEERA S in your Paytm Wallet. UPI Ref 628900000009",
-  "expected": {
-   "kind": "txn",
-   "bank": "upi",
-   "account_mask": null,
-   "direction": "credit",
-   "amount_paise": 7500,
-   "channel": "upi",
-   "counterparty": "MEERA S",
-   "reference": "628900000009",
-   "txn_date": null,
-   "balance_paise": null
-  }
- },
- {
-  "sender": "GPAY",
-  "body": "Rs.300.00 debited from your Google Pay UPI a/c XX1234 on 11-10-26 to VPA chai@paytm (UPI Ref No 628900000010)",
-  "expected": {
-   "kind": "txn",
-   "bank": "upi",
-   "account_mask": "XX1234",
-   "direction": "debit",
-   "amount_paise": 30000,
-   "channel": "upi",
-   "counterparty": "chai@paytm",
-   "reference": "628900000010",
-   "txn_date": "2026-10-11",
-   "balance_paise": null
-  }
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "123456 is the OTP for your Bank of Baroda transaction of Rs.500.00. Do not share with anyone.",
-  "expected": null
- },
- {
-  "sender": "BOBSMS",
-  "body": "Pre-approved personal loan of Rs.5,00,000 for you! Click to apply. T&C apply -BOB",
-  "expected": null
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "Your UPI transaction of Rs.250.00 to VPA shop@okicici has failed. If debited, amount will be reversed within 3 days -BOB",
-  "expected": null
- },
- {
-  "sender": "VM-HDFCBK",
-  "body": "Rahul K has requested money Rs.500.00 from you on UPI. Approve in your app. -HDFC Bank",
-  "expected": null
- },
- {
-  "sender": "AD-SHOPXX",
-  "body": "Rs.250.00 debited from A/c XX1234 on 05-10-26 to VPA shop@okicici (UPI Ref No 627812345678).",
-  "expected": null
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "asdf qwer ;;; 123 Rs. Rs.. Bal bal : - ,,, A/c",
-  "expected": null
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "",
-  "expected": null
- },
- {
-  "sender": "JD-SBIUPI-S",
-  "body": "Your Debit Card txn of Rs.499.00 has been reversed. -SBI",
-  "expected": null
- },
- {
-  "sender": "VM-ICICIB",
-  "body": "Your transaction of Rs 1,200.00 at AMAZON was declined on ICICI Bank Card XX5678.",
-  "expected": null
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "Rs.0.00 debited from A/c XX1234 on 05-10-26 to VPA shop@okicici (UPI Ref No 627812345678).",
-  "expected": null
- },
- {
-  "sender": "AD-BOBTXN",
-  "body": "Dear Customer, you have logged in to BoB mobile banking at 10:15. -BOB",
-  "expected": null
- },
- {
-  "sender": "SBIBNK",
-  "body": "Use OTP 482913 to log in to SBI YONO. Never share OTP with anyone. -SBI",
-  "expected": null
- },
- {
-  "sender": "KOTAKB",
-  "body": "Get a 10% cashback offer on your next spend of Rs.500 with Kotak Card. Limited period -Kotak",
-  "expected": null
- },
- {
-  "sender": "VM-AXISBK",
-  "body": "Dear Customer, your statement for Sep 2026 is ready. Total debits Rs.12,000.00 -Axis Bank",
-  "expected": null
- }
 ]

@@ -144,7 +144,8 @@ _MONTHS = {
         ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1
     )
 }
-_DATE_ISO = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)")
+# Also BoB's colon form "2026:10:05" (always year-first, four digits, so times never match).
+_DATE_ISO = re.compile(r"(?<!\d)(\d{4})([-:])(\d{2})\2(\d{2})(?!\d)")
 _DATE_NUM = re.compile(r"(?<!\d)(\d{1,2})[-/.](\d{1,2})[-/.](\d{4}|\d{2})(?!\d)")
 _DATE_MON = re.compile(r"(?<![\dA-Za-z])(\d{1,2})[-\s]?([A-Za-z]{3,9})[-\s]?(\d{4}|\d{2})(?!\d)")
 
@@ -161,7 +162,7 @@ def find_date(text: str) -> date | None:
     """Earliest valid date in `text`: 05-10-26, 05/10/2026, 05Oct26, 05-Oct-2026, 2026-10-05."""
     found: list[tuple[int, date]] = []
     for m in _DATE_ISO.finditer(text):
-        parsed = _make_date(m.group(1), int(m.group(2)), m.group(3))
+        parsed = _make_date(m.group(1), int(m.group(3)), m.group(4))
         if parsed:
             found.append((m.start(), parsed))
     for m in _DATE_NUM.finditer(text):
@@ -268,7 +269,8 @@ def detect_direction(text: str) -> Direction | None:
 _CHANNELS: tuple[tuple[Channel, re.Pattern[str]], ...] = (
     ("atm", re.compile(r"\bATM\b|\bwithdrawn\b|cash\s*wdl|\bwdl\b|cash\s*withdrawal", re.I)),
     ("cash", re.compile(r"cash\s*dep", re.I)),
-    ("upi", re.compile(r"\bUPI\b|\bVPA\b", re.I)),
+    # UPI also when a VPA-style address (name@bank, no dotted domain) is the only clue.
+    ("upi", re.compile(r"\bUPI\b|\bVPA\b|[\w.-]+@[A-Za-z]{2,}(?![\w@-]|\.[A-Za-z])", re.I)),
     ("imps", re.compile(r"\bIMPS\b", re.I)),
     ("neft", re.compile(r"\bNEFT\b", re.I)),
     ("rtgs", re.compile(r"\bRTGS\b", re.I)),
@@ -399,6 +401,15 @@ def build(
     )
 
 
+# Direction abbreviations a bank template may capture as `dir` (e.g. BoB "Dr." / "Cr.").
+# Only honoured inside a template match, never in generic detection.
+_TEMPLATE_ABBREVIATIONS: dict[str, Direction] = {"dr": "debit", "cr": "credit"}
+
+
+def _template_direction(word: str) -> Direction | None:
+    return _TEMPLATE_ABBREVIATIONS.get(word.lower()) or detect_direction(word)
+
+
 def from_templates(bank: Bank, body: str, templates: Sequence[re.Pattern[str]]) -> Parsed | None:
     """Run a bank's own message templates; the first that matches supplies direction,
     amount and counterparty (named groups `dir`, `amt`, `cp`), the rest is read generically."""
@@ -414,7 +425,7 @@ def from_templates(bank: Bank, body: str, templates: Sequence[re.Pattern[str]]) 
         return build(
             bank,
             text,
-            direction=detect_direction(word) if word else None,
+            direction=_template_direction(word) if word else None,
             amount_paise=to_paise(figure) if figure else None,
             counterparty=clean_counterparty(cp) if cp else None,
         )
