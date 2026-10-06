@@ -213,6 +213,8 @@ On the phone:
 
 **After updating (a `git pull`, new dependencies, or any code change), run `uv run python -m agent restart`.** It first syncs the environment (as every `uv run` does), then stops every running `agent serve` of your user, including a stale one left over from an older version of the task or started by hand in a terminal, and starts the task again. Without it the old process keeps running the old code and holds port 8765, so a plain `Start-ScheduledTask` starts a second server that exits at once with code 3.
 
+**What `agent restart` waits for.** It ends the task and kills every old server process, then waits (at most 15 seconds) until the task no longer reports Running and port 8765 (`PERSONALAI_PORT`) is free on every bind address. Only then does it run the task, and it checks that a new `server started pid=...` line appears in `agent.log` (written after the run, so an old line never counts) while a server process is alive. If none shows up within 20 seconds it runs the task once more, never more than twice, and then fails with the reason, for example `port 8765 is still in use on 127.0.0.1` or `no new 'server started' line in agent.log`. Exit code 0 means a new server really started.
+
 `uv run python -m agent doctor` warns ("Running server is current") when the running server started before the newest file under `server\agent` was changed, which is the sign that you forgot. If you still have the task from before the console-less launcher (it runs `powershell.exe` and `run_agent.ps1`), run `powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1` once to switch it, then `agent restart`. `agent doctor` warns about the old launcher under "Scheduled task last result".
 
 #### Logs and troubleshooting
@@ -297,7 +299,8 @@ uv run python -m agent restore --in D:\backups\personalai-2026-10-05.paibak     
 | `PERSONALAI_DRIVE_ACCOUNTS` | Comma-separated Google accounts to search and read Drive from, and to upload to or share from (with approval) | none |
 | `PERSONALAI_DEADLINE_CALENDAR` | Calendar account whose primary calendar receives deadlines found in mail and Classroom | first calendar account |
 | `PERSONALAI_DEADLINE_POLL_MINUTES` | How often Classroom is checked for new deadlines | `60` |
-| `PERSONALAI_DEADLINE_HORIZON_DAYS` | How far ahead Classroom deadlines are collected, and how old a mail may be to be scanned for one | `14` |
+| `PERSONALAI_DEADLINE_HORIZON_DAYS` | How far ahead Classroom deadlines are collected, and how old a new mail may be to be scanned for one. A daily catch-up (first run a minute after startup) also scans stored mail of the last 30 days that was never scanned, once per message, with the local model only | `14` |
+| `PERSONALAI_TOOL_ROUTER` | `off` sends the model every tool on every request. By default only the tools a request needs are offered (chosen locally from keywords in your own message, plus the tools used in the last three turns, a few general read tools, and all tools when nothing matches), which makes replies faster. It never changes which tools need approval | on |
 | `PERSONALAI_CALENDAR_AUTO_ADD` | `off` stops adding found deadlines to your calendar without approval | on |
 | `PERSONALAI_ALERT_POLL_MINUTES` | How often alerts (deadlines, briefing, calendar adds) are prepared | `5` |
 | `PERSONALAI_BRIEFING_TIME` | Default morning briefing time (`HH:MM`, local); the app's Settings override it | `07:30` |
