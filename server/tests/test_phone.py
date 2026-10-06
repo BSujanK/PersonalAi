@@ -352,3 +352,76 @@ def test_today_with_nothing_configured() -> None:
         "events": None,
         "unavailable": [],
     }
+
+
+def _counting_registry() -> tuple[ToolRegistry, list[str]]:
+    registry = ToolRegistry()
+    calls: list[str] = []
+
+    def run(name: str, result: Any) -> Any:
+        def inner(_args: dict[str, Any]) -> Any:
+            calls.append(name)
+            return result
+
+        return inner
+
+    params = {"type": "object", "properties": {}}
+    registry.register(Tool("calendar_events", "e", params, ToolKind.READ, run("events", [])))
+    registry.register(Tool("classroom_coursework", "c", params, ToolKind.READ, run("work", [])))
+    return registry, calls
+
+
+def test_today_sections_return_only_what_was_asked_and_skip_other_connectors() -> None:
+    registry, calls = _counting_registry()
+    api = _phone_api(registry=registry)
+    cases = {
+        "mail": {"mail"},
+        "events": {"events"},
+        "deadlines": {"deadlines"},
+        "events,mail": {"events", "mail"},
+        "mail,mail": {"mail"},
+        "deadlines,events,mail": {"deadlines", "events", "mail"},
+    }
+    for query, keys in cases.items():
+        calls.clear()
+        body = api.client.get(f"/today?sections={query}", headers=api.headers).json()
+        assert set(body) == {"generated_at", "unavailable", *keys}, query
+        assert body["generated_at"] == START.isoformat() and body["unavailable"] == []
+        expected_calls = {"events": ["events"], "deadlines": ["work"]}
+        assert sorted(calls) == sorted(c for k in keys for c in expected_calls.get(k, [])), query
+
+
+def test_today_section_failure_is_reported_only_for_that_section() -> None:
+    registry = ToolRegistry()
+
+    def boom(_args: dict[str, Any]) -> Any:
+        raise RuntimeError("classroom down")
+
+    params = {"type": "object", "properties": {}}
+    registry.register(Tool("classroom_coursework", "c", params, ToolKind.READ, boom))
+    api = _phone_api(registry=registry)
+    body = api.client.get("/today?sections=deadlines", headers=api.headers).json()
+    assert body == {
+        "generated_at": START.isoformat(),
+        "deadlines": None,
+        "unavailable": ["classroom_coursework"],
+    }
+
+
+@pytest.mark.parametrize(
+    "query", ["", "news", "mail,news", "mail,", ",mail", "Mail", "mail%20", "mail,,events"]
+)
+def test_today_rejects_unknown_or_empty_sections(query: str) -> None:
+    registry, calls = _counting_registry()
+    api = _phone_api(registry=registry)
+    response = api.client.get(f"/today?sections={query}", headers=api.headers)
+    assert response.status_code == 422
+    assert calls == []
+
+
+def test_today_without_sections_calls_every_connector() -> None:
+    registry, calls = _counting_registry()
+    api = _phone_api(registry=registry)
+    body = api.client.get("/today", headers=api.headers).json()
+    assert set(body) == {"generated_at", "mail", "deadlines", "events", "unavailable"}
+    assert sorted(calls) == ["events", "work"]

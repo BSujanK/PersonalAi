@@ -192,6 +192,16 @@ class DeadlineStore:
         )
         return {row["deadline_id"] for row in rows}
 
+    def calendar_event(self, deadline_id: int) -> tuple[str, str] | None:
+        """``(calendar_account, event_id)`` of the live auto-added event for a deadline, or None
+        when none was added or it was undone (same condition as ``calendar_added_ids``)."""
+        rows = self._db.query(
+            "SELECT calendar_account, event_id FROM auto_events WHERE deadline_id = ? "
+            "AND undone_at IS NULL AND event_id != ''",
+            (deadline_id,),
+        )
+        return (rows[0]["calendar_account"], rows[0]["event_id"]) if rows else None
+
 
 @dataclass(frozen=True)
 class MailScanResult:

@@ -6,6 +6,7 @@ automatically (see ``agent.proactive.autocal``)."""
 
 from __future__ import annotations
 
+import base64
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
@@ -144,6 +145,47 @@ def deadlines(request: Request, days: Annotated[int, Query(ge=1, le=60)] = 14) -
             for d in found
         ]
     }
+
+
+def _calendar_link(account: str, event_id: str) -> str:
+    eid = base64.urlsafe_b64encode(f"{event_id} {account}".encode()).decode().rstrip("=")
+    return f"https://www.google.com/calendar/event?eid={eid}"
+
+
+@router.get("/deadlines/{deadline_id}")
+def deadline_detail(
+    deadline_id: Annotated[int, Path(ge=1, le=2**62)], request: Request
+) -> dict[str, Any]:
+    """One deadline: ids, labels and the title, never mail or post text. ``calendar`` is set
+    only while the agent's auto-added event is live."""
+    store = _services(request).deadlines.store
+    found = store.get(deadline_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="not_found")
+    settings: Settings = request.app.state.settings
+    event = store.calendar_event(deadline_id)
+    item: dict[str, Any] = {
+        "id": found.id,
+        "kind": found.kind,
+        "title": found.title,
+        "due": found.due.isoformat(),
+        "source": found.source,
+        "source_account": found.source_account,
+        "source_label": account_label(settings, found.source_account),
+        "source_id": found.source_id,
+        "status": found.status,
+        "calendar_added": event is not None,
+    }
+    ids = deadline_target(found)
+    for key in ("message_id", "course_id"):
+        if key in ids:
+            item[key] = ids[key]
+    item["calendar"] = (
+        {"account": event[0], "event_id": event[1], "link": _calendar_link(event[0], event[1])}
+        if event is not None
+        else None
+    )
+    return item
 
 
 @router.post("/deadlines/{deadline_id}/undo")
