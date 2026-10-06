@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import threading
 from collections.abc import Callable
 from typing import Any
 
@@ -32,10 +33,14 @@ class GoogleDriveApi:
     def __init__(self, service: Any, after_call: Callable[[], None] | None = None) -> None:
         self._service = service
         self._after_call = after_call
+        # googleapiclient services share one httplib2 connection, which is not thread-safe;
+        # concurrent requests corrupted it and once crashed the server (0xC0000005).
+        self._lock = threading.Lock()
 
     def _execute(self, request: Any) -> Any:
         try:
-            result = request.execute(num_retries=_RETRIES)
+            with self._lock:
+                result = request.execute(num_retries=_RETRIES)
         except HttpError as exc:
             if _status(exc) == 404:
                 raise DriveFileNotFound from None
