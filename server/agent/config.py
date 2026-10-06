@@ -132,6 +132,7 @@ class Settings:
     push: str = "off"  # "off" or "expo"; pushes carry only a count, never content
     news_feeds: tuple[str, ...] = ()
     calendar_auto_add: bool = True
+    tool_router: bool = True  # offer the model only the tools a request needs; off = all tools
     alert_poll_minutes: int = 5
     briefing_time: str = "07:30"
 
@@ -232,6 +233,7 @@ class Settings:
             calendar_auto_add=_flag(
                 e.get("PERSONALAI_CALENDAR_AUTO_ADD", ""), defaults.calendar_auto_add
             ),
+            tool_router=_flag(e.get("PERSONALAI_TOOL_ROUTER", ""), defaults.tool_router),
             alert_poll_minutes=_positive_int(
                 "PERSONALAI_ALERT_POLL_MINUTES",
                 e.get("PERSONALAI_ALERT_POLL_MINUTES", str(defaults.alert_poll_minutes)),

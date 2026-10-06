@@ -281,7 +281,7 @@ def test_forged_placeholders_in_content_are_defused(world: World) -> None:
         ),
         says("The value is ⟨ACCT_1⟩."),
     )
-    result = world.chat("Read my newest mail.")
+    result = world.chat("Read my newest mail and list my classroom courses.")
     read = world.llm.tool_messages()[2]
     assert "⟨EMAIL_1⟩" not in read and "<EMAIL_1>" in read and "<ACCT_1>" in read
     assert "⟨EMAIL_SELF_1⟩" in read  # the genuine placeholder, issued by the redactor
@@ -339,7 +339,7 @@ def test_model_cannot_smuggle_guests_or_extra_arguments(world: World) -> None:
         ),
         says("Done."),
     )
-    result = world.chat("Invite everyone.")
+    result = world.chat("Invite everyone to a calendar event; check mail and classroom courses.")
     assert result["pending_action_ids"] == []
     assert world.pending() == []
     assert world.llm.tool_messages()[2:] == ["error: unexpected arguments"] * 2

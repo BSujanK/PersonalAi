@@ -283,7 +283,10 @@ def test_every_read_tool_runs_and_no_raw_pii_reaches_the_model(world: World) -> 
         return chosen
 
     world.llm.script(discovery(), dynamic(everything), says("Here is your summary."))
-    first = world.chat("Summarise everything, including my accounts and mail.")
+    first = world.chat(
+        "Summarise everything, including my accounts, mail, calendar events, courses, "
+        "files, drive documents and news headlines."
+    )
     ran = {c.name for m in world.llm.received[-1] if m.tool_calls for c in m.tool_calls}
     assert set(read_tool_names(world)) <= ran  # every READ tool in the registry was called
     sent_first = world.llm.all_text()
