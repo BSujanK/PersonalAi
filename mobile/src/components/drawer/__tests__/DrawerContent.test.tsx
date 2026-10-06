@@ -64,7 +64,10 @@ describe('AppDrawerContent', () => {
   it('opens a conversation, a new chat and the other screens', async () => {
     await renderDrawer();
     await fireEvent.press(screen.getByLabelText('Spending in September'));
-    expect(mockNavigate).toHaveBeenLastCalledWith({ pathname: '/', params: { c: 'c2', k: '' } });
+    expect(mockNavigate).toHaveBeenLastCalledWith({
+      pathname: '/',
+      params: { c: 'c2', k: '', d: '' },
+    });
     expect(closeDrawer).toHaveBeenCalled();
 
     await fireEvent.press(screen.getByLabelText('New chat'));

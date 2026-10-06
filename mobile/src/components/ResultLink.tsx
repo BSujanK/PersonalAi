@@ -1,20 +1,30 @@
 import * as Clipboard from 'expo-clipboard';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 
-import { fontFamily, size, useThemedStyles, type Palette } from '../theme';
+import { haptics } from '../lib/haptics';
+import { fontFamily, radius, space, type, useThemedStyles, type Palette } from '../theme';
 import { Button } from './ui';
 
+const COPIED_MS = 1500;
+
 const makeStyles = (p: Palette) => ({
-  wrap: { gap: 8 },
+  wrap: { gap: space.sm },
+  label: {
+    ...type.footnote,
+    fontFamily: fontFamily.bodySemiBold,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase' as const,
+    color: p.textMuted,
+  },
   link: {
     fontFamily: fontFamily.mono,
-    fontSize: size.small,
-    lineHeight: 20,
-    color: p.text,
+    fontSize: 13,
+    lineHeight: 19,
+    color: p.accentText,
     backgroundColor: p.muted,
-    borderRadius: 10,
-    padding: 12,
+    borderRadius: radius.md,
+    padding: space.md - space.xs,
   },
 });
 
@@ -25,11 +35,16 @@ const makeStyles = (p: Palette) => ({
 export function ResultLink({ link }: { link: string }) {
   const styles = useThemedStyles(makeStyles);
   const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
 
   async function copy() {
     try {
       await Clipboard.setStringAsync(link);
+      haptics.impact();
       setCopied(true);
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => setCopied(false), COPIED_MS);
     } catch {
       setCopied(false);
     }
@@ -37,12 +52,15 @@ export function ResultLink({ link }: { link: string }) {
 
   return (
     <View style={styles.wrap}>
-      <Text selectable accessibilityLabel="Shared link" style={styles.link}>
+      <Text style={styles.label}>Share link</Text>
+      <Text selectable accessibilityLabel={`Shared link: ${link}`} style={styles.link}>
         {link}
       </Text>
       <Button
         label={copied ? 'Copied' : 'Copy link'}
-        tone="plain"
+        icon={copied ? 'check' : 'copy'}
+        tone="tinted"
+        compact
         accessibilityLabel="Copy link"
         onPress={() => void copy()}
       />

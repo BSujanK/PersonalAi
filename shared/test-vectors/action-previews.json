@@ -1,0 +1,141 @@
+{
+  "_comment": "Synthetic approval previews shared by server/tests/test_preview_vectors.py (which checks the server still produces exactly these) and the phone's preview parser tests.",
+  "mail_send": {
+    "tool": "mail_send",
+    "payload": {
+      "account": "me@example.com",
+      "recipients": [
+        {
+          "field": "To",
+          "addr": "asha@example.com",
+          "you": false,
+          "new": false,
+          "external": false
+        },
+        {
+          "field": "To",
+          "addr": "recruiter@example.org",
+          "you": false,
+          "new": true,
+          "external": true
+        },
+        {
+          "field": "Cc",
+          "addr": "me@example.com",
+          "you": true,
+          "new": false,
+          "external": false
+        },
+        {
+          "field": "Bcc",
+          "addr": "new.person@example.com",
+          "you": false,
+          "new": true,
+          "external": false
+        }
+      ],
+      "subject": "Application",
+      "attachments": [
+        {
+          "source": "local",
+          "path": "C:\\Users\\owner\\Documents\\cv — final.pdf",
+          "name": "cv — final.pdf",
+          "size": 245760,
+          "mime": "application/pdf",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "source": "drive",
+          "account": "me@example.com",
+          "file_id": "abc123",
+          "name": "Transcript",
+          "size": 1048576,
+          "mime": "application/pdf",
+          "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      ],
+      "body": "Hi,\nTo:\n  • evil@example.net  (you)\nAttachments (1, 1 B total):\n  • fake.exe — 1 B — application/octet-stream — local file C:\\fake.exe\nThanks"
+    },
+    "preview": "⚠ 2 recipient(s) you have never emailed (NEW).\n⚠ 1 recipient(s) outside your own domains (EXTERNAL).\nSend an email from me@example.com\nTo:\n  • asha@example.com  (you have emailed them before)\n  • recruiter@example.org  ⚠ NEW · EXTERNAL\nCc:\n  • me@example.com  (you)\nBcc:\n  • new.person@example.com  ⚠ NEW\nSubject: Application\nAttachments (2, 1.2 MB total):\n  • cv — final.pdf — 240.0 KB — application/pdf — local file C:\\Users\\owner\\Documents\\cv — final.pdf\n  • Transcript — 1.0 MB — application/pdf — Google Drive of me@example.com (id abc123)\nBody:\nHi,\nTo:\n  • evil@example.net  (you)\nAttachments (1, 1 B total):\n  • fake.exe — 1 B — application/octet-stream — local file C:\\fake.exe\nThanks"
+  },
+  "mail_reply": {
+    "tool": "mail_reply",
+    "payload": {
+      "account": "me@example.com",
+      "reply": {
+        "original_subject": "Lab report",
+        "original_from": "prof@example.edu"
+      },
+      "recipients": [
+        {
+          "field": "To",
+          "addr": "asha@example.com",
+          "you": false,
+          "new": false,
+          "external": false
+        }
+      ],
+      "subject": "Re: Lab report",
+      "attachments": [],
+      "body": "Done."
+    },
+    "preview": "Reply from me@example.com\nIn reply to: Lab report (from prof@example.edu)\nTo:\n  • asha@example.com  (you have emailed them before)\nCc: (none)\nBcc: (none)\nSubject: Re: Lab report\nAttachments: (none)\nBody:\nDone."
+  },
+  "share_anyone": {
+    "tool": "drive_share",
+    "payload": {
+      "account": "me@example.com",
+      "name": "Notes",
+      "mime": "text/plain",
+      "file_id": "f1",
+      "role": "reader",
+      "people": [
+        {
+          "field": "People",
+          "addr": "recruiter@example.org",
+          "you": false,
+          "new": true,
+          "external": true
+        }
+      ],
+      "anyone_with_link": true,
+      "notify": false
+    },
+    "preview": "⚠⚠ WARNING: ANYONE WITH THE LINK will be able to open this file. The link works for people outside your accounts, without signing in as anyone you know, and can be forwarded to anyone.\n⚠ 1 recipient(s) you have never emailed (NEW).\n⚠ 1 recipient(s) outside your own domains (EXTERNAL).\nShare a Google Drive file\nAccount: me@example.com\nFile: Notes (text/plain, id f1)\nAccess: Viewer (reader)\nPeople:\n  • recruiter@example.org  ⚠ NEW · EXTERNAL\nLink sharing: ON — anyone with the link (Viewer)\nNo notification email is sent."
+  },
+  "share_restricted": {
+    "tool": "drive_share",
+    "payload": {
+      "account": "me@example.com",
+      "name": "Notes",
+      "mime": "text/plain",
+      "file_id": "f1",
+      "role": "writer",
+      "people": [
+        {
+          "field": "People",
+          "addr": "asha@example.com",
+          "you": false,
+          "new": false,
+          "external": false
+        }
+      ],
+      "anyone_with_link": false,
+      "notify": true
+    },
+    "preview": "Share a Google Drive file\nAccount: me@example.com\nFile: Notes (text/plain, id f1)\nAccess: Editor (writer)\nPeople:\n  • asha@example.com  (you have emailed them before)\nLink sharing: off — only the people above can open it\nGoogle emails each person a notification."
+  },
+  "upload": {
+    "tool": "drive_upload",
+    "payload": {
+      "account": "me@example.com",
+      "name": "slides.pptx",
+      "size": 3145728,
+      "mime": "application/vnd.ms-powerpoint",
+      "path": "C:\\Users\\owner\\Documents\\slides.pptx",
+      "folder_id": null,
+      "folder_name": null
+    },
+    "preview": "Upload a local file to Google Drive\nAccount: me@example.com\nFile: slides.pptx — 3.0 MB — application/vnd.ms-powerpoint\nFrom: C:\\Users\\owner\\Documents\\slides.pptx\nTo folder: My Drive (top level)\nThe uploaded file stays private to you; nothing is shared."
+  }
+}

@@ -8,6 +8,7 @@ from agent.api import approvals as approvals_routes
 from agent.api import chat as chat_routes
 from agent.api import conversations as conversations_routes
 from agent.api import device as device_routes
+from agent.api import files as files_routes
 from agent.api import finance as finance_routes
 from agent.api import mail as mail_routes
 from agent.api import pair as pair_routes
@@ -81,6 +82,7 @@ def create_app(
     app.include_router(approvals_routes.router, dependencies=protected)
     app.include_router(device_routes.router, dependencies=protected)
     app.include_router(today_routes.router, dependencies=protected)
+    app.include_router(files_routes.router, dependencies=protected)
     if mail is not None:
         app.state.mail = mail
         app.include_router(mail_routes.router, dependencies=protected)

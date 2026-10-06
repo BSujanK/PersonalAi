@@ -1,11 +1,19 @@
 import * as Clipboard from 'expo-clipboard';
 import { memo, useEffect, useRef, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import type { ChatMessage } from '../../lib/chatState';
-import { fontFamily, MIN_TARGET, size, useTheme, useThemedStyles, type Palette } from '../../theme';
+import {
+  MIN_TARGET,
+  radius,
+  space,
+  type,
+  useTheme,
+  useThemedStyles,
+  type Palette,
+} from '../../theme';
 import { Icon } from '../Icon';
-import { ErrorText } from '../ui';
+import { ErrorText, PressableScale } from '../ui';
 import { ApprovalCard } from './ApprovalCard';
 import { Markdown } from './Markdown';
 import { ToolActivity } from './ToolActivity';
@@ -13,19 +21,23 @@ import { ToolActivity } from './ToolActivity';
 const COPIED_MS = 1500;
 
 const makeStyles = (p: Palette) => ({
-  userRow: { alignItems: 'flex-end' as const, paddingLeft: 48 },
+  userRow: { alignItems: 'flex-end' as const, paddingLeft: space.xxl },
   userBubble: {
     backgroundColor: p.muted,
-    borderRadius: 20,
-    borderBottomRightRadius: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderRadius: radius.xl - 4,
+    borderBottomRightRadius: radius.sm - 2,
+    paddingHorizontal: space.md - 2,
+    paddingVertical: space.sm + 2,
   },
-  userText: { fontFamily: fontFamily.body, fontSize: size.body, lineHeight: 24, color: p.text },
-  assistant: { gap: 10 },
-  thinking: { fontFamily: fontFamily.body, fontSize: size.body, color: p.textMuted },
-  note: { fontFamily: fontFamily.body, fontSize: size.small, color: p.textMuted },
-  actions: { flexDirection: 'row' as const, alignItems: 'center' as const, marginLeft: -10 },
+  userText: { ...type.body, color: p.text },
+  assistant: { gap: space.sm + space.xs },
+  thinking: { ...type.body, color: p.textMuted },
+  note: { ...type.footnote, color: p.textMuted },
+  actions: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    marginLeft: -space.sm - 2,
+  },
   action: {
     minWidth: MIN_TARGET,
     minHeight: MIN_TARGET,
@@ -33,7 +45,6 @@ const makeStyles = (p: Palette) => ({
     justifyContent: 'center' as const,
     borderRadius: MIN_TARGET / 2,
   },
-  actionPressed: { backgroundColor: p.muted },
 });
 
 function ActionButton({
@@ -50,16 +61,14 @@ function ActionButton({
   const styles = useThemedStyles(makeStyles);
   const { palette } = useTheme();
   return (
-    <Pressable
-      accessibilityRole="button"
+    <PressableScale
       accessibilityLabel={label}
-      accessibilityState={{ disabled: !!disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
+      style={styles.action}
     >
-      <Icon name={icon} size={18} color={disabled ? palette.border : palette.textMuted} />
-    </Pressable>
+      <Icon name={icon} size={18} color={palette.textMuted} />
+    </PressableScale>
   );
 }
 

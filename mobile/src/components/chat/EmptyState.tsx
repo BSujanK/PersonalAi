@@ -1,14 +1,14 @@
 import { Text, View } from 'react-native';
 
 import { greeting, SUGGESTIONS } from '../../lib/greeting';
-import { fontFamily, size, useThemedStyles, type Palette } from '../../theme';
+import { space, type, useThemedStyles, type Palette } from '../../theme';
 import { Chip } from '../ui';
 
 const makeStyles = (p: Palette) => ({
-  root: { flex: 1, justifyContent: 'center' as const, gap: 24, paddingBottom: 24 },
-  hello: { fontFamily: fontFamily.display, fontSize: size.hero, lineHeight: 40, color: p.text },
-  sub: { fontFamily: fontFamily.body, fontSize: size.body, color: p.textMuted, marginTop: 6 },
-  chips: { gap: 10, alignItems: 'flex-start' as const },
+  root: { flex: 1, justifyContent: 'center' as const, gap: space.lg, paddingBottom: space.lg },
+  hello: { ...type.largeTitle, color: p.text },
+  sub: { ...type.body, color: p.textMuted, marginTop: space.xs },
+  chips: { gap: space.sm, alignItems: 'flex-start' as const },
 });
 
 export function EmptyState({

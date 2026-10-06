@@ -3,13 +3,13 @@ import Constants from 'expo-constants';
 import { StyleSheet, Switch, Text, View } from 'react-native';
 
 import {
-  Body,
   Button,
-  Caption,
-  Card,
-  Chip,
   ErrorText,
-  SectionTitle,
+  IconButton,
+  ListRow,
+  ListSection,
+  Notice,
+  SegmentedControl,
   TextField,
 } from '../../src/components/ui';
 import { Screen } from '../../src/components/Screen';
@@ -31,11 +31,11 @@ import { disablePush, enablePush, isPushEnabled, pushAvailable } from '../../src
 import { clearPairing } from '../../src/lib/secureKeys';
 import { normaliseSender } from '../../src/lib/smsSync';
 import { usePolling } from '../../src/lib/usePolling';
-import { fontFamily, size, useTheme, type ThemePreference } from '../../src/theme';
+import { fontFamily, space, type, useTheme, type ThemePreference } from '../../src/theme';
 
 const IMPORT_DAYS = 30;
 const SENDER_ID = /^[A-Z0-9]{3,16}$/;
-const THEMES: { value: ThemePreference; label: string }[] = [
+const THEMES: readonly { value: ThemePreference; label: string }[] = [
   { value: 'system', label: 'System' },
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
@@ -151,127 +151,154 @@ export default function Settings() {
       await reload();
     });
 
+  const statusText = online === null ? 'Checking…' : online ? 'Online' : 'Offline';
+  const statusColor = online ? palette.ok : online === null ? palette.textMuted : palette.danger;
+
   return (
     <Screen title="Settings" menu>
       <ErrorText message={error} />
-      {status ? <Body muted>{status}</Body> : null}
+      {status ? <Notice tone="accent">{status}</Notice> : null}
 
-      <SectionTitle>Appearance</SectionTitle>
-      <Card>
-        <Body>Theme</Body>
-        <View style={styles.chips}>
-          {THEMES.map((t) => (
-            <Chip
-              key={t.value}
-              label={t.label}
-              selected={preference === t.value}
-              onPress={() => setPreference(t.value)}
-            />
-          ))}
-        </View>
-        <Caption>System follows the light or dark setting of your phone.</Caption>
-      </Card>
-
-      <SectionTitle>Server and pairing</SectionTitle>
-      <Card>
-        <Body>{pairing?.serverUrl}</Body>
-        <Text
-          accessibilityRole="text"
-          style={{
-            fontFamily: fontFamily.bodyMedium,
-            fontSize: size.body,
-            color: online ? palette.ok : online === null ? palette.textMuted : palette.danger,
-          }}
-        >
-          {online === null ? 'Checking...' : online ? 'Agent online' : 'Agent offline'}
-        </Text>
-        <Caption>
-          Paired device {pairing?.deviceId.slice(0, 8)}. Reached over Tailscale only; approvals need
-          your fingerprint or face.
-        </Caption>
-        <Button label="Unpair this phone" tone="danger" onPress={() => void unpair()} />
-      </Card>
-
-      <SectionTitle>SMS senders</SectionTitle>
-      <Body muted>
-        Only messages from the senders below (and any starting with BOB) are read and sent to your
-        laptop.
-      </Body>
-      <Card>
-        <Body>
-          {queued} message{queued === 1 ? '' : 's'} waiting to send
-        </Body>
-        <Button
-          label={`Import bank SMS from last ${IMPORT_DAYS} days`}
-          onPress={() => void importSms()}
-        />
-        <Button label="Send queued messages now" tone="plain" onPress={() => void sendQueue()} />
-      </Card>
-      <Card>
-        <Body muted>
-          Default senders: {defaults.length > 0 ? defaults.join(', ') : 'none loaded yet'}
-        </Body>
-        <View style={styles.chips}>
-          {custom.map((id) => (
-            <Chip
-              key={id}
-              label={`${id} ✕`}
-              accessibilityLabel={`Remove sender ${id}`}
-              onPress={() => void removeSender(id)}
-            />
-          ))}
-        </View>
-        <TextField
-          accessibilityLabel="New sender ID"
-          value={newSender}
-          onChangeText={setNewSender}
-          placeholder="Add a sender ID, e.g. AD-MYBANK"
-          autoCapitalize="characters"
-          autoCorrect={false}
-        />
-        <Button
-          label="Add sender"
-          tone="plain"
-          onPress={() => void addSender()}
-          disabled={!newSender.trim()}
-        />
-      </Card>
-
-      <SectionTitle>Notifications</SectionTitle>
-      <Card>
-        <View style={styles.row}>
-          <Body>Push notifications</Body>
-          <Switch
-            accessibilityLabel="Push notifications"
-            value={push}
-            onValueChange={(v) => void togglePush(v)}
-            disabled={!pushAvailable()}
-            trackColor={{ true: palette.accent, false: palette.border }}
+      <ListSection
+        title="Appearance"
+        footer="System follows the light or dark setting of your phone."
+      >
+        <View style={styles.padded}>
+          <SegmentedControl
+            accessibilityLabel="Theme"
+            options={THEMES}
+            value={preference}
+            onChange={setPreference}
           />
         </View>
-        {pushAvailable() ? null : (
-          <Body muted>Not set up in this build. The app polls every 30 seconds.</Body>
-        )}
-      </Card>
+      </ListSection>
 
-      <SectionTitle>About</SectionTitle>
-      <Card>
-        <Body>PersonalAi {Constants.expoConfig?.version ?? ''}</Body>
-        <Caption>
-          A private assistant that runs on your laptop. Nothing leaves it without your approval, and
-          the language model only ever sees redacted text.
-        </Caption>
-      </Card>
+      <ListSection
+        title="Agent"
+        inset="icon"
+        footer={`Paired device ${pairing?.deviceId.slice(0, 8) ?? ''}. Reached over Tailscale only; approvals need your fingerprint or face.`}
+      >
+        <ListRow
+          icon="activity"
+          iconTint={statusColor}
+          title="Status"
+          accessory={
+            <View style={styles.status}>
+              <View style={[styles.dot, { backgroundColor: statusColor }]} />
+              <Text style={[styles.statusText, { color: statusColor }]}>{statusText}</Text>
+            </View>
+          }
+          accessibilityLabel={`Agent ${statusText}`}
+        />
+        <ListRow icon="server" title="Server" subtitle={pairing?.serverUrl ?? ''} />
+        <ListRow
+          icon="link-2"
+          title="Unpair this phone"
+          destructive
+          onPress={() => void unpair()}
+          accessibilityHint="Removes the pairing keys from this phone"
+        />
+      </ListSection>
+
+      <ListSection
+        title="Bank SMS"
+        inset="icon"
+        footer="Only messages from the senders below (and any starting with BOB) are read and sent to your laptop."
+      >
+        <ListRow
+          icon="inbox"
+          title="Waiting to send"
+          value={`${queued} message${queued === 1 ? '' : 's'}`}
+        />
+        <ListRow
+          icon="download"
+          title={`Import last ${IMPORT_DAYS} days`}
+          onPress={() => void importSms()}
+          chevron
+        />
+        <ListRow icon="upload" title="Send queued now" onPress={() => void sendQueue()} chevron />
+      </ListSection>
+
+      <ListSection
+        title="Senders"
+        footer={`Built in: ${defaults.length > 0 ? defaults.join(', ') : 'none loaded yet'}`}
+      >
+        {custom.map((id) => (
+          <ListRow
+            key={id}
+            title={id}
+            accessory={
+              <IconButton
+                icon="minus-circle"
+                label={`Remove sender ${id}`}
+                color={palette.danger}
+                onPress={() => void removeSender(id)}
+              />
+            }
+          />
+        ))}
+        <View style={[styles.padded, styles.addRow]}>
+          <View style={{ flex: 1 }}>
+            <TextField
+              accessibilityLabel="New sender ID"
+              value={newSender}
+              onChangeText={setNewSender}
+              placeholder="Add a sender, e.g. AD-MYBANK"
+              autoCapitalize="characters"
+              autoCorrect={false}
+              onSubmitEditing={() => void addSender()}
+            />
+          </View>
+          <Button
+            label="Add"
+            tone="tinted"
+            compact
+            accessibilityLabel="Add sender"
+            onPress={() => void addSender()}
+            disabled={!newSender.trim()}
+          />
+        </View>
+      </ListSection>
+
+      <ListSection
+        title="Notifications"
+        inset="icon"
+        footer={
+          pushAvailable()
+            ? 'Notifications never contain mail, SMS or amounts, only a count.'
+            : 'Not set up in this build. The app polls every 30 seconds.'
+        }
+      >
+        <ListRow
+          icon="bell"
+          title="Push notifications"
+          accessory={
+            <Switch
+              accessibilityLabel="Push notifications"
+              value={push}
+              onValueChange={(v) => void togglePush(v)}
+              disabled={!pushAvailable()}
+              trackColor={{ true: palette.accent, false: palette.border }}
+              thumbColor={palette.surface}
+            />
+          }
+        />
+      </ListSection>
+
+      <ListSection
+        title="About"
+        footer="A private assistant that runs on your laptop. Nothing leaves it without your approval, and the language model only ever sees redacted text."
+      >
+        <ListRow title="PersonalAi" value={Constants.expoConfig?.version ?? ''} />
+      </ListSection>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    minHeight: 44,
-  },
+  padded: { padding: space.md - space.xs },
+  addRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  status: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  statusText: { ...type.callout, fontFamily: fontFamily.bodyMedium },
 });

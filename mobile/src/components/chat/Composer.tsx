@@ -1,45 +1,59 @@
 import { useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { Text, TextInput, View } from 'react-native';
 
-import { fontFamily, MIN_TARGET, size, useTheme, useThemedStyles, type Palette } from '../../theme';
+import {
+  MIN_TARGET,
+  radius,
+  space,
+  type,
+  useTheme,
+  useThemedStyles,
+  type Palette,
+} from '../../theme';
 import { Icon } from '../Icon';
+import { PressableScale } from '../ui';
 
 const makeStyles = (p: Palette) => ({
-  wrap: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, gap: 6 },
+  wrap: {
+    paddingHorizontal: space.sm + space.xs,
+    paddingTop: space.sm,
+    paddingBottom: space.sm,
+    gap: space.sm,
+  },
   offline: {
     alignSelf: 'center' as const,
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    gap: 6,
+    gap: space.sm,
   },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: p.danger },
-  offlineText: { fontFamily: fontFamily.body, fontSize: size.caption + 1, color: p.textMuted },
+  offlineText: { ...type.footnote, color: p.textMuted },
   box: {
     flexDirection: 'row' as const,
     alignItems: 'flex-end' as const,
-    gap: 8,
+    gap: space.sm,
     backgroundColor: p.surface,
-    borderColor: p.border,
+    borderColor: p.separator,
     borderWidth: 1,
-    borderRadius: 26,
-    paddingLeft: 16,
-    paddingRight: 6,
-    paddingVertical: 6,
+    borderRadius: radius.xl,
+    paddingLeft: space.md,
+    paddingRight: space.xs + 2,
+    paddingVertical: space.xs + 2,
   },
   input: {
+    ...type.body,
     flex: 1,
-    maxHeight: 140,
+    maxHeight: 160,
     minHeight: MIN_TARGET - 4,
-    paddingTop: 8,
-    paddingBottom: 8,
-    fontFamily: fontFamily.body,
-    fontSize: size.body,
+    paddingTop: space.sm + 2,
+    paddingBottom: space.sm + 2,
     color: p.text,
   },
   send: {
-    width: MIN_TARGET,
-    height: MIN_TARGET,
-    borderRadius: MIN_TARGET / 2,
+    width: 36,
+    height: 36,
+    margin: 2,
+    borderRadius: 18,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     backgroundColor: p.accent,
@@ -53,13 +67,15 @@ interface Props {
   online: boolean | null;
   onSend: (text: string) => void;
   onStop: () => void;
+  /** Prefilled text, e.g. from "Ask agent about this". Never sent without a tap on Send. */
+  initialDraft?: string;
 }
 
 /** Rounded multi-line input with a send button that turns into stop while a reply streams. */
-export function Composer({ busy, online, onSend, onStop }: Props) {
+export function Composer({ busy, online, onSend, onStop, initialDraft = '' }: Props) {
   const styles = useThemedStyles(makeStyles);
   const { palette } = useTheme();
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState(initialDraft);
   const offline = online === false;
   const canSend = !offline && draft.trim().length > 0;
 
@@ -85,26 +101,28 @@ export function Composer({ busy, online, onSend, onStop }: Props) {
           onChangeText={setDraft}
           placeholder={offline ? 'Agent offline' : 'Message PersonalAi'}
           placeholderTextColor={palette.textMuted}
+          selectionColor={palette.accentText}
+          cursorColor={palette.accentText}
           multiline
+          autoFocus={initialDraft.length > 0}
           editable={!offline}
           textAlignVertical="center"
         />
         {busy ? (
-          <Pressable
-            accessibilityRole="button"
+          <PressableScale
             accessibilityLabel="Stop generating"
             onPress={onStop}
+            hitSlop={4}
             style={styles.send}
           >
-            <Icon name="square" size={16} color={palette.accentOn} />
-          </Pressable>
+            <Icon name="square" size={14} color={palette.accentOn} />
+          </PressableScale>
         ) : (
-          <Pressable
-            accessibilityRole="button"
+          <PressableScale
             accessibilityLabel="Send message"
-            accessibilityState={{ disabled: !canSend }}
             disabled={!canSend}
             onPress={submit}
+            hitSlop={4}
             style={[styles.send, !canSend && styles.sendOff]}
           >
             <Icon
@@ -112,7 +130,7 @@ export function Composer({ busy, online, onSend, onStop }: Props) {
               size={20}
               color={canSend ? palette.accentOn : palette.textMuted}
             />
-          </Pressable>
+          </PressableScale>
         )}
       </View>
     </View>

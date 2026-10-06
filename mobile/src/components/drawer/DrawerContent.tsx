@@ -13,91 +13,99 @@ import {
   fontFamily,
   MAX_CHROME_SCALE,
   MIN_TARGET,
-  size,
+  radius,
+  space,
+  type,
   useTheme,
   useThemedStyles,
   type Palette,
 } from '../../theme';
 import { Icon, type IconName } from '../Icon';
-import { TextField } from '../ui';
+import { PressableScale, SearchField } from '../ui';
 import { ConversationActions } from './ConversationActions';
 
 const makeStyles = (p: Palette) => ({
   root: { flex: 1, backgroundColor: p.drawer },
-  top: { paddingHorizontal: 16, paddingTop: 12, gap: 12 },
-  brand: { fontFamily: fontFamily.display, fontSize: size.title, color: p.text },
+  top: { paddingHorizontal: space.md, paddingTop: space.md - space.xs, gap: space.md - space.xs },
+  brandRow: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: space.sm },
+  brandMark: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.sm,
+    backgroundColor: p.accent,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  brand: { ...type.title2, color: p.text },
   newChat: {
     minHeight: MIN_TARGET + 4,
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    gap: 10,
-    paddingHorizontal: 16,
-    borderRadius: 26,
+    gap: space.sm + 2,
+    paddingHorizontal: space.md,
+    borderRadius: radius.md,
     backgroundColor: p.accent,
   },
-  newChatText: { fontFamily: fontFamily.bodySemiBold, fontSize: size.body, color: p.accentOn },
-  searchWrap: { justifyContent: 'center' as const },
-  search: { paddingLeft: 40, borderRadius: 24 },
-  searchIcon: { position: 'absolute' as const, left: 14 },
+  newChatText: { ...type.headline, color: p.accentOn },
   section: {
+    ...type.footnote,
     fontFamily: fontFamily.bodySemiBold,
-    fontSize: size.small,
     letterSpacing: 0.4,
     textTransform: 'uppercase' as const,
     color: p.textMuted,
-    paddingHorizontal: 20,
-    paddingTop: 14,
-    paddingBottom: 4,
+    paddingHorizontal: space.lg - space.xs,
+    paddingTop: space.md,
+    paddingBottom: space.xs,
   },
-  list: { paddingHorizontal: 8, paddingBottom: 8 },
+  list: { paddingHorizontal: space.sm, paddingBottom: space.sm },
   item: {
     minHeight: MIN_TARGET,
     justifyContent: 'center' as const,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
+    paddingHorizontal: space.md - space.xs,
+    paddingVertical: space.sm,
+    borderRadius: radius.md - 2,
   },
-  itemActive: { backgroundColor: p.muted },
+  itemActive: { backgroundColor: p.accentSoft },
   itemPressed: { backgroundColor: p.muted },
-  itemTitle: { fontFamily: fontFamily.body, fontSize: size.body - 1, color: p.text },
-  itemTitleActive: { fontFamily: fontFamily.bodyMedium },
+  itemTitle: { ...type.callout, color: p.text },
+  itemTitleActive: { fontFamily: fontFamily.bodySemiBold, color: p.accentText },
   empty: {
-    fontFamily: fontFamily.body,
-    fontSize: size.small + 1,
+    ...type.subhead,
     color: p.textMuted,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: space.lg - space.xs,
+    paddingVertical: space.md - space.xs,
   },
   footer: {
     borderTopWidth: 1,
-    borderTopColor: p.border,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    borderTopColor: p.separator,
+    paddingHorizontal: space.sm,
+    paddingVertical: space.sm,
   },
   link: {
     minHeight: MIN_TARGET + 4,
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    gap: 14,
-    paddingHorizontal: 12,
-    borderRadius: 12,
+    gap: space.md - space.xs,
+    paddingHorizontal: space.md - space.xs,
+    borderRadius: radius.md - 2,
   },
-  linkText: { flex: 1, fontFamily: fontFamily.bodyMedium, fontSize: size.body, color: p.text },
+  linkText: { ...type.callout, fontFamily: fontFamily.bodyMedium, flex: 1, color: p.text },
   badge: {
     minWidth: 24,
     height: 24,
     borderRadius: 12,
-    paddingHorizontal: 7,
+    paddingHorizontal: space.sm - 1,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     backgroundColor: p.accent,
   },
-  badgeText: { fontFamily: fontFamily.bodySemiBold, fontSize: size.caption, color: p.accentOn },
+  badgeText: { ...type.caption, fontFamily: fontFamily.bodyBold, color: p.accentOn },
 });
 
 const LINKS: { route: string; path: string; label: string; icon: IconName }[] = [
   { route: 'today', path: '/today', label: 'Today', icon: 'sun' },
   { route: 'approvals', path: '/approvals', label: 'Approvals', icon: 'shield' },
+  { route: 'files', path: '/files', label: 'Files', icon: 'folder' },
   { route: 'money', path: '/money', label: 'Money', icon: 'credit-card' },
   { route: 'settings', path: '/settings', label: 'Settings', icon: 'settings' },
 ];
@@ -149,37 +157,28 @@ export function AppDrawerContent({ navigation, state }: DrawerContentComponentPr
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <View style={styles.top}>
-        <Text
-          accessibilityRole="header"
-          style={styles.brand}
-          maxFontSizeMultiplier={MAX_CHROME_SCALE}
-        >
-          PersonalAi
-        </Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="New chat"
-          onPress={newChat}
-          style={({ pressed }) => [styles.newChat, pressed && { opacity: 0.85 }]}
-        >
-          <Icon name="plus" size={20} color={palette.accentOn} />
-          <Text style={styles.newChatText}>New chat</Text>
-        </Pressable>
-        <View style={styles.searchWrap}>
-          <TextField
-            accessibilityLabel="Search conversations"
-            placeholder="Search chats"
-            value={conversations.query}
-            onChangeText={conversations.setQuery}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-            style={styles.search}
-          />
-          <View style={styles.searchIcon} pointerEvents="none">
-            <Icon name="search" size={18} color={palette.textMuted} />
+        <View style={styles.brandRow}>
+          <View style={styles.brandMark}>
+            <Icon name="cpu" size={16} color={palette.accentOn} />
           </View>
+          <Text
+            accessibilityRole="header"
+            style={styles.brand}
+            maxFontSizeMultiplier={MAX_CHROME_SCALE}
+          >
+            PersonalAi
+          </Text>
         </View>
+        <PressableScale accessibilityLabel="New chat" onPress={newChat} style={styles.newChat}>
+          <Icon name="edit" size={18} color={palette.accentOn} />
+          <Text style={styles.newChatText}>New chat</Text>
+        </PressableScale>
+        <SearchField
+          accessibilityLabel="Search conversations"
+          placeholder="Search chats"
+          value={conversations.query}
+          onChangeText={conversations.setQuery}
+        />
       </View>
 
       <Text accessibilityRole="header" style={styles.section}>
@@ -212,7 +211,11 @@ export function AppDrawerContent({ navigation, state }: DrawerContentComponentPr
               onPress={() => open(item)}
               onLongPress={() => setTarget(item)}
               delayLongPress={350}
-              style={({ pressed }) => [styles.item, (active || pressed) && styles.itemActive]}
+              style={({ pressed }) => [
+                styles.item,
+                pressed && styles.itemPressed,
+                active && styles.itemActive,
+              ]}
             >
               <Text numberOfLines={1} style={[styles.itemTitle, active && styles.itemTitleActive]}>
                 {item.title}
@@ -247,10 +250,20 @@ export function AppDrawerContent({ navigation, state }: DrawerContentComponentPr
                 router.navigate(link.path);
                 close();
               }}
-              style={({ pressed }) => [styles.link, (active || pressed) && styles.itemActive]}
+              style={({ pressed }) => [
+                styles.link,
+                pressed && styles.itemPressed,
+                active && styles.itemActive,
+              ]}
             >
-              <Icon name={link.icon} size={20} />
-              <Text style={styles.linkText}>{link.label}</Text>
+              <Icon
+                name={link.icon}
+                size={20}
+                color={active ? palette.accentText : palette.textMuted}
+              />
+              <Text style={[styles.linkText, active && { color: palette.accentText }]}>
+                {link.label}
+              </Text>
               {badge ? (
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>{badge > 99 ? '99+' : badge}</Text>

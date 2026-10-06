@@ -13,7 +13,18 @@ import { Appearance, StyleSheet, useColorScheme } from 'react-native';
 import { getJson, setJson } from '../lib/prefs';
 import { darkPalette, lightPalette, type Palette } from './palette';
 
-export { fontFamily, MAX_CHROME_SCALE, MIN_TARGET, size } from './typography';
+export {
+  fontFamily,
+  MAX_CHROME_SCALE,
+  MIN_TARGET,
+  radius,
+  ROW_INSET,
+  size,
+  space,
+  type,
+} from './typography';
+export { motion } from './motion';
+export { brand, darkPalette, lightPalette } from './palette';
 export type { Palette } from './palette';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
