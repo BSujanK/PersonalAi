@@ -20,6 +20,7 @@ from agent.core.policy import Decision
 from agent.core.redact import Redacted, RedactionMap, Redactor, StreamRehydrator, from_model
 from agent.core.router import select_tools
 from agent.core.tools import ActionRejected, ToolRegistry
+from agent.core.turn import turn_scope
 
 log = logging.getLogger(__name__)
 
@@ -128,6 +129,21 @@ class AgentLoop:
         on_text: Callable[[str], None] | None = None,
         on_reset: Callable[[], None] | None = None,
         on_tool: Callable[[str, str], None] | None = None,
+    ) -> LoopResult:
+        with turn_scope():
+            return self._run_turn(
+                conversation_id, history, user_text, rmap, on_text, on_reset, on_tool
+            )
+
+    def _run_turn(
+        self,
+        conversation_id: str,
+        history: list[ChatMessage],
+        user_text: str,
+        rmap: RedactionMap,
+        on_text: Callable[[str], None] | None,
+        on_reset: Callable[[], None] | None,
+        on_tool: Callable[[str, str], None] | None,
     ) -> LoopResult:
         system = ChatMessage("system", from_model(self._system_prompt()))
         new: list[ChatMessage] = [ChatMessage("user", self._redactor.redact(user_text, rmap))]
@@ -244,11 +260,13 @@ class AgentLoop:
             raw_args = json.loads(call.arguments.text)
         except ValueError:
             return self._tool_message(call, "error: invalid arguments")
-        args: Any = Redactor.rehydrate_obj(raw_args, rmap)
+        tool = self._registry.get(call.name)
+        # Tools whose arguments leave the machine get them still masked (Tool.rehydrate_args).
+        rehydrate = tool is None or tool.rehydrate_args
+        args: Any = Redactor.rehydrate_obj(raw_args, rmap) if rehydrate else raw_args
         decision, reason = policy.evaluate_tool_call(
             self._registry, call.name, args, self._approvals.pending_count()
         )
-        tool = self._registry.get(call.name)
         if decision is Decision.DENY or tool is None:
             return self._tool_message(call, f"error: {reason}")
         if decision is Decision.PROPOSE_WRITE:

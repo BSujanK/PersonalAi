@@ -40,6 +40,10 @@ class Tool:
     # hashed and later executed (for example pinning the recipients and attachment checksums a
     # send resolves to). Raises ``ValueError`` when the arguments cannot be resolved.
     prepare: Callable[[dict[str, Any]], dict[str, Any]] | None = None
+    # False: the model's arguments reach ``run`` exactly as the model wrote them, placeholders
+    # still masked. For tools whose arguments leave the machine (web search), so a placeholder
+    # can never be turned back into the owner's data on its way out.
+    rehydrate_args: bool = True
 
 
 class ToolRegistry:
