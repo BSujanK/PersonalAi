@@ -99,7 +99,7 @@ class Settings:
     db_path: Path = Path.home() / ".personalai" / "agent.db"
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     model_primary: str = ""
-    model_fallback: str = ""
+    model_fallback: str = ""  # one model id, or several comma-separated, tried in order
     model_long: str = ""
     long_context_tokens: int = 32000
     local_context_tokens: int = 8192  # Ollama's context; longer prompts never go to local
@@ -156,6 +156,11 @@ class Settings:
         if self.deadline_calendar_account:
             return self.deadline_calendar_account
         return self.calendar_accounts[0] if self.calendar_accounts else None
+
+    @property
+    def model_fallbacks(self) -> tuple[str, ...]:
+        """PERSONALAI_MODEL_FALLBACK as an ordered, de-duplicated list of model ids."""
+        return tuple(dict.fromkeys(_split(self.model_fallback)))
 
     @property
     def redaction_emails(self) -> tuple[str, ...]:

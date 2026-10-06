@@ -671,3 +671,18 @@ def test_failed_primary_is_tried_last_until_its_cooldown_ends() -> None:
     now[0] += ROUTE_COOLDOWN_SECONDS + 1
     router.complete(_msgs("three"), [])  # cooldown over: primary is tried first again
     assert up.models[0] == "prim-model"
+
+
+def test_fallback_list_is_tried_in_order_and_deduplicated() -> None:
+    up = _Upstream(**{"prim-model": 503, "fb-a": 503})
+    out = _routed(up, model_fallback="fb-a, fb-b, prim-model, fb-a").complete(_msgs("hi"), [])
+    assert up.models[:2] == ["prim-model", "fb-a"]
+    assert "fb-b" in up.models and up.models.count("prim-model") == 1
+    assert out.route == "fallback2"
+
+
+def test_settings_parse_fallback_list() -> None:
+    from agent.config import Settings
+
+    settings = Settings.from_env({"PERSONALAI_MODEL_FALLBACK": "a, b,,a ,c"})
+    assert settings.model_fallbacks == ("a", "b", "c")
