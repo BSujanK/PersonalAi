@@ -17,6 +17,7 @@ from agent.scheduler import (
     CLASSROOM_DEADLINE_JOB_ID,
     FILE_INDEX_JOB_ID,
     FINANCE_CATEGORIZE_JOB_ID,
+    MAIL_DEADLINE_JOB_ID,
     MAIL_JOB_ID,
     Job,
 )
@@ -156,10 +157,14 @@ def test_serve_with_mail_accounts_polls_and_stops_scheduler(
     assert started == ["127.0.0.1"]
     assert [(job.id, job.minutes) for job in captured[0]] == [
         (MAIL_JOB_ID, 5),
+        (MAIL_DEADLINE_JOB_ID, 24 * 60),
         (FINANCE_CATEGORIZE_JOB_ID, 15),
         (ALERT_JOB_ID, 5),
     ]
     assert scheduler.shutdowns == [False]
+    [scan] = [j for j in captured[0] if j.id == MAIL_DEADLINE_JOB_ID]
+    assert 0 < scan.start_delay_seconds <= 300  # a kick shortly after startup, then daily
+    assert [j.start_delay_seconds for j in captured[0] if j is not scan] == [0, 0, 0]
 
 
 def test_serve_without_accounts_only_categorises_finance(

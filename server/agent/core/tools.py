@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -66,7 +66,12 @@ class ToolRegistry:
         tool = self._tools.get(name)
         return tool.kind if tool else None
 
-    def schemas(self) -> list[dict[str, Any]]:
+    def names(self) -> list[str]:
+        """Registered tool names, in registration order."""
+        return list(self._tools)
+
+    def schemas(self, only: Collection[str] | None = None) -> list[dict[str, Any]]:
+        """Function schemas for the model: every tool, or just the names in ``only``."""
         return [
             {
                 "type": "function",
@@ -77,6 +82,7 @@ class ToolRegistry:
                 },
             }
             for t in self._tools.values()
+            if only is None or t.name in only
         ]
 
     def executor_for_approved(self, name: str) -> Callable[[dict[str, Any]], Any]:

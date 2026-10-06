@@ -310,8 +310,10 @@ class ModelRouter:
         if settings.model_long and estimate > settings.long_context_tokens:
             first = "long"
         cloud = [(first, settings.model_long if first == "long" else settings.model_primary)]
-        if settings.model_fallback and settings.model_fallback != cloud[0][1]:
-            cloud.append(("fallback", settings.model_fallback))
+        for model in settings.model_fallbacks:
+            if all(model != existing for _, existing in cloud):
+                name = "fallback" if len(cloud) == 1 else f"fallback{len(cloud)}"
+                cloud.append((name, model))
         now = self._clock()
         cloud.sort(key=lambda route: self._down_until.get(route[1], 0.0) > now)  # stable
 

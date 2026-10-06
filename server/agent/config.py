@@ -99,7 +99,7 @@ class Settings:
     db_path: Path = Path.home() / ".personalai" / "agent.db"
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     model_primary: str = ""
-    model_fallback: str = ""
+    model_fallback: str = ""  # one model id, or several comma-separated, tried in order
     model_long: str = ""
     long_context_tokens: int = 32000
     local_context_tokens: int = 8192  # Ollama's context; longer prompts never go to local
@@ -132,6 +132,7 @@ class Settings:
     push: str = "off"  # "off" or "expo"; pushes carry only a count, never content
     news_feeds: tuple[str, ...] = ()
     calendar_auto_add: bool = True
+    tool_router: bool = True  # offer the model only the tools a request needs; off = all tools
     alert_poll_minutes: int = 5
     briefing_time: str = "07:30"
 
@@ -156,6 +157,11 @@ class Settings:
         if self.deadline_calendar_account:
             return self.deadline_calendar_account
         return self.calendar_accounts[0] if self.calendar_accounts else None
+
+    @property
+    def model_fallbacks(self) -> tuple[str, ...]:
+        """PERSONALAI_MODEL_FALLBACK as an ordered, de-duplicated list of model ids."""
+        return tuple(dict.fromkeys(_split(self.model_fallback)))
 
     @property
     def redaction_emails(self) -> tuple[str, ...]:
@@ -227,6 +233,7 @@ class Settings:
             calendar_auto_add=_flag(
                 e.get("PERSONALAI_CALENDAR_AUTO_ADD", ""), defaults.calendar_auto_add
             ),
+            tool_router=_flag(e.get("PERSONALAI_TOOL_ROUTER", ""), defaults.tool_router),
             alert_poll_minutes=_positive_int(
                 "PERSONALAI_ALERT_POLL_MINUTES",
                 e.get("PERSONALAI_ALERT_POLL_MINUTES", str(defaults.alert_poll_minutes)),

@@ -7,18 +7,27 @@ only parsed, never logged.
 
 from __future__ import annotations
 
+import errno
+import ipaddress
 import os
 import shutil
+import socket
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 import httpx
 
 # Fallback when a command is not installed, mirroring the shell's "command not found".
 NOT_FOUND = 127
+_MAX_LOG_READ = 1_000_000
+# A bind that fails because the port is taken. On Windows a socket error carries the WinSock code
+# (10048 WSAEADDRINUSE, 10013 WSAEACCES), not errno.EADDRINUSE; listing only the POSIX codes would
+# report a busy port as free on the laptop, which is the one place this runs.
+_PORT_BUSY = frozenset({errno.EADDRINUSE, errno.EACCES, 10048, 10013})
 
 
 @dataclass(frozen=True)
@@ -51,6 +60,18 @@ class System(Protocol):
     def http_get(
         self, url: str, *, headers: Mapping[str, str] | None = None, timeout: float = 10
     ) -> HttpResult: ...
+
+    def port_is_free(self, host: str, port: int) -> bool:
+        """Whether a server could bind ``host:port`` now (an unusable address counts as free)."""
+        ...
+
+    def file_size(self, path: Path) -> int:
+        """Size in bytes, 0 when the file is missing or unreadable."""
+        ...
+
+    def read_text_from(self, path: Path, offset: int) -> str:
+        """Text from byte ``offset`` on (at most 1 MB); empty when missing or unreadable."""
+        ...
 
     def user_env(self, name: str) -> str | None:
         """The persisted per-user value (Windows: HKCU\\Environment), else the process value."""
@@ -130,6 +151,33 @@ class RealSystem:
         except ValueError:
             body = None
         return HttpResult(response.status_code, body)
+
+    def port_is_free(self, host: str, port: int) -> bool:
+        try:
+            family = socket.AF_INET6 if ipaddress.ip_address(host).version == 6 else socket.AF_INET
+        except ValueError:
+            return True
+        with socket.socket(family, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind((host, port))
+            except OSError as exc:
+                codes = {exc.errno, getattr(exc, "winerror", None)}
+                return not (codes & _PORT_BUSY)
+        return True
+
+    def file_size(self, path: Path) -> int:
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
+
+    def read_text_from(self, path: Path, offset: int) -> str:
+        try:
+            with path.open("rb") as handle:
+                handle.seek(offset)
+                return handle.read(_MAX_LOG_READ).decode("utf-8", errors="replace")
+        except OSError:
+            return ""
 
     def user_env(self, name: str) -> str | None:
         if sys.platform == "win32":

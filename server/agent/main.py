@@ -54,6 +54,9 @@ from agent.scheduler import (
     CLASSROOM_DEADLINE_JOB_ID,
     FILE_INDEX_JOB_ID,
     FINANCE_CATEGORIZE_JOB_ID,
+    MAIL_DEADLINE_JOB_ID,
+    MAIL_DEADLINE_SCAN_DELAY_SECONDS,
+    MAIL_DEADLINE_SCAN_MINUTES,
     MAIL_JOB_ID,
     Job,
     start_jobs,
@@ -173,6 +176,17 @@ def _background_jobs(
                 CLASSROOM_DEADLINE_JOB_ID,
                 proactive.deadlines.scan_classroom,
                 settings.deadline_poll_minutes,
+            )
+        )
+    if mail is not None:
+        # A catch-up over stored mail (see DeadlineCollector.scan_stored_mail): once shortly after
+        # startup, so it never delays the first mail sync, then daily.
+        jobs.append(
+            Job(
+                MAIL_DEADLINE_JOB_ID,
+                proactive.deadlines.scan_stored_mail,
+                MAIL_DEADLINE_SCAN_MINUTES,
+                start_delay_seconds=MAIL_DEADLINE_SCAN_DELAY_SECONDS,
             )
         )
     if workspace.file_index is not None:
@@ -415,8 +429,8 @@ def _doctor(settings: Settings, as_json: bool) -> int:
     )
 
 
-def _restart(task_name: str) -> int:
-    return restart_server(RealSystem(), sys.stdout, task_name=task_name)
+def _restart(settings: Settings, task_name: str) -> int:
+    return restart_server(RealSystem(), sys.stdout, settings=settings, task_name=task_name)
 
 
 def _setup(redo: list[str]) -> int:
@@ -531,12 +545,12 @@ def main(
     args = parser.parse_args(argv)
     if args.command == "setup":
         return _setup(args.redo)
-    if args.command == "restart":
-        return _restart(args.task)
     try:
         settings = Settings.from_env()
     except ValueError as exc:
         return _refuse(f"invalid configuration: {exc}")
+    if args.command == "restart":
+        return _restart(settings, args.task)
     if args.command == "supervise":
         return _supervise(settings)
     if args.command == "doctor":

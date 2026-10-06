@@ -9,9 +9,12 @@ no terminal can close it or send it Ctrl+C.
 It also puts itself in a job object that kills every member when its handle closes (which is when
 this process ends, however it ends), so stopping the scheduled task stops the server too.
 
-It waits for the server and exits with its exit code, so Task Scheduler's restart-on-failure and
-"Last Result" reflect the server. It has no restart loop of its own. It logs pids and exit codes
-to ``agent.log`` only, opening the file per line so it never holds the server's rotating log open.
+If the server crashes (any non-zero exit) it is started again after a short back-off, up to
+MAX_RESTARTS times within RESTART_WINDOW_SECONDS; Task Scheduler's own restart-on-failure did not
+fire after a real crash (0xC0000005). A clean exit (0) or too many crashes ends the supervisor
+with the server's last exit code, so "Last Result" still reflects the server. It logs pids and
+exit codes to ``agent.log`` only, opening the file per line so it never holds the server's
+rotating log open.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ import ctypes
 import os
 import subprocess
 import sys
+import time
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,6 +35,9 @@ JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9
 CREATE_NO_WINDOW = 0x08000000
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 EXIT_NO_JOB_OBJECT = 1
+MAX_RESTARTS = 5
+RESTART_WINDOW_SECONDS = 600.0
+RESTART_DELAYS_SECONDS = (5.0, 15.0, 30.0, 60.0, 60.0)
 
 
 class _BasicLimits(ctypes.Structure):
@@ -125,8 +132,14 @@ def supervise(
     *,
     popen: Callable[..., Any] = subprocess.Popen,
     job: Callable[[], object] = create_kill_on_close_job,
+    max_restarts: int = MAX_RESTARTS,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
 ) -> int:
-    """Run ``command`` hidden under a kill-on-close job and return its exit code."""
+    """Run ``command`` hidden under a kill-on-close job, restarting it after crashes.
+
+    Returns the server's last exit code.
+    """
     with contextlib.suppress(OSError):
         log_path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -137,20 +150,32 @@ def supervise(
         )
         return EXIT_NO_JOB_OBJECT
     _log(log_path, f"supervisor started pid={os.getpid()}")
-    try:
-        child = popen(
-            list(command),
-            cwd=cwd,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
-        )
-    except OSError as exc:
-        _log(log_path, f"server could not start: errno={exc.errno}")
-        return EXIT_NO_JOB_OBJECT
-    _log(log_path, f"server started pid={child.pid}")
-    code: int = child.wait()
-    _log(log_path, f"server exited code=0x{code & 0xFFFFFFFF:08X}")
+    crashes: list[float] = []
+    while True:
+        try:
+            child = popen(
+                list(command),
+                cwd=cwd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
+            )
+        except OSError as exc:
+            _log(log_path, f"server could not start: errno={exc.errno}")
+            return EXIT_NO_JOB_OBJECT
+        _log(log_path, f"server started pid={child.pid}")
+        code: int = child.wait()
+        _log(log_path, f"server exited code=0x{code & 0xFFFFFFFF:08X}")
+        if code == 0:
+            break
+        now = clock()
+        crashes = [t for t in crashes if now - t < RESTART_WINDOW_SECONDS] + [now]
+        if len(crashes) > max_restarts:
+            _log(log_path, f"giving up after {len(crashes)} crashes in a row")
+            break
+        delay = RESTART_DELAYS_SECONDS[min(len(crashes), len(RESTART_DELAYS_SECONDS)) - 1]
+        _log(log_path, f"restarting server in {delay:.0f}s (crash {len(crashes)})")
+        sleep(delay)
     del held  # released only now, after the server is gone
     return code
