@@ -18,6 +18,10 @@ class ToolKind(StrEnum):
     WRITE = "write"
 
 
+class ActionRejected(ValueError):
+    """A WRITE tool refused its arguments. The message is fixed text, safe to show the model."""
+
+
 class ForbiddenToolError(ValueError):
     """Tool name matches a forbidden pattern (e.g. broker order APIs)."""
 
@@ -32,6 +36,10 @@ class Tool:
     run: Callable[[dict[str, Any]], Any]
     preview: Callable[[dict[str, Any]], str] | None = None
     untrusted_output: bool = True
+    # WRITE only: turns the model's arguments into the exact payload that is stored, previewed,
+    # hashed and later executed (for example pinning the recipients and attachment checksums a
+    # send resolves to). Raises ``ValueError`` when the arguments cannot be resolved.
+    prepare: Callable[[dict[str, Any]], dict[str, Any]] | None = None
 
 
 class ToolRegistry:
@@ -47,6 +55,8 @@ class ToolRegistry:
             raise ValueError(f"duplicate tool: {tool.name!r}")
         if tool.kind is ToolKind.WRITE and tool.preview is None:
             raise ValueError("WRITE tools require a preview")
+        if tool.kind is ToolKind.READ and tool.prepare is not None:
+            raise ValueError("only WRITE tools can have a prepare step")
         self._tools[tool.name] = tool
 
     def get(self, name: str) -> Tool | None:

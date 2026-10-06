@@ -11,10 +11,12 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseUpload
 
 from agent.connectors.drive import DriveFileNotFound
-from agent.connectors.google_auth import DRIVE_FILE, DRIVE_READONLY, GoogleAuth
+from agent.connectors.google_auth import DRIVE, DRIVE_READONLY, GoogleAuth
 
 _RETRIES = 3
 _FIELDS = "id,name,mimeType,modifiedTime,size"
+_META_FIELDS = f"{_FIELDS},md5Checksum,webViewLink"
+_SIMPLE_UPLOAD_MAX = 5 * 1024 * 1024  # larger uploads must use the resumable protocol
 
 
 def _status(exc: HttpError) -> int | None:
@@ -59,7 +61,7 @@ class GoogleDriveApi:
 
     def get_metadata(self, file_id: str) -> dict[str, Any]:
         result: dict[str, Any] = self._execute(
-            self._service.files().get(fileId=file_id, fields=_FIELDS)
+            self._service.files().get(fileId=file_id, fields=_META_FIELDS)
         )
         return result
 
@@ -77,17 +79,30 @@ class GoogleDriveApi:
             raise ValueError("file is larger than the allowed size")
         return data
 
-    def create_file(self, name: str, mime: str, content: bytes) -> dict[str, Any]:
-        media = MediaIoBaseUpload(io.BytesIO(content), mimetype=mime, resumable=False)
+    def create_file(
+        self, name: str, mime: str, content: bytes, parent: str | None = None
+    ) -> dict[str, Any]:
+        media = MediaIoBaseUpload(
+            io.BytesIO(content), mimetype=mime, resumable=len(content) > _SIMPLE_UPLOAD_MAX
+        )
+        body: dict[str, Any] = {"name": name, "mimeType": mime}
+        if parent is not None:
+            body["parents"] = [parent]
         result: dict[str, Any] = self._execute(
-            self._service.files().create(
-                body={"name": name, "mimeType": mime}, media_body=media, fields=_FIELDS
+            self._service.files().create(body=body, media_body=media, fields=_META_FIELDS)
+        )
+        return result
+
+    def share(self, file_id: str, permission: dict[str, Any], notify: bool) -> dict[str, Any]:
+        result: dict[str, Any] = self._execute(
+            self._service.permissions().create(
+                fileId=file_id, body=permission, sendNotificationEmail=notify, fields="id"
             )
         )
         return result
 
 
 def build_drive_api(account: str, auth: GoogleAuth) -> GoogleDriveApi:
-    credentials = auth.credentials(account, [DRIVE_READONLY, DRIVE_FILE])
+    credentials = auth.credentials(account, [DRIVE_READONLY, DRIVE])
     service = build("drive", "v3", credentials=credentials, cache_discovery=False)
     return GoogleDriveApi(service, auth.persist_hook(account))

@@ -458,11 +458,52 @@ export const renameConversation = (id: string, title: string) =>
 export const deleteConversation = (id: string) =>
   call<unknown>('DELETE', `/conversations/${encodeURIComponent(id)}`);
 
+/** The server's answer to a decision. `result` is only present once the action has executed. */
+export interface DecisionResult {
+  id: string;
+  status: string;
+  result?: unknown;
+}
+
 export const decideApproval = (
   id: string,
   decision: 'approve' | 'reject',
   proof: { payload_hash: string; nonce: string; sig: string },
-) => call<{ id: string; status: string }>('POST', `/approvals/${id}/${decision}`, { body: proof });
+) => call<DecisionResult>('POST', `/approvals/${id}/${decision}`, { body: proof });
+
+export interface MailAddress {
+  name: string;
+  addr: string;
+}
+
+export interface MailAttachment {
+  name: string;
+  size: number;
+  mime: string;
+}
+
+/** One mail as the agent returns it: plain-text body, attachment metadata only. */
+export interface MailMessage {
+  account: string;
+  id: string;
+  thread_id: string;
+  from: MailAddress;
+  to: MailAddress[];
+  cc: MailAddress[];
+  date: string;
+  subject: string;
+  labels: string[];
+  category: string | null;
+  reason: string | null;
+  body: string;
+  body_truncated: boolean;
+  attachments: MailAttachment[];
+  /** "stored": Gmail was unreachable, so cc and attachments may be incomplete. */
+  source: 'live' | 'stored';
+}
+
+export const getMailMessage = (account: string, id: string) =>
+  call<MailMessage>('GET', `/mail/${encodeURIComponent(account)}/${encodeURIComponent(id)}`);
 
 export const getToday = () => call<Today>('GET', '/today');
 

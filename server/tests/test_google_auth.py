@@ -11,7 +11,7 @@ from agent.connectors.google_auth import (
     CLASSROOM_COURSEWORK,
     CLASSROOM_MATERIALS,
     CLIENT_SECRET_NAME,
-    DRIVE_FILE,
+    DRIVE,
     DRIVE_READONLY,
     GMAIL_MODIFY,
     IDENTITY_SCOPES,
@@ -99,7 +99,7 @@ def test_scopes_for_rejects_unknown_service() -> None:
 
 
 def test_scopes_for_is_stable_and_deduplicated() -> None:
-    assert scopes_for(["drive", "gmail", "drive"]) == (DRIVE_READONLY, DRIVE_FILE, GMAIL_MODIFY)
+    assert scopes_for(["drive", "gmail", "drive"]) == (DRIVE_READONLY, DRIVE, GMAIL_MODIFY)
 
 
 def test_merged_scopes_keeps_previous_grants() -> None:

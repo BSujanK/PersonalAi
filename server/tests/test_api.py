@@ -219,7 +219,7 @@ def test_full_flow_pair_chat_approve_executes() -> None:
     }
     resp = api.client.post(f"/approvals/{item['id']}/approve", headers=headers, json=payload)
     assert resp.status_code == 200
-    assert resp.json() == {"id": item["id"], "status": "executed"}
+    assert resp.json() == {"id": item["id"], "status": "executed", "result": {"sent": True}}
     assert api.executed == [SEND]
     replay = api.client.post(f"/approvals/{item['id']}/approve", headers=headers, json=payload)
     assert replay.status_code == 409

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -10,6 +12,7 @@ from agent.connectors.drive import DriveFileNotFound
 from agent.connectors.drive_google import GoogleDriveApi, build_drive_api
 from agent.connectors.google_auth import (
     CLIENT_SECRET_NAME,
+    DRIVE,
     DRIVE_FILE,
     DRIVE_READONLY,
     GoogleAuth,
@@ -135,15 +138,34 @@ def test_build_requires_drive_scopes() -> None:
 
 
 def test_build_with_both_scopes() -> None:
-    api = build_drive_api(ACCOUNT, GoogleAuth(_keystore([DRIVE_READONLY, DRIVE_FILE])))
+    api = build_drive_api(ACCOUNT, GoogleAuth(_keystore([DRIVE_READONLY, DRIVE])))
     assert isinstance(api, GoogleDriveApi)
 
 
-def test_module_has_no_share_delete_or_update_calls() -> None:
+def test_old_drive_file_token_needs_reconsent() -> None:
+    # Tokens granted before drive_share only carry drive.file; the owner must re-run setup once.
+    with pytest.raises(GoogleNotConfigured):
+        build_drive_api(ACCOUNT, GoogleAuth(_keystore([DRIVE_READONLY, DRIVE_FILE])))
+
+
+def test_module_has_no_delete_update_or_copy_calls() -> None:
     from pathlib import Path
 
     import agent.connectors.drive_google as module
 
     source = Path(module.__file__).read_text(encoding="utf-8")
-    for forbidden in ("permissions", ".delete(", ".update(", ".copy(", "emptyTrash"):
+    for forbidden in (".delete(", ".update(", ".copy(", "emptyTrash"):
         assert forbidden not in source
+    # Permissions are only ever created, in share(), never listed, changed or removed.
+    assert source.count("permissions()") == 1
+    assert "permissions().create(" in source
+
+
+def test_only_the_drive_share_executor_calls_share() -> None:
+    agent_dir = Path(__file__).resolve().parent.parent / "agent"
+    callers = sorted(
+        str(path.relative_to(agent_dir).as_posix())
+        for path in agent_dir.rglob("*.py")
+        if re.search(r"\.share\(", path.read_text(encoding="utf-8"))
+    )
+    assert callers == ["outbound/drive_tools.py"]

@@ -54,13 +54,19 @@ class FileRoots:
                 return path.parts[len(base) :]
         return None
 
-    def resolve_inside(self, path: str) -> Path:
+    def resolve_inside(self, path: str, *, any_type: bool = False) -> Path:
+        """The real path of a file inside an allowed folder, else ``FileAccessDenied``.
+
+        Hidden files and folders are refused. Only text-extractable types are allowed unless
+        ``any_type`` (attachments and uploads, which never reach the model as text).
+        """
         try:
             resolved = Path(path).resolve(strict=True)
             relative = self._relative(resolved)
             if relative is None or any(part.startswith(".") for part in relative):
                 raise FileAccessDenied("path is not allowed")
-            if not resolved.is_file() or resolved.suffix.lower() not in SUPPORTED_SUFFIXES:
+            supported = any_type or resolved.suffix.lower() in SUPPORTED_SUFFIXES
+            if not resolved.is_file() or not supported:
                 raise FileAccessDenied("path is not allowed")
             if resolved.stat().st_size > MAX_FILE_BYTES:
                 raise FileAccessDenied("path is not allowed")

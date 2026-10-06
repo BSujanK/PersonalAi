@@ -4,10 +4,11 @@ Everything goes through :class:`~agent.golive.system.System`, so tests drive it 
 never touch the real scheduler or processes. Windows only: process discovery uses CIM and the
 scheduled task is the one ``scripts/install_task.ps1`` registers.
 
-Why this exists: stopping the scheduled task kills only its PowerShell host. The task now ties the
-server to that host (``scripts/run_agent.ps1``), but a server started by an older install, or by
-hand in a terminal, can still be left running with stale code and the port taken, so the next
-start exits with code 3. ``restart`` stops every ``agent serve`` of this user, then starts the task.
+Why this exists: stopping the scheduled task kills only its launcher. The task now ties the
+server to its supervisor (``agent supervise``, a job object), but a server started by an older
+install, or by hand in a terminal, can still be left running with stale code and the port taken, so
+the next start exits with code 3. ``restart`` stops every ``agent serve`` of this user, then
+starts the task.
 """
 
 from __future__ import annotations

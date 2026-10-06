@@ -11,7 +11,7 @@ from agent.api.auth import require_device
 from agent.core import policy
 from agent.core.approvals import ApprovalEngine, ApprovalError
 from agent.core.policy import ApprovalRequest
-from agent.store.models import Device, PendingAction
+from agent.store.models import ActionStatus, Device, PendingAction
 
 router = APIRouter()
 
@@ -52,7 +52,7 @@ def get_approval(action_id: str, request: Request) -> dict[str, Any]:
 
 def _decide(
     decision: str, action_id: str, body: DecisionBody, request: Request, device: Device
-) -> dict[str, str]:
+) -> dict[str, Any]:
     engine: ApprovalEngine = request.app.state.approvals
     req = ApprovalRequest(action_id, decision, body.payload_hash, body.nonce, body.sig)
     try:
@@ -65,7 +65,11 @@ def _decide(
         else:
             status = 403
         raise HTTPException(status_code=status, detail=err.code) from None
-    return {"id": action.id, "status": action.status.value}
+    response: dict[str, Any] = {"id": action.id, "status": action.status.value}
+    if action.status is ActionStatus.EXECUTED:
+        # Only the paired phone sees this (e.g. a share link); it is never sent to the LLM.
+        response["result"] = engine.result(action.id)
+    return response
 
 
 @router.post("/approvals/{action_id}/approve")
@@ -74,7 +78,7 @@ def approve(
     body: DecisionBody,
     request: Request,
     device: Annotated[Device, Depends(require_device)],
-) -> dict[str, str]:
+) -> dict[str, Any]:
     return _decide("approve", action_id, body, request, device)
 
 
@@ -84,5 +88,5 @@ def reject(
     body: DecisionBody,
     request: Request,
     device: Annotated[Device, Depends(require_device)],
-) -> dict[str, str]:
+) -> dict[str, Any]:
     return _decide("reject", action_id, body, request, device)

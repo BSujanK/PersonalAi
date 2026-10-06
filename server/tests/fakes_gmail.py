@@ -69,6 +69,7 @@ class FakeGmailApi:
         self.list_queries: list[str] = []
         self.batch_modify_calls: list[tuple[list[str], list[str], list[str]]] = []
         self.trash_calls: list[str] = []
+        self.sent: list[tuple[str, str | None]] = []  # (raw, thread_id)
 
     # --- test-side mutation ---------------------------------------------------------------
 
@@ -117,6 +118,17 @@ class FakeGmailApi:
 
     def list_message_ids(self, query: str, page_token: str | None) -> tuple[list[str], str | None]:
         self.list_queries.append(query)
+        if query.startswith("in:sent to:"):
+            wanted = query.removeprefix("in:sent to:").strip('"')
+            return [
+                i
+                for i, m in sorted(self.messages.items())
+                if "SENT" in m["labelIds"]
+                and any(
+                    h["name"] in ("To", "Cc") and wanted in h["value"].lower()
+                    for h in m["payload"]["headers"]
+                )
+            ], None
         ids = sorted(self.messages)
         start = int(page_token or 0)
         end = start + self.page_size
@@ -151,3 +163,7 @@ class FakeGmailApi:
         self.trash_calls.append(message_id)
         self.add_label(message_id, "TRASH")
         self.remove_label(message_id, "INBOX")
+
+    def send(self, raw: str, thread_id: str | None) -> dict[str, Any]:
+        self.sent.append((raw, thread_id))
+        return {"id": f"sent-{len(self.sent)}", "threadId": thread_id or f"t-sent-{len(self.sent)}"}

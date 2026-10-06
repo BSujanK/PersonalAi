@@ -13,6 +13,8 @@ TASK_NAME = "PersonalAi agent"
 _TAILSCALE_V4 = ipaddress.ip_network("100.64.0.0/10")
 _AC_INDEX = re.compile(r"Current AC Power Setting Index:\s*0x([0-9a-fA-F]+)")
 _STATUS = re.compile(r"^\s*Status:\s*(.+?)\s*$", re.MULTILINE)
+_LAST_RESULT = re.compile(r"^\s*Last Result:\s*(-?\d+|0x[0-9a-fA-F]+)\s*$", re.MULTILINE)
+_TASK_TO_RUN = re.compile(r"^\s*Task To Run:\s*(.+?)\s*$", re.MULTILINE)
 
 # The user runs these themselves; doctor and setup only print them.
 POWER_FIX_COMMANDS = (
@@ -51,6 +53,27 @@ def scheduled_task(system: System, name: str = TASK_NAME) -> TaskState:
         return TaskState(exists=False)
     match = _STATUS.search(result.stdout)
     return TaskState(exists=True, status=match.group(1) if match else None)
+
+
+@dataclass(frozen=True)
+class TaskRun:
+    """What ``schtasks /V`` says about the last run; ``None`` fields when not readable."""
+
+    last_result: int | None  # unsigned 32-bit exit code (0xC000013A, not -1073741510)
+    command: str | None  # "Task To Run"
+
+
+def scheduled_task_run(system: System, name: str = TASK_NAME) -> TaskRun | None:
+    """``None`` if the task is missing or ``schtasks`` fails."""
+    result = system.run(["schtasks", "/Query", "/TN", name, "/FO", "LIST", "/V"])
+    if result.returncode != 0:
+        return None
+    code = _LAST_RESULT.search(result.stdout)
+    command = _TASK_TO_RUN.search(result.stdout)
+    return TaskRun(
+        last_result=int(code.group(1), 0) & 0xFFFFFFFF if code else None,
+        command=command.group(1) if command else None,
+    )
 
 
 @dataclass(frozen=True)

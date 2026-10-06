@@ -24,6 +24,8 @@ class FakeDrive:
         self.export_calls: list[tuple[str, str]] = []
         self.search_calls: list[tuple[str | None, int]] = []
         self.created: list[tuple[str, str, bytes]] = []
+        self.parents: list[str | None] = []
+        self.shared: list[tuple[str, dict[str, Any], bool]] = []
 
     def search(self, query: str | None, limit: int) -> list[dict[str, Any]]:
         self.search_calls.append((query, limit))
@@ -52,9 +54,16 @@ class FakeDrive:
             raise ValueError("too big")
         return data
 
-    def create_file(self, name: str, mime: str, content: bytes) -> dict[str, Any]:
+    def create_file(
+        self, name: str, mime: str, content: bytes, parent: str | None = None
+    ) -> dict[str, Any]:
         self.created.append((name, mime, content))
-        return {"id": "created1"}
+        self.parents.append(parent)
+        return {"id": "created1", "name": name, "webViewLink": "https://drive.example.com/c1"}
+
+    def share(self, file_id: str, permission: dict[str, Any], notify: bool) -> dict[str, Any]:
+        self.shared.append((file_id, dict(permission), notify))
+        return {"id": f"perm{len(self.shared)}"}
 
 
 def _setup() -> tuple[ToolRegistry, FakeDrive]:

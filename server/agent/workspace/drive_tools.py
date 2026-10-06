@@ -134,7 +134,12 @@ def register_drive_tools(
     registry.register(
         Tool(
             name="drive_search",
-            description="Search Google Drive files by text. Returns names and ids, not contents.",
+            description=(
+                "Search Google Drive files by text. Returns account, id, name and type, not "
+                "contents. The account and id are what drive_read, drive_share, mail "
+                'attachments ({"source": "drive", "account": ..., "file_id": ...}) and '
+                "drive_upload's folder_id accept."
+            ),
             parameters={
                 "type": "object",
                 "properties": {

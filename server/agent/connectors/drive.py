@@ -24,6 +24,12 @@ class DriveApi(Protocol):
         """Raw content of a stored file. Raises ``ValueError`` if it exceeds ``max_bytes``."""
         ...
 
-    def create_file(self, name: str, mime: str, content: bytes) -> dict[str, Any]:
-        """Create a new private file owned by the account."""
+    def create_file(
+        self, name: str, mime: str, content: bytes, parent: str | None = None
+    ) -> dict[str, Any]:
+        """Create a new private file owned by the account, in ``parent`` (a folder) if given."""
+        ...
+
+    def share(self, file_id: str, permission: dict[str, Any], notify: bool) -> dict[str, Any]:
+        """Add one permission to a file. Only approved drive_share actions call it."""
         ...

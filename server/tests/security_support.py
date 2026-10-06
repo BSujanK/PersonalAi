@@ -9,6 +9,7 @@ and synthetic PII. The model is a recording fake that never sees a network.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
 from collections.abc import Callable, Sequence
@@ -35,6 +36,7 @@ from agent.mail.services import MailServices
 from agent.mail.store import MailStore
 from agent.mail.sync import MailSync
 from agent.mail.tools import register_mail_tools
+from agent.outbound.services import register_outbound_tools
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.keystore import KeyStore
@@ -297,6 +299,8 @@ class World:
         """Everything a WRITE tool could change outside the approval table."""
         return {
             "gmail_trash": list(self.gmail.trash_calls),
+            "gmail_sent": list(self.gmail.sent),
+            "drive_shared": list(self.drive.shared),
             "gmail_modify": list(self.gmail.batch_modify_calls),
             "gmail_labels": {k: list(v["labelIds"]) for k, v in self.gmail.messages.items()},
             "calendar_inserted": {a: list(c.inserted) for a, c in self.calendars.items()},
@@ -355,6 +359,7 @@ def build_world(
     patch.setattr(workspace_services, "build_classroom_api", lambda _a, _auth: classroom)
     patch.setattr(workspace_services, "build_drive_api", lambda _a, _auth: drive)
     workspace = setup_workspace(settings, db, db_key, registry, object(), clock)  # type: ignore[arg-type]
+    register_outbound_tools(registry, settings, mail, workspace.drive_api_for, workspace.file_roots)
 
     model = llm if llm is not None else RecordingLLM()
     app = create_app(
@@ -405,8 +410,15 @@ def seed_everything(world: World) -> None:
     world.sync_mail()
     world.post_sms()
 
-    world.drive.meta["drv1"] = {"name": "Plan.txt", "mimeType": "text/plain"}
-    world.drive.blobs["drv1"] = injection("drive").encode()
+    drive_blob = injection("drive").encode()
+    world.drive.meta["drv1"] = {
+        "name": "Plan.txt",
+        "mimeType": "text/plain",
+        "size": str(len(drive_blob)),
+        "md5Checksum": hashlib.md5(drive_blob, usedforsecurity=False).hexdigest(),
+        "webViewLink": "https://drive.example.com/drv1",
+    }
+    world.drive.blobs["drv1"] = drive_blob
     (world.files_root / "notes.txt").write_text(injection("local-file"), encoding="utf-8")
     assert world.workspace.file_index is not None
     world.workspace.file_index.refresh()

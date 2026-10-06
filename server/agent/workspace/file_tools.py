@@ -49,7 +49,11 @@ def register_file_tools(registry: ToolRegistry, index: FileIndex, roots: FileRoo
     registry.register(
         Tool(
             name="files_search",
-            description="Search the owner's allowed local folders for files containing all words.",
+            description=(
+                "Search the owner's allowed local folders for files containing all words. Each "
+                "result's path is what files_read, mail_send/mail_reply attachments "
+                '({"source": "local", "path": ...}) and drive_upload accept.'
+            ),
             parameters={
                 "type": "object",
                 "properties": {

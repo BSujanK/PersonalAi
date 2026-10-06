@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import json
+import logging
+import logging.handlers
+import sys
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 import pytest
@@ -255,3 +259,99 @@ def test_doctor_and_setup_subcommands_dispatch(monkeypatch: pytest.MonkeyPatch) 
     assert main_module.main(["doctor", "--json"]) == 0
     assert main_module.main(["setup", "--redo", "pair", "--redo", "power"]) == 0
     assert seen == [("doctor", True), ("setup", ["pair", "power"])]
+
+
+@pytest.fixture
+def clean_agent_logger() -> Iterator[logging.Logger]:
+    logger = logging.getLogger("agent")
+    before = list(logger.handlers)
+    logger.handlers[:] = []
+    yield logger
+    for handler in logger.handlers:
+        handler.close()
+    logger.handlers[:] = before
+
+
+def test_serve_logs_to_a_rotating_file_next_to_the_database(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, clean_agent_logger: logging.Logger
+) -> None:
+    monkeypatch.setenv("PERSONALAI_DB_PATH", str(tmp_path / "data" / "agent.db"))
+    monkeypatch.setenv("PERSONALAI_BIND_HOSTS", "127.0.0.1")
+    monkeypatch.setattr(main_module, "assert_secure_backend", lambda: None)
+    monkeypatch.setattr(uvicorn.Server, "run", lambda self: None)
+    assert main(["serve"]) == 0
+    assert main(["serve"]) == 0  # no duplicate handlers the second time
+    handlers = [
+        h
+        for h in clean_agent_logger.handlers
+        if isinstance(h, logging.handlers.RotatingFileHandler)
+    ]
+    assert len(handlers) == 1
+    assert Path(handlers[0].baseFilename) == (tmp_path / "data" / "agent.log").absolute()
+    assert (handlers[0].maxBytes, handlers[0].backupCount) == (1_000_000, 3)
+    handlers[0].flush()
+    text = (tmp_path / "data" / "agent.log").read_text(encoding="utf-8")
+    assert text.count("server starting: hosts=1 port=8765") == 2
+
+
+def test_serve_without_stderr_still_logs_to_the_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, clean_agent_logger: logging.Logger
+) -> None:
+    monkeypatch.setattr(sys, "stderr", None)  # pythonw
+    settings = main_module.Settings.from_env({"PERSONALAI_DB_PATH": str(tmp_path / "agent.db")})
+    main_module._configure_logging(settings)
+    assert not any(type(h) is logging.StreamHandler for h in clean_agent_logger.handlers)
+    assert any(
+        isinstance(h, logging.handlers.RotatingFileHandler) for h in clean_agent_logger.handlers
+    )
+
+
+def test_serve_logs_a_crash_by_type_only_and_reraises(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    clean_agent_logger: logging.Logger,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setenv("PERSONALAI_DB_PATH", str(tmp_path / "agent.db"))
+    monkeypatch.setattr(main_module, "assert_secure_backend", lambda: None)
+
+    def boom(self: uvicorn.Server) -> None:
+        raise RuntimeError("secret detail")
+
+    monkeypatch.setattr(uvicorn.Server, "run", boom)
+    monkeypatch.setenv("PERSONALAI_BIND_HOSTS", "127.0.0.1")
+    caplog.set_level(logging.INFO, logger="agent")
+    with pytest.raises(RuntimeError):
+        main(["serve"])
+    assert "server crashed: RuntimeError" in caplog.text
+    assert "secret detail" not in caplog.text
+
+
+def test_supervise_subcommand_runs_the_server_under_the_supervisor(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("PERSONALAI_DB_PATH", str(tmp_path / "data" / "agent.db"))
+    monkeypatch.setattr(sys, "platform", "win32")
+    seen: list[tuple[list[str], Path, Path]] = []
+
+    def fake_supervise(command: Sequence[str], cwd: Path, log_path: Path) -> int:
+        seen.append((list(command), cwd, log_path))
+        return 7
+
+    monkeypatch.setattr(main_module, "supervise", fake_supervise)
+    assert main(["supervise"]) == 7
+    ((command, cwd, log_path),) = seen
+    assert command[1:] == ["-m", "agent", "serve"]
+    assert cwd == main_module.SERVER_DIR
+    assert log_path == tmp_path / "data" / "agent.log"
+
+
+def test_supervise_is_windows_only(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        main_module, "supervise", lambda *a, **k: pytest.fail("no supervisor off Windows")
+    )
+    assert main(["supervise"]) == 1
+    assert "only available on Windows" in capsys.readouterr().err

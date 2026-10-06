@@ -5,6 +5,10 @@ Usage: python scripts/setup_google_oauth.py --account you@example.com
 
 Scopes are added incrementally: services already authorised for the account are kept. Prints only
 the account address and the service names authorised.
+
+"drive" asks for full Drive access (``auth/drive``), which drive_share needs to share files the
+agent did not create. Accounts authorised before that only have ``drive.file``: re-run once with
+``--services drive`` (``agent doctor`` says so). Every Drive change is still an approved action.
 """
 
 from __future__ import annotations
@@ -59,6 +63,11 @@ def main(argv: list[str]) -> int:  # pragma: no cover - interactive
         print(str(exc), file=sys.stderr)
         return 2
 
+    if "drive" in services:
+        print(
+            "Drive asks for full access to your Drive so the agent can share files you pick. "
+            "It still cannot change, share or upload anything without your approval on the phone."
+        )
     # Google also returns previously granted scopes, which oauthlib would otherwise reject.
     os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
     flow = InstalledAppFlow.from_client_config(

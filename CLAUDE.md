@@ -13,6 +13,8 @@ A private personal agent that runs on the owner's Windows laptop. It reads Gmail
 
    Never add a code path, flag, or "auto-approve" setting that bypasses this.
 
+   **Sending and sharing.** `mail_send`, `mail_reply`, `drive_upload` and `drive_share` exist and are always WRITE tools; anything that sends, shares or uploads must be one too. Their previews must show everything that leaves the account: every recipient (To, Cc, Bcc, share emails) with addresses never seen in the owner's sent mail or outside the owner's domains marked NEW/EXTERNAL, every attachment with name, size and source, and the share role and link scope ("anyone with the link" only when the tool argument explicitly asks, with a prominent warning). The tool's `prepare` step pins recipients and attachment checksums into the payload, so the executor sends exactly what was previewed and fails if a file changed.
+
    **How the server verifies the biometric step.** The server cannot see a fingerprint, so it never accepts a field like `biometric_ok: true`. Instead:
    - At pairing, the server issues a second secret, the *approval key* (32 random bytes). The server stores it in the keyring. The phone stores it in `expo-secure-store` with `requireAuthentication: true`, so it can only be read after a biometric unlock.
    - To approve or reject, the phone sends `sig = HMAC-SHA256(approval_key, action_id | payload_hash | nonce | decision)`.

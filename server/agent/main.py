@@ -7,6 +7,7 @@ import getpass
 import ipaddress
 import json
 import logging
+import logging.handlers
 import sys
 import threading
 from collections.abc import Callable, Sequence
@@ -33,12 +34,14 @@ from agent.golive.doctor import run_doctor
 from agent.golive.probes import TASK_NAME
 from agent.golive.service import restart_server
 from agent.golive.setup import STEP_IDS, ConsolePrompter, run_setup
+from agent.golive.supervisor import server_command, supervise
 from agent.golive.system import RealSystem
 from agent.mail.classify import MailClassifier, build_classifier_llm
 from agent.mail.services import MailServices, cached_api_factory
 from agent.mail.store import MailStore
 from agent.mail.sync import MailSync, sync_and_record
 from agent.mail.tools import register_mail_tools
+from agent.outbound.services import register_outbound_tools
 from agent.scheduler import (
     DEADLINE_JOB_ID,
     FILE_INDEX_JOB_ID,
@@ -59,7 +62,8 @@ SERVER_DIR = Path(__file__).resolve().parents[1]
 
 
 def _refuse(message: str) -> int:
-    print(f"refused: {message}", file=sys.stderr)
+    if sys.stderr is not None:  # None under pythonw
+        print(f"refused: {message}", file=sys.stderr)
     return EXIT_REFUSED
 
 
@@ -121,18 +125,61 @@ def _background_jobs(
     return jobs
 
 
-def _configure_logging() -> None:
-    """INFO for the agent's own loggers (counts and routes only, never content), to stderr."""
+def _log_path(settings: Settings) -> Path:
+    return settings.db_path.parent / "agent.log"
+
+
+def _configure_logging(settings: Settings) -> None:
+    """INFO for the agent's own loggers (counts and routes only, never content).
+
+    Goes to stderr (when there is one: ``pythonw`` has none) and to a rotating ``agent.log`` next
+    to the database, which is what a console-less scheduled task leaves to debug with.
+    """
     logger = logging.getLogger("agent")
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    log_path = _log_path(settings)
+    wanted: list[logging.Handler] = []
+    if sys.stderr is not None and not any(
+        type(h) is logging.StreamHandler for h in logger.handlers
+    ):
+        wanted.append(logging.StreamHandler())
+    if not any(
+        isinstance(h, logging.handlers.RotatingFileHandler)
+        and Path(h.baseFilename) == log_path.absolute()
+        for h in logger.handlers
+    ):
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        wanted.append(
+            logging.handlers.RotatingFileHandler(
+                log_path, maxBytes=1_000_000, backupCount=3, encoding="utf-8", delay=True
+            )
+        )
+    for handler in wanted:
+        handler.setFormatter(formatter)
         logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
 
+def _supervise(settings: Settings) -> int:
+    if sys.platform != "win32":
+        if sys.stderr is not None:
+            print(
+                "supervise is only available on Windows (it needs a job object).", file=sys.stderr
+            )
+        return 1
+    return supervise(server_command(), SERVER_DIR, _log_path(settings))
+
+
 def _serve(settings: Settings) -> int:
-    _configure_logging()
+    _configure_logging(settings)
+    try:
+        return _run_server(settings)
+    except Exception as exc:
+        logging.getLogger("agent").error("server crashed: %s", type(exc).__name__)
+        raise
+
+
+def _run_server(settings: Settings) -> int:
     registry = ToolRegistry()
     mail: MailServices | None = None
     try:
@@ -147,8 +194,13 @@ def _serve(settings: Settings) -> int:
         if settings.mail_accounts:
             mail = _setup_mail(settings, db, db_key, google_auth, registry, finance)
         workspace = setup_workspace(settings, db, db_key, registry, google_auth, utcnow)
+        register_outbound_tools(
+            registry, settings, mail, workspace.drive_api_for, workspace.file_roots
+        )
     except (InsecureKeyringError, UnsafeBindAddress, ValueError) as exc:
+        logging.getLogger("agent").error("server refused to start: %s", type(exc).__name__)
         return _refuse(str(exc))
+    logging.getLogger("agent").info("server starting: hosts=%d port=%d", len(hosts), settings.port)
     app = create_app(
         settings, db=db, keystore=keystore, llm=llm, registry=registry, mail=mail, finance=finance
     )
@@ -378,6 +430,10 @@ def main(
         "(run this after updating the code)",
     )
     restart.add_argument("--task", default=TASK_NAME, help=argparse.SUPPRESS)
+    sub.add_parser(
+        "supervise",
+        help="run the server under a console-less supervisor (used by the scheduled task)",
+    )
     args = parser.parse_args(argv)
     if args.command == "setup":
         return _setup(args.redo)
@@ -387,6 +443,8 @@ def main(
         settings = Settings.from_env()
     except ValueError as exc:
         return _refuse(f"invalid configuration: {exc}")
+    if args.command == "supervise":
+        return _supervise(settings)
     if args.command == "doctor":
         return _doctor(settings, args.json)
     if args.command == "pair":

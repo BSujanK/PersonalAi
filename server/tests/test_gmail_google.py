@@ -151,13 +151,22 @@ def test_build_uses_shared_credential_from_keyring() -> None:
     assert credentials.refresh_token == "rt"
 
 
-def test_no_code_calls_a_gmail_send_endpoint() -> None:
+def test_only_the_approved_send_path_reaches_gmail_send() -> None:
+    """messages.send lives only in GoogleGmailApi.send; only mail_send/mail_reply call it."""
     agent_dir = Path(__file__).resolve().parent.parent / "agent"
     endpoint = re.compile(r"\b(messages|drafts)\(\)\s*\.\s*send\b")
-    method = re.compile(r"""["']send["']""")
-    offenders = [
-        str(path.relative_to(agent_dir))
+    drafts = re.compile(r"\bdrafts\(\)")
+    sources = {
+        path.relative_to(agent_dir).as_posix(): path.read_text(encoding="utf-8")
         for path in agent_dir.rglob("*.py")
-        if endpoint.search(text := path.read_text(encoding="utf-8")) or method.search(text)
+    }
+    assert sorted(p for p, text in sources.items() if endpoint.search(text)) == [
+        "connectors/gmail_google.py"
     ]
-    assert offenders == []
+    assert [p for p, text in sources.items() if drafts.search(text)] == []
+    callers = sorted(
+        p
+        for p, text in sources.items()
+        if re.search(r"\.send\(", text) and p != "connectors/gmail_google.py"
+    )
+    assert callers == ["outbound/mail_tools.py"]

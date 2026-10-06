@@ -5,6 +5,7 @@ import { getApproval, type Approval } from '../../lib/api';
 import {
   decideWithBiometrics,
   outcomeOf,
+  resultLink,
   type ApprovalOutcome,
   type Decision,
 } from '../../lib/approvalFlow';
@@ -13,6 +14,7 @@ import { onRefresh } from '../../lib/refreshBus';
 import { toolLabel } from '../../lib/toolLabels';
 import { fontFamily, size, useTheme, useThemedStyles, type Palette } from '../../theme';
 import { Icon, type IconName } from '../Icon';
+import { ResultLink } from '../ResultLink';
 import { Button, ErrorText } from '../ui';
 
 const makeStyles = (p: Palette) => ({
@@ -67,6 +69,7 @@ export function ApprovalCard({ actionId }: { actionId: string }) {
   const [busy, setBusy] = useState<Decision | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [decidedStatus, setDecidedStatus] = useState<string | null>(null);
+  const [link, setLink] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const mounted = useRef(true);
 
@@ -110,6 +113,7 @@ export function ApprovalCard({ actionId }: { actionId: string }) {
       const result = await decideWithBiometrics(approval, decision);
       if (mounted.current) {
         setDecidedStatus(result.status);
+        setLink(resultLink(result.result));
         reload();
       }
     } catch (e) {
@@ -180,6 +184,7 @@ export function ApprovalCard({ actionId }: { actionId: string }) {
             />
             <Text style={styles.resultText}>{RESULT[outcome].text}</Text>
           </View>
+          {outcome === 'approved' && link ? <ResultLink link={link} /> : null}
           <ErrorText message={error} />
         </View>
       ) : (

@@ -1,10 +1,11 @@
 import { useCallback, useState } from 'react';
 import { Text, View } from 'react-native';
 
+import { ResultLink } from '../../src/components/ResultLink';
 import { Body, Button, Card, ErrorText } from '../../src/components/ui';
 import { Screen } from '../../src/components/Screen';
 import { listApprovals, type Approval } from '../../src/lib/api';
-import { decideWithBiometrics } from '../../src/lib/approvalFlow';
+import { decideWithBiometrics, resultLink } from '../../src/lib/approvalFlow';
 import { errorMessage, timeLeft } from '../../src/lib/format';
 import { toolLabel } from '../../src/lib/toolLabels';
 import { usePolling } from '../../src/lib/usePolling';
@@ -32,6 +33,7 @@ export default function Approvals() {
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [links, setLinks] = useState<{ id: string; tool: string; link: string }[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -54,7 +56,9 @@ export default function Approvals() {
     setBusyId(item.id);
     setError(null);
     try {
-      await decideWithBiometrics(item, decision); // also refreshes every screen
+      const result = await decideWithBiometrics(item, decision); // also refreshes every screen
+      const link = resultLink(result.result);
+      if (link) setLinks((prev) => [{ id: item.id, tool: item.tool_name, link }, ...prev]);
     } catch (e) {
       // A cancelled or failed biometric prompt lands here too; nothing was sent in that case.
       setError(errorMessage(e));
@@ -66,6 +70,13 @@ export default function Approvals() {
   return (
     <Screen title="Approvals" menu refreshing={refreshing} onRefresh={() => void refresh()}>
       <ErrorText message={error} />
+      {links.map(({ id, tool, link }) => (
+        <Card key={`done:${id}`}>
+          <Text style={styles.tool}>{toolLabel(tool)}</Text>
+          <Body muted>Approved and done.</Body>
+          <ResultLink link={link} />
+        </Card>
+      ))}
       {items?.length === 0 ? <Body muted>Nothing waiting for approval.</Body> : null}
       {items?.map((item) => (
         <Card key={item.id}>
