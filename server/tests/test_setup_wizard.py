@@ -20,6 +20,7 @@ from agent.golive.system import NOT_FOUND, CommandResult, HttpResult
 from agent.store.keystore import KeyStore
 
 KEY = "nvapi-FAKEKEY1234567890"
+TAVILY_KEY = "tvly-FAKEKEY1234567890"
 MODELS = ["vendor/model-a", "vendor/model-b", "vendor/model-c"]
 TAILSCALE_IP = "100.101.102.103"
 FORBIDDEN_POWER = ("/change", "/setacvalueindex", "/setactive")
@@ -220,6 +221,8 @@ class Harness:
             ("confirm", "uv sync", True),
             ("secret", "NVIDIA API key", KEY),
             ("confirm", "Store the key", True),
+            ("secret", "Tavily API key", TAVILY_KEY),
+            ("confirm", "Store the key", True),
             ("confirm", "eval_models", True),
             ("ask", "Model ids to evaluate", "vendor/model-a,vendor/model-b"),
             ("ask", "PRIMARY", "vendor/model-a"),
@@ -316,6 +319,7 @@ def test_first_run_on_blank_machine(harness: Harness) -> None:
         "PERSONALAI_BIND_HOSTS": f"127.0.0.1,{TAILSCALE_IP}",
     }
     assert harness.keystore.get("nvidia_api_key") == KEY
+    assert harness.keystore.get("tavily_api_key") == TAVILY_KEY
     assert any("delete the downloaded client json" in t.lower() for t in prompter.said)
 
 
@@ -327,6 +331,7 @@ def test_key_never_leaks(harness: Harness) -> None:
     assert not any(KEY in part for argv in system.interactive + system.runs for part in argv)
     assert not any(KEY in name or KEY in value for name, value in system.set_calls)
     assert not any(KEY in text for text in prompter.said + prompter.asked)
+    assert not any(TAVILY_KEY in text for text in prompter.said + prompter.asked)
     assert not any(KEY in value for value in os.environ.values())
     assert system.headers  # the key was used, but only in the request header
 
@@ -368,6 +373,29 @@ def test_redo_reruns_only_that_step(harness: Harness) -> None:
     assert system.interactive == []
 
 
+def test_tavily_key_is_optional_and_redoable(harness: Harness) -> None:
+    harness.complete_first_run()
+    assert harness.keystore.get("tavily_api_key") == TAVILY_KEY
+    # Already stored: not asked again unless the step is redone.
+    harness.system.interactive.clear()
+    code, prompter = harness.run([("confirm", "Add or update", False)])
+    assert code == 0
+    assert any("Tavily API key: already done" in t for t in prompter.said)
+    # Redo with an odd-looking key: warned, then replaced.
+    code, prompter = harness.run(
+        [
+            ("secret", "Tavily API key", "not-a-tavily-key"),
+            ("confirm", "Store the key", True),
+            ("confirm", "Add or update", False),
+        ],
+        redo=["tavily_key"],
+    )
+    assert code == 0
+    assert any("tvly-" in t for t in prompter.said)
+    assert harness.keystore.get("tavily_api_key") == "not-a-tavily-key"
+    assert not any("not-a-tavily-key" in t for t in prompter.said + prompter.asked)
+
+
 def test_unknown_redo_step_is_refused(harness: Harness) -> None:
     code, prompter = harness.run([], redo=["nope"])
     assert code == 2
@@ -379,6 +407,7 @@ def test_declining_every_confirmation_changes_nothing(harness: Harness) -> None:
         ("confirm", "uv sync", False),
         ("secret", "NVIDIA API key", KEY),
         ("confirm", "Store the key", False),
+        ("secret", "Tavily API key", ""),
         ("confirm", "Pull the Ollama model", False),
         ("ask", "Local context size", "8192"),
         ("confirm", "context settings", False),
@@ -497,6 +526,7 @@ def test_bad_nvidia_listing_skips_models_without_leaking(harness: Harness) -> No
         ("confirm", "uv sync", False),
         ("secret", "NVIDIA API key", KEY),
         ("confirm", "Store the key", True),
+        ("secret", "Tavily API key", ""),
         ("confirm", "Pull the Ollama model", False),
         ("ask", "Local context size", "8192"),
         ("confirm", "context settings", False),

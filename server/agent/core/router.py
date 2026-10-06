@@ -147,6 +147,28 @@ GROUPS: tuple[ToolGroup, ...] = (
         _words(r"news", r"headlines?", r"articles?"),
         names=frozenset({"news_headlines"}),
     ),
+    ToolGroup(
+        "web",
+        _words(
+            r"search(?:es|ing)?",
+            r"web",
+            r"google",
+            r"look(?:ing)? up",
+            r"lookup",
+            r"latest",
+            r"internet",
+            r"online",
+            r"browse",
+            r"websites?",
+            r"hugging ?face",
+            r"hf",
+            r"models?",
+            r"releases?",
+            r"released",
+            r"trending",
+        ),
+        names=frozenset({"web_search", "web_read", "hf_models"}),
+    ),
 )
 
 

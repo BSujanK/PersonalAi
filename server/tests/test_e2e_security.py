@@ -28,6 +28,7 @@ from tests.security_support import (
     RAW_PII,
     SMS_NAME,
     SMS_TEXTS,
+    WEB_TOP_URL,
     Accounts,
     World,
     build_world,
@@ -258,11 +259,15 @@ def _read_args(world: World, a: Accounts) -> dict[str, dict[str, Any]]:
         "drive_search": {"query": "plan"},
         "files_read": {"path": str(world.files_root / "notes.txt")},
         "files_search": {"query": "ignore"},
+        "hf_models": {"task": "text-generation", "sort": "new"},
         "mail_digest": {},
         "mail_read": {"account": a.me, "message_id": "m-inj"},
         "mail_search": {"query": "urgent"},
         "spend_summary": {},
         "transactions": {"direction": "credit", "group_by": "counterparty"},
+        # web_read only accepts a URL that web_search returned earlier in the same turn.
+        "web_search": {"query": "nvidia blackwell gpu news"},
+        "web_read": {"url": WEB_TOP_URL},
     }
 
 
@@ -285,7 +290,7 @@ def test_every_read_tool_runs_and_no_raw_pii_reaches_the_model(world: World) -> 
     world.llm.script(discovery(), dynamic(everything), says("Here is your summary."))
     first = world.chat(
         "Summarise everything, including my accounts, mail, calendar events, courses, "
-        "files, drive documents and news headlines."
+        "files, drive documents, news headlines and a web search."
     )
     ran = {c.name for m in world.llm.received[-1] if m.tool_calls for c in m.tool_calls}
     assert set(read_tool_names(world)) <= ran  # every READ tool in the registry was called

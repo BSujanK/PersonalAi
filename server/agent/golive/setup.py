@@ -32,9 +32,11 @@ from agent.golive.system import System
 from agent.store.keystore import KeyStore
 
 NVIDIA_KEY_NAME = "nvidia_api_key"
+TAVILY_KEY_NAME = "tavily_api_key"
 STEP_IDS = (
     "prereqs",
     "nvidia_key",
+    "tavily_key",
     "models",
     "ollama",
     "google",
@@ -254,8 +256,25 @@ class _Wizard:
         self.keystore.set(NVIDIA_KEY_NAME, key)
         self.p.say("Key stored in the keyring.")
 
+    def tavily_key(self) -> None:
+        self._header(3, "Tavily API key (optional, for web search)")
+        if self.keystore.get(TAVILY_KEY_NAME) is not None and "tavily_key" not in self.redo:
+            self.p.say("✓ Tavily API key: already done (stored in the keyring)")
+            return
+        key = self.p.secret("Tavily API key for web search (input hidden, Enter to skip)")
+        if not key:
+            self.p.say("Skipped: web search needs a key (setup --redo tavily_key adds one later).")
+            return
+        if not key.startswith("tvly-"):
+            self.p.say("Warning: Tavily keys normally start with 'tvly-'. Check you copied it.")
+        if not self.p.confirm("Store the key in the OS keyring?", True):
+            self.p.say("Not stored.")
+            return
+        self.keystore.set(TAVILY_KEY_NAME, key)
+        self.p.say("Key stored in the keyring.")
+
     def models(self) -> None:
-        self._header(3, "Models")
+        self._header(4, "Models")
         settings = self._settings()
         if settings.model_primary and "models" not in self.redo:
             self.p.say(
@@ -331,7 +350,7 @@ class _Wizard:
             self.p.say(f"The evaluation exited with code {code}; carry on and choose anyway.")
 
     def ollama(self) -> None:
-        self._header(4, "Local model (Ollama)")
+        self._header(5, "Local model (Ollama)")
         settings = self._settings()
         pulled = probes.ollama_models(self.system, settings.ollama_base_url)
         if pulled is None:
@@ -385,7 +404,7 @@ class _Wizard:
         return found
 
     def google(self) -> None:
-        self._header(5, "Google accounts")
+        self._header(6, "Google accounts")
         authorised = self._authorised(self._settings())
         for account, services in authorised.items():
             self.p.say(f"  {account}: {', '.join(services) or 'no services'}")
@@ -468,7 +487,7 @@ class _Wizard:
             self._write_env(changes, f"Use {account} for these connectors?")
 
     def profile(self) -> None:
-        self._header(6, "Your profile")
+        self._header(7, "Your profile")
         settings = self._settings()
         if settings.owner_emails and "profile" not in self.redo:
             self.p.say("✓ Profile: already done (PERSONALAI_OWNER_EMAILS is set)")
@@ -492,7 +511,7 @@ class _Wizard:
         self._write_env(values, "Save your profile?")
 
     def network(self) -> None:
-        self._header(7, "Network")
+        self._header(8, "Network")
         addresses = probes.tailscale_ipv4(self.system)
         if not addresses:
             self.p.say("No Tailscale address found. Install Tailscale, sign in, then run setup")
@@ -510,7 +529,7 @@ class _Wizard:
         self._write_env({"PERSONALAI_BIND_HOSTS": value}, "Bind the server to these addresses?")
 
     def task(self) -> None:
-        self._header(8, "Background task")
+        self._header(9, "Background task")
         before = probes.scheduled_task(self.system)
         was_running = before.exists and before.status == "Running"
         written_before = bool(self.written)
@@ -555,7 +574,7 @@ class _Wizard:
             self.p.say(f"  {line}")
 
     def power(self) -> None:
-        self._header(9, "Power settings")
+        self._header(10, "Power settings")
         settings = probes.power_settings(self.system)
         if settings.ok and "power" not in self.redo:
             self.p.say("✓ Power settings: already done (no sleep or hibernate on AC)")
@@ -575,7 +594,7 @@ class _Wizard:
             self.p.say("Power settings still differ; fix them later (setup can be run again).")
 
     def pair(self) -> None:
-        self._header(10, "Phone pairing")
+        self._header(11, "Phone pairing")
         db_path = self._settings().db_path
         if not db_path.exists():
             self.p.say("The server has not started yet (no database). Start it, then run setup")
@@ -601,6 +620,7 @@ class _Wizard:
     def run(self) -> int:
         self.prereqs()
         self.nvidia_key()
+        self.tavily_key()
         self.models()
         self.ollama()
         self.google()

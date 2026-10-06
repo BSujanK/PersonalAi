@@ -32,6 +32,7 @@ from tests.conftest import InMemoryKeyring
 from tests.support import START, FakeClock
 
 NVIDIA_KEY = "nvapi-FAKEKEYVALUE0123456789"
+TAVILY_KEY = "tvly-FAKEKEYVALUE0123456789"
 ACCESS_TOKEN = "ya29.FAKE-ACCESS-TOKEN-VALUE"
 REFRESH_TOKEN = "1//FAKE-REFRESH-TOKEN-VALUE"
 ACCOUNT = "me@example.com"
@@ -220,6 +221,7 @@ def env(tmp_path: Path) -> Env:
     db_key = bytes(range(32))
     keystore.set_bytes("db_key", db_key)
     keystore.set("nvidia_api_key", NVIDIA_KEY)
+    keystore.set("tavily_api_key", TAVILY_KEY)
     keystore.set(CLIENT_SECRET_NAME, json.dumps({"installed": {"client_id": "id"}}))
     keystore.set(token_secret_name(ACCOUNT), _token(_all_scopes("gmail", "classroom", "calendar")))
     path = tmp_path / "agent.db"
@@ -277,6 +279,7 @@ def test_healthy_machine_passes_everything(env: Env) -> None:
         "keyring",
         "nvidia_key",
         "nvidia_models",
+        "tavily_key",
         "ollama",
         "ollama_context",
         f"google:{ACCOUNT}",
@@ -360,6 +363,23 @@ def test_nvidia_key(env: Env) -> None:
     assert (result.status, result.title) == ("fail", "NVIDIA key in keyring")
     assert "python -m agent setup" in result.fix
     assert "keyring set PersonalAi nvidia_api_key" in result.fix
+
+
+def test_tavily_key_is_optional(env: Env) -> None:
+    result = env.result("tavily_key")
+    assert (result.status, result.required, result.detail) == ("pass", False, "set")
+    assert TAVILY_KEY not in result.detail + result.fix
+    env.keystore.delete("tavily_api_key")
+    result = env.result("tavily_key")
+    assert (result.status, result.required) == ("warn", False)
+    assert result.fix == "uv run python -m agent setup --redo tavily_key"
+    assert env.doctor()[0] == 0  # a missing optional key never fails the doctor
+
+
+def test_tavily_key_skipped_when_web_tools_are_off(env: Env) -> None:
+    env.keystore.delete("tavily_api_key")
+    env.settings = replace(env.settings, web_tools=False)
+    assert env.result("tavily_key").status == "skip"
 
 
 def test_nvidia_models_skipped_without_key(env: Env) -> None:

@@ -41,6 +41,7 @@ from agent.store.sync_status import CLASSROOM, MAIL, SMS_INGEST, last_failure, l
 Status = Literal["pass", "fail", "warn", "skip"]
 
 NVIDIA_KEY_NAME = "nvidia_api_key"
+TAVILY_KEY_NAME = "tavily_api_key"
 DB_KEY_NAME = "db_key"
 _CRASHED = "the check could not run"
 _TAILSCALE_NETS = (
@@ -222,6 +223,23 @@ def _check_nvidia_models(ctx: _Ctx) -> CheckResult:
         )
     configured = [m for _, m, _ in wanted if m]
     return CheckResult("nvidia_models", title, "pass", True, ", ".join(configured))
+
+
+@_guard("tavily_key", "Tavily key in keyring (web search)", required=False)
+def _check_tavily_key(ctx: _Ctx) -> CheckResult:
+    title = "Tavily key in keyring (web search)"
+    if not ctx.settings.web_tools:
+        return CheckResult("tavily_key", title, "skip", False, "web tools are off")
+    if ctx.keystore.get(TAVILY_KEY_NAME):
+        return CheckResult("tavily_key", title, "pass", False, "set")
+    return CheckResult(
+        "tavily_key",
+        title,
+        "warn",
+        False,
+        "not set (web_search will say it is not configured)",
+        "uv run python -m agent setup --redo tavily_key",
+    )
 
 
 @_guard("ollama", "Ollama")
@@ -756,6 +774,7 @@ _CHECKS: tuple[_Check, ...] = (
     _check_keyring,
     _check_nvidia_key,
     _check_nvidia_models,
+    _check_tavily_key,
     _check_ollama,
     _check_ollama_context,
     _check_google,

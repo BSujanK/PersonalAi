@@ -73,6 +73,7 @@ from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.devices import list_devices, revoke_devices
 from agent.store.keystore import InsecureKeyringError, KeyStore, assert_secure_backend
+from agent.web.tools import register_web_tools
 from agent.workspace.services import WorkspaceServices, setup_workspace
 
 EXIT_REFUSED = 2
@@ -314,6 +315,8 @@ def _run_server(settings: Settings) -> int:
         proactive = _setup_proactive(
             settings, db, db_key, google_auth, registry, mail, workspace, hooks
         )
+        if settings.web_tools:
+            register_web_tools(registry, settings, keystore)
         register_outbound_tools(
             registry, settings, mail, workspace.drive_api_for, workspace.file_roots
         )
