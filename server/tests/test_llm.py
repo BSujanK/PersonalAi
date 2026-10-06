@@ -295,13 +295,40 @@ def test_primary_429_fails_over_to_fallback_without_sleeping() -> None:
     assert out.route == "fallback"
 
 
-def test_primary_503_exhausts_retries_then_fallback() -> None:
+def test_primary_503_fails_over_at_once_when_a_fallback_exists() -> None:
+    # A congested free-tier model must not stall the chat through retries and backoff.
     up = _Upstream(**{"prim-model": 503})
     sleeps: list[float] = []
     out = _routed(up, sleeps, model_fallback="fb-model").complete(_msgs("hello"), [])
-    assert up.models == ["prim-model"] * 4 + ["fb-model"]
-    assert sleeps == [1.0, 2.0, 4.0]
+    assert up.models == ["prim-model", "fb-model"]
+    assert sleeps == []
     assert out.route == "fallback"
+
+
+def test_slow_primary_times_out_once_then_fallback() -> None:
+    calls: list[str] = []
+    fallback = _Upstream()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        model = json.loads(request.content)["model"]
+        calls.append(model)
+        if model == "prim-model":
+            raise httpx.ReadTimeout("slow", request=request)
+        return fallback(request)
+
+    sleeps: list[float] = []
+    out = _routed(handler, sleeps, model_fallback="fb-model").complete(_msgs("hello"), [])
+    assert calls == ["prim-model", "fb-model"]
+    assert sleeps == []
+    assert out.route == "fallback"
+
+
+def test_last_cloud_route_still_retries_with_backoff() -> None:
+    up = _Upstream(**{"prim-model": 503})
+    sleeps: list[float] = []
+    _routed(up, sleeps).complete(_msgs("hello"), [])  # no fallback: primary is the last route
+    assert up.models[:4] == ["prim-model"] * 4
+    assert sleeps == [1.0, 2.0, 4.0]
 
 
 def test_primary_and_fallback_down_uses_local_ollama() -> None:
@@ -625,3 +652,22 @@ def test_router_stream_skips_local_over_limit_and_raises() -> None:
             messages, [], lambda _d: None, lambda: None
         )
     assert set(up.models) == {"prim-model"}
+
+
+def test_failed_primary_is_tried_last_until_its_cooldown_ends() -> None:
+    from agent.core.llm import ROUTE_COOLDOWN_SECONDS, ModelRouter
+
+    now = [1000.0]
+    up = _Upstream(**{"prim-model": 503})
+    router = _routed(up, model_fallback="fb-model")
+    assert isinstance(router, ModelRouter)
+    router._clock = lambda: now[0]
+    router.complete(_msgs("one"), [])
+    assert up.models == ["prim-model", "fb-model"]
+    up.models.clear()
+    router.complete(_msgs("two"), [])  # primary is cooling down: fallback goes first
+    assert up.models == ["fb-model"]
+    up.models.clear()
+    now[0] += ROUTE_COOLDOWN_SECONDS + 1
+    router.complete(_msgs("three"), [])  # cooldown over: primary is tried first again
+    assert up.models[0] == "prim-model"
