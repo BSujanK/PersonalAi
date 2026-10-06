@@ -48,6 +48,9 @@ class Settings:
     model_long: str = ""
     long_context_tokens: int = 32000
     local_context_tokens: int = 8192  # Ollama's context; longer prompts never go to local
+    # A cloud route that has another cloud route after it gets this long, once, before failing
+    # over: a congested free-tier model must not stall a chat for minutes of retries.
+    llm_failover_seconds: int = 20
     # Reasoning models (Nemotron, ...) otherwise put their thinking in the reply text.
     cloud_thinking: bool = False
     ollama_base_url: str = "http://127.0.0.1:11434/v1"
@@ -122,6 +125,10 @@ class Settings:
             local_context_tokens=_positive_int(
                 "PERSONALAI_LOCAL_CONTEXT_TOKENS",
                 e.get("PERSONALAI_LOCAL_CONTEXT_TOKENS", str(defaults.local_context_tokens)),
+            ),
+            llm_failover_seconds=_positive_int(
+                "PERSONALAI_LLM_FAILOVER_SECONDS",
+                e.get("PERSONALAI_LLM_FAILOVER_SECONDS", str(defaults.llm_failover_seconds)),
             ),
             cloud_thinking=e.get("PERSONALAI_CLOUD_THINKING", "").strip().lower()
             in ("1", "true", "on", "yes"),

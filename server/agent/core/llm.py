@@ -126,6 +126,10 @@ def estimate_tokens(messages: Sequence[ChatMessage], tools: Sequence[dict[str, A
     return math.ceil(chars / 4)
 
 
+DEFAULT_TIMEOUT_SECONDS = 60
+DEFAULT_MAX_RETRIES = 3
+
+
 class OpenAICompatClient:
     def __init__(
         self,
@@ -134,9 +138,9 @@ class OpenAICompatClient:
         model: str,
         *,
         http_client: httpx.Client | None = None,
-        max_retries: int = 3,
+        max_retries: int = DEFAULT_MAX_RETRIES,
         sleep: Callable[[float], None] = time.sleep,
-        timeout: float = 60,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
         retry_rate_limit: bool = True,
         extra_body: dict[str, Any] | None = None,
     ) -> None:
@@ -264,6 +268,9 @@ def cloud_extra_body(settings: Settings) -> dict[str, Any] | None:
     return None if settings.cloud_thinking else NO_THINKING
 
 
+ROUTE_COOLDOWN_SECONDS = 300
+
+
 class ModelRouter:
     """Routes each call across primary/long, fallback and local models.
 
@@ -277,11 +284,16 @@ class ModelRouter:
         keystore: KeyStore,
         http_client: httpx.Client | None,
         sleep: Callable[[float], None],
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._settings = settings
         self._keystore = keystore
         self._http_client = http_client
         self._sleep = sleep
+        self._clock = clock
+        # Cloud models that just failed: tried last until this monotonic time (circuit breaker),
+        # so a congested model does not cost every call of a multi-step turn its timeout.
+        self._down_until: dict[str, float] = {}
 
     def _build_chain(
         self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]
@@ -300,17 +312,23 @@ class ModelRouter:
         cloud = [(first, settings.model_long if first == "long" else settings.model_primary)]
         if settings.model_fallback and settings.model_fallback != cloud[0][1]:
             cloud.append(("fallback", settings.model_fallback))
+        now = self._clock()
+        cloud.sort(key=lambda route: self._down_until.get(route[1], 0.0) > now)  # stable
 
         chain: list[tuple[str, OpenAICompatClient, str]] = []
         for index, (name, model) in enumerate(cloud):
+            last = index == len(cloud) - 1
             client = OpenAICompatClient(
                 settings.nvidia_base_url,
                 key,
                 model,
                 http_client=self._http_client,
                 sleep=self._sleep,
-                retry_rate_limit=index == len(cloud) - 1,
+                retry_rate_limit=last,
                 extra_body=cloud_extra_body(settings),
+                # Only the last cloud route waits and retries; earlier ones get one short try.
+                timeout=DEFAULT_TIMEOUT_SECONDS if last else settings.llm_failover_seconds,
+                max_retries=DEFAULT_MAX_RETRIES if last else 0,
             )
             chain.append((name, client, model))
         if estimate <= settings.local_context_tokens:
@@ -338,9 +356,9 @@ class ModelRouter:
             try:
                 response = client.complete(messages, tools)
             except LLMUnavailable as exc:
-                self._log_failure(chain, hops, exc)
+                self._on_failure(chain, hops, exc)
                 continue
-            self._log_served(name, model, estimate, hops)
+            self._on_served(name, model, estimate, hops)
             return replace(response, route=name)
         raise LLMUnavailable("all routes failed")
 
@@ -365,16 +383,18 @@ class ModelRouter:
             except LLMUnavailable as exc:
                 if emitted:
                     on_reset()  # the client discards what this route already showed
-                self._log_failure(chain, hops, exc)
+                self._on_failure(chain, hops, exc)
                 continue
-            self._log_served(name, model, estimate, hops)
+            self._on_served(name, model, estimate, hops)
             return replace(response, route=name)
         raise LLMUnavailable("all routes failed")
 
-    @staticmethod
-    def _log_failure(
-        chain: list[tuple[str, OpenAICompatClient, str]], hops: int, exc: LLMUnavailable
+    def _on_failure(
+        self, chain: list[tuple[str, OpenAICompatClient, str]], hops: int, exc: LLMUnavailable
     ) -> None:
+        name, _, model = chain[hops]
+        if name != "local":
+            self._down_until[model] = self._clock() + ROUTE_COOLDOWN_SECONDS
         if hops + 1 < len(chain):
             log.warning(
                 "llm route=%s model=%s failed (%s), trying %s",
@@ -384,8 +404,8 @@ class ModelRouter:
                 chain[hops + 1][0],
             )
 
-    @staticmethod
-    def _log_served(name: str, model: str, estimate: int, hops: int) -> None:
+    def _on_served(self, name: str, model: str, estimate: int, hops: int) -> None:
+        self._down_until.pop(model, None)
         log.info("llm served route=%s model=%s est_tokens=%d hops=%d", name, model, estimate, hops)
 
 
