@@ -1,33 +1,30 @@
 import * as Clipboard from 'expo-clipboard';
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Alert, Linking, Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View, type TextStyle } from 'react-native';
 
+import { confirmOpen } from '../../lib/confirmLink';
 import { attr, cellAlign, isSafeLink, parseMarkdown, type MdNode } from '../../lib/markdown';
-import {
-  fontFamily,
-  MIN_TARGET,
-  type,
-  useThemedStyles,
-  type Palette,
-  type TypeName,
-} from '../../theme';
+import { fontFamily, MIN_TARGET, space, type, useThemedStyles, type Palette } from '../../theme';
 import { Icon } from '../Icon';
 
-// h1-h2 in the display serif, h3 down in the UI face (see `heading`/`headingSmall`).
-const HEADING_STYLE: Record<string, TypeName> = {
-  h1: 'title1',
-  h2: 'title2',
-  h3: 'title3',
-  h4: 'headline',
-  h5: 'headline',
-  h6: 'headline',
+// Headings in the display serif (Newsreader), kept modest so an answer reads as prose with
+// signposts, not a poster: h1 23, h2 20, h3 18. h4 and below are the UI face, semibold.
+const HEADING_STYLE: Record<string, TextStyle> = {
+  h1: type.title2,
+  h2: { ...type.title2, fontSize: 20, lineHeight: 26, letterSpacing: -0.25 },
+  h3: { ...type.title2, fontSize: 18, lineHeight: 24, letterSpacing: -0.2 },
+  h4: type.headline,
+  h5: type.headline,
+  h6: type.headline,
 };
+/** Bullets by nesting level: solid, hollow, square. */
+const BULLETS = ['•', '◦', '▪'] as const;
 const COPIED_MS = 1500;
 
 const makeStyles = (p: Palette) => ({
-  root: { gap: 10 },
-  paragraph: { ...type.body, color: p.text },
-  heading: { color: p.text, marginTop: 6 },
+  root: { gap: space.sm + space.xs },
+  paragraph: { ...type.body, color: p.text, fontVariant: ['tabular-nums' as const] },
+  heading: { color: p.text, marginTop: space.sm },
   strong: { fontFamily: fontFamily.bodySemiBold, fontWeight: 'normal' as const },
   em: { fontStyle: 'italic' as const },
   strike: { textDecorationLine: 'line-through' as const },
@@ -39,15 +36,23 @@ const makeStyles = (p: Palette) => ({
   },
   list: { gap: 6 },
   item: { flexDirection: 'row' as const, gap: 8 },
+  // The marker shares the body's line height, so it sits on the first line's baseline and the
+  // item text hangs to its right, including after it wraps.
   marker: {
     ...type.body,
     color: p.textMuted,
-    minWidth: 20,
+    minWidth: 22,
     textAlign: 'right' as const,
+    fontVariant: ['tabular-nums' as const],
   },
   itemBody: { flex: 1, gap: 6 },
-  quote: { borderLeftWidth: 3, borderLeftColor: p.border, paddingLeft: 12, gap: 8 },
-  rule: { height: 1, backgroundColor: p.border, marginVertical: 6 },
+  quote: {
+    borderLeftWidth: 3,
+    borderLeftColor: p.accent,
+    paddingLeft: space.sm + space.xs,
+    gap: 8,
+  },
+  rule: { height: 1, backgroundColor: p.separator, marginVertical: space.sm },
   code: { backgroundColor: p.muted, borderRadius: 12, overflow: 'hidden' as const },
   codeBar: {
     flexDirection: 'row' as const,
@@ -85,25 +90,18 @@ const makeStyles = (p: Palette) => ({
   cell: {
     flex: 1,
     minWidth: 104,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderRightWidth: 1,
     borderBottomWidth: 1,
     borderColor: p.border,
   },
-  cellText: { ...type.subheadline, color: p.text },
+  cellText: { ...type.subheadline, color: p.text, fontVariant: ['tabular-nums' as const] },
   cellHead: { fontFamily: fontFamily.bodySemiBold },
 });
 
 type Styles = ReturnType<typeof useStyles>;
 const useStyles = () => useThemedStyles(makeStyles);
-
-function confirmOpen(href: string) {
-  Alert.alert('Open link?', href, [
-    { text: 'Cancel', style: 'cancel' },
-    { text: 'Open', onPress: () => void Linking.openURL(href).catch(() => undefined) },
-  ]);
-}
 
 function renderInline(nodes: MdNode[], styles: Styles, keyPrefix = 'i'): ReactNode[] {
   return nodes.map((node, index) => {
@@ -208,6 +206,7 @@ function renderTable(node: MdNode, styles: Styles, key: string): ReactNode {
   return (
     <ScrollView
       key={key}
+      testID="md-table"
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={{ minWidth: '100%' }}
@@ -236,7 +235,7 @@ function renderTable(node: MdNode, styles: Styles, key: string): ReactNode {
   );
 }
 
-function renderBlocks(nodes: MdNode[], styles: Styles, keyPrefix = 'b'): ReactNode[] {
+function renderBlocks(nodes: MdNode[], styles: Styles, keyPrefix = 'b', depth = 0): ReactNode[] {
   return nodes.map((node, index) => {
     const key = `${keyPrefix}${index}`;
     switch (node.type) {
@@ -254,7 +253,7 @@ function renderBlocks(nodes: MdNode[], styles: Styles, keyPrefix = 'b'): ReactNo
             key={key}
             accessibilityRole="header"
             selectable
-            style={[type[HEADING_STYLE[tag] ?? 'headline'], styles.heading]}
+            style={[HEADING_STYLE[tag] ?? type.headline, styles.heading]}
           >
             {renderInline(node.children[0]?.children ?? [], styles)}
           </Text>
@@ -268,9 +267,11 @@ function renderBlocks(nodes: MdNode[], styles: Styles, keyPrefix = 'b'): ReactNo
           <View key={key} style={styles.list}>
             {node.children.map((item, i) => (
               <View key={`${key}-${i}`} style={styles.item}>
-                <Text style={styles.marker}>{ordered ? `${start + i}.` : '•'}</Text>
+                <Text style={styles.marker}>
+                  {ordered ? `${start + i}.` : BULLETS[Math.min(depth, BULLETS.length - 1)]}
+                </Text>
                 <View style={styles.itemBody}>
-                  {renderBlocks(item.children, styles, `${key}-${i}-`)}
+                  {renderBlocks(item.children, styles, `${key}-${i}-`, depth + 1)}
                 </View>
               </View>
             ))}
@@ -279,8 +280,8 @@ function renderBlocks(nodes: MdNode[], styles: Styles, keyPrefix = 'b'): ReactNo
       }
       case 'blockquote':
         return (
-          <View key={key} style={styles.quote}>
-            {renderBlocks(node.children, styles, `${key}-`)}
+          <View key={key} testID="md-quote" style={styles.quote}>
+            {renderBlocks(node.children, styles, `${key}-`, depth)}
           </View>
         );
       case 'fence':
@@ -293,7 +294,7 @@ function renderBlocks(nodes: MdNode[], styles: Styles, keyPrefix = 'b'): ReactNo
           />
         );
       case 'hr':
-        return <View key={key} style={styles.rule} />;
+        return <View key={key} testID="md-rule" style={styles.rule} />;
       case 'table':
         return renderTable(node, styles, key);
       default:

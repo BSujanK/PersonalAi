@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from agent.core.redact import RedactionMap, Redactor
+from agent.core.sources import Source
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 
@@ -63,6 +64,7 @@ class DisplayMessage(BaseModel):
     created_at: str
     tools: list[ToolRun] = Field(default_factory=list)
     pending_action_ids: list[str] = Field(default_factory=list)
+    sources: list[Source] = Field(default_factory=list)
 
 
 class ConversationDetail(BaseModel):
@@ -92,10 +94,21 @@ def _tool_name(raw: object) -> str:
     return raw if isinstance(raw, str) and _TOOL_NAME.match(raw) else "unknown"
 
 
+def _stored_sources(raw: object) -> list[Source]:
+    """Sources saved with a final reply; a malformed entry is skipped, never shown."""
+    found: list[Source] = []
+    for item in raw if isinstance(raw, list) else []:
+        try:
+            found.append(Source.model_validate(item))
+        except ValueError:
+            continue
+    return found
+
+
 class _Stored:
     """One decoded stored message row (still in placeholder space)."""
 
-    __slots__ = ("content", "created_at", "id", "role", "tool_call_id", "tool_calls")
+    __slots__ = ("content", "created_at", "id", "role", "sources", "tool_call_id", "tool_calls")
 
     def __init__(self, row: Any, data: dict[str, Any]) -> None:
         self.id: str = row["id"]
@@ -104,6 +117,7 @@ class _Stored:
         self.content: str = data.get("content") or ""
         self.tool_call_id: str | None = data.get("tool_call_id")
         self.tool_calls: list[dict[str, Any]] = data.get("tool_calls") or []
+        self.sources: list[Source] = _stored_sources(data.get("sources"))
 
 
 class ConversationStore:
@@ -306,6 +320,7 @@ def _display(stored: list[_Stored], rmap: RedactionMap) -> list[DisplayMessage]:
                 created_at=(final or last).created_at,
                 tools=runs,
                 pending_action_ids=action_ids,
+                sources=final.sources if final else [],
             )
         )
         turn.clear()

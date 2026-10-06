@@ -21,11 +21,13 @@ describe('type scale', () => {
   it('defines every role the design calls for, plus numeric variants', () => {
     expect(Object.keys(TYPE_SCALE).sort()).toEqual(
       [
+        'displayLarge',
         'display',
         'title1',
         'title2',
         'title3',
         'headline',
+        'lead',
         'body',
         'callout',
         'subheadline',
@@ -48,10 +50,25 @@ describe('type scale', () => {
   });
 
   it('sets display text in the serif and UI text in the grotesk', () => {
-    for (const name of ['display', 'title1', 'title2', 'numberHero', 'numberLarge'] as const) {
+    for (const name of [
+      'displayLarge',
+      'display',
+      'title1',
+      'title2',
+      'numberHero',
+      'numberLarge',
+    ] as const) {
       expect(TYPE_SCALE[name].face).toBe('serif');
     }
-    for (const name of ['headline', 'body', 'callout', 'subheadline', 'footnote', 'caption']) {
+    for (const name of [
+      'headline',
+      'lead',
+      'body',
+      'callout',
+      'subheadline',
+      'footnote',
+      'caption',
+    ]) {
       expect(TYPE_SCALE[name as TypeName].face).toBe('sans');
     }
   });

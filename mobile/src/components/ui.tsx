@@ -109,6 +109,13 @@ const makeStyles = (p: Palette) => ({
     borderWidth: 1,
     borderColor: p.glassBorder,
   },
+  // The empty chat's starter chips: one type step up and a full-size touch target.
+  chipLarge: {
+    minHeight: MIN_TARGET,
+    paddingVertical: space.sm,
+    maxWidth: '100%' as const,
+  },
+  chipTextLarge: { ...type.body, fontFamily: fontFamily.bodyMedium, flexShrink: 1 },
   chipOn: { backgroundColor: p.accentStrong, borderColor: p.accent },
   chipText: { ...type.subheadline, fontFamily: fontFamily.bodyMedium, color: p.text },
   chipTextOn: { color: p.accentOn, fontFamily: fontFamily.bodySemiBold },
@@ -499,12 +506,15 @@ export function Chip({
   onPress,
   selected,
   icon,
+  large,
   accessibilityLabel,
 }: {
   label: string;
   onPress: () => void;
   selected?: boolean;
   icon?: IconName;
+  /** One type step up, at least 44pt tall; the label scales with the system font up to 1.5x. */
+  large?: boolean;
   accessibilityLabel?: string;
 }) {
   const styles = useThemedStyles(makeStyles);
@@ -517,14 +527,26 @@ export function Chip({
       hitSlop={{ top: 4, bottom: 4 }}
       style={[
         styles.chip,
-        icon ? { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6 } : null,
+        large && styles.chipLarge,
+        icon
+          ? { flexDirection: 'row' as const, alignItems: 'center' as const, gap: large ? 8 : 6 }
+          : null,
         selected && styles.chipOn,
       ]}
     >
       {icon ? (
-        <Icon name={icon} size={15} color={selected ? palette.accentOn : palette.accentText} />
+        <Icon
+          name={icon}
+          size={large ? 18 : 15}
+          color={selected ? palette.accentOn : palette.accentText}
+        />
       ) : null}
-      <Text style={[styles.chipText, selected && styles.chipTextOn]}>{label}</Text>
+      <Text
+        maxFontSizeMultiplier={large ? MAX_CHROME_SCALE : undefined}
+        style={[styles.chipText, large && styles.chipTextLarge, selected && styles.chipTextOn]}
+      >
+        {label}
+      </Text>
     </PressableScale>
   );
 }
@@ -637,7 +659,15 @@ export function IconTile({
 }
 
 /** Rows rise and fade in one after another, once, when the list first appears. */
-export function Stagger({ index, children }: { index: number; children: ReactNode }) {
+export function Stagger({
+  index,
+  children,
+  style,
+}: {
+  index: number;
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
   // Built once per index: a builder rebuilt in render costs every re-render.
   const entering = useMemo(
     () =>
@@ -646,7 +676,11 @@ export function Stagger({ index, children }: { index: number; children: ReactNod
       ),
     [index],
   );
-  return <Animated.View entering={entering}>{children}</Animated.View>;
+  return (
+    <Animated.View entering={entering} style={style}>
+      {children}
+    </Animated.View>
+  );
 }
 
 /**

@@ -33,7 +33,8 @@ export const INTRO_FROM_OPACITY = 0.3;
 
 /**
  * - `still`: the mark, at rest. The header and every static use.
- * - `thinking`: a slow turn while a wave runs round the rays (only the small reply avatar).
+ * - `thinking`: a slow turn while a wave runs round the rays (only the small reply avatar). Static
+ *   under Reduce Motion.
  * - `intro`: the cold-launch reveal: spins in about 1.15 turns, scales up and fades in.
  * Leaving `thinking` plays a quick settle back to the rest pose.
  */
@@ -141,21 +142,26 @@ export function Spark({
     cancelAnimation(scale);
 
     if (state === 'thinking') {
-      depth.set(withTiming(reduced ? 0.5 : 0.35, { duration: motion.stateMs }));
+      // Reduce Motion: the mark stays still; the status text beside it carries the state.
+      if (reduced) {
+        depth.set(withTiming(0, { duration: motion.stateMs }));
+        rotate.set(0);
+        scale.set(1);
+        return;
+      }
+      depth.set(withTiming(0.35, { duration: motion.stateMs }));
       phase.set(0);
       phase.set(
         withRepeat(withTiming(1, { duration: motion.sparkPulseMs, easing: timingLinear }), -1),
       );
-      if (!reduced) {
-        const from = rotate.get();
-        rotate.set(
-          withRepeat(
-            withTiming(from + 360, { duration: motion.sparkTurnMs, easing: timingLinear }),
-            -1,
-          ),
-        );
-        scale.set(withSpring(1, { duration: motion.pressSpringMs, dampingRatio: 1 }));
-      }
+      const from = rotate.get();
+      rotate.set(
+        withRepeat(
+          withTiming(from + 360, { duration: motion.sparkTurnMs, easing: timingLinear }),
+          -1,
+        ),
+      );
+      scale.set(withSpring(1, { duration: motion.pressSpringMs, dampingRatio: 1 }));
       return;
     }
 

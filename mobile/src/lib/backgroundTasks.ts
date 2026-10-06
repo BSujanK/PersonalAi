@@ -1,9 +1,10 @@
-// Periodic bank-SMS import and upload, and the alert check, while the app is closed. Phone actions are NOT run here: Android blocks
+// Periodic bank-SMS import and upload, the alert check and the approvals notice, while the app is closed. Phone actions are NOT run here: Android blocks
 // launching activities from the background, so those wait for the app to be in the foreground.
 import * as BackgroundTask from 'expo-background-task';
 import * as TaskManager from 'expo-task-manager';
 
 import { checkAlerts } from './alerts';
+import { notifyNewApprovals } from './approvalAlerts';
 import { autoImportBankSms } from './smsAutoImport';
 
 const SMS_FLUSH_TASK = 'personalai-sms-flush';
@@ -11,7 +12,11 @@ const MIN_INTERVAL_MINUTES = 15;
 
 TaskManager.defineTask(SMS_FLUSH_TASK, async () => {
   try {
-    const results = await Promise.allSettled([autoImportBankSms(), checkAlerts()]);
+    const results = await Promise.allSettled([
+      autoImportBankSms(),
+      checkAlerts(),
+      notifyNewApprovals(),
+    ]);
     return results.some((r) => r.status === 'rejected')
       ? BackgroundTask.BackgroundTaskResult.Failed
       : BackgroundTask.BackgroundTaskResult.Success;

@@ -18,9 +18,10 @@ const ICONS: Record<(typeof SUGGESTIONS)[number]['label'], IconName> = {
 
 const makeStyles = (p: Palette) => ({
   root: { flex: 1, justifyContent: 'center' as const, gap: space.lg, paddingBottom: space.lg },
-  hello: { ...type.display, color: p.text },
-  sub: { ...type.body, color: p.textMuted, marginTop: space.xs },
-  chips: { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: space.sm },
+  hello: { ...type.displayLarge, color: p.text },
+  sub: { ...type.lead, color: p.textMuted, marginTop: space.xs },
+  chips: { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: space.sm + space.xs },
+  slot: { maxWidth: '100%' as const },
 });
 
 /** The empty chat: a greeting and the starter chips, nothing else. */
@@ -49,8 +50,9 @@ export function EmptyState({
       </View>
       <View style={styles.chips}>
         {SUGGESTIONS.map(({ label, prompt }, i) => (
-          <Stagger key={label} index={i}>
+          <Stagger key={label} index={i} style={styles.slot}>
             <Chip
+              large
               label={label}
               icon={ICONS[label]}
               // The digest is a screen of its own; the rest are questions for the agent.

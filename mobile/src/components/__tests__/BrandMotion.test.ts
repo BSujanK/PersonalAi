@@ -20,7 +20,7 @@ describe('brand motion', () => {
       .flatMap(sourceFiles)
       .filter((path) => !/brand[\\/](Spark|LaunchIntro)\.tsx$/.test(path))
       .filter((path) => /state=["{][^}]*thinking|thinking=\{/.test(readFileSync(path, 'utf8')))
-      .map((path) => path.slice(MOBILE.length + 1));
+      .map((path) => path.slice(MOBILE.length + 1).replace(/\\/g, '/'));
     expect(animating).toEqual(['src/components/chat/Message.tsx']);
   });
 

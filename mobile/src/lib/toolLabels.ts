@@ -55,6 +55,9 @@ const WORDING: Record<string, Wording> = {
   phone_set_alarm: { done: 'Proposed an alarm', running: 'Drafting an alarm' },
   phone_set_timer: { done: 'Proposed a timer', running: 'Drafting a timer' },
   phone_reminder: { done: 'Proposed a reminder', running: 'Drafting a reminder' },
+  web_search: { done: 'Searched the web', running: 'Searching the web' },
+  web_read: { done: 'Read web pages', running: 'Reading web pages' },
+  hf_models: { done: 'Checked Hugging Face', running: 'Checking Hugging Face' },
 };
 
 /** What a proposed action will do, for the approval card title. */
@@ -71,6 +74,58 @@ const ACTION_TITLES: Record<string, string> = {
   phone_set_timer: 'Set a timer',
   phone_reminder: 'Set a reminder',
 };
+
+/** Tools that only draft a proposal: they end in the Approvals tab, never in a change. */
+const PROPOSAL_TOOLS = new Set([
+  ...Object.keys(ACTION_TITLES),
+  'mail_archive',
+  'mail_trash',
+  'mail_label',
+]);
+
+/** What the status line says while a tool runs: a verb phrase, never its arguments or content. */
+const STATUS_VERBS: Record<string, string> = {
+  web_search: 'Searching the web…',
+  web_read: 'Reading pages…',
+  hf_models: 'Looking at Hugging Face…',
+  mail_digest: 'Checking your mail…',
+  mail_search: 'Checking your mail…',
+  mail_read: 'Checking your mail…',
+  drive_search: 'Looking through Drive…',
+  drive_read: 'Looking through Drive…',
+  files_search: 'Searching your files…',
+  files_read: 'Searching your files…',
+  spend_summary: 'Summarising spending…',
+  account_overview: 'Checking your accounts…',
+  balances: 'Checking your accounts…',
+  transactions: 'Checking your accounts…',
+  calendar_events: 'Checking the calendar…',
+  classroom_courses: 'Checking Classroom…',
+  classroom_coursework: 'Checking Classroom…',
+  classroom_announcements: 'Checking Classroom…',
+  classroom_materials: 'Checking Classroom…',
+  news_headlines: 'Reading the news…',
+};
+
+export const THINKING_STATUS = 'Thinking…';
+const PREPARING_STATUS = 'Preparing an action…';
+const WORKING_STATUS = 'Working…';
+
+/** The live status for one tool that has just started. Unknown tools are "Working…". */
+export function toolStatus(name: string): string {
+  if (PROPOSAL_TOOLS.has(name)) return PREPARING_STATUS;
+  return STATUS_VERBS[name] ?? WORKING_STATUS;
+}
+
+/**
+ * The status line shown while a turn runs and no answer text has arrived: "Thinking…" until the
+ * first tool starts, then the phrase for the latest tool (it stays until the next one starts, so
+ * a fast tool does not make the line flicker back and forth).
+ */
+export function thinkingStatus(activity: ToolActivity[]): string {
+  const latest = activity[activity.length - 1];
+  return latest ? toolStatus(latest.name) : THINKING_STATUS;
+}
 
 export function actionTitle(name: string): string {
   return ACTION_TITLES[name] ?? toolLabel(name);

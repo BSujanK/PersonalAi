@@ -1,5 +1,6 @@
 // Pure state transitions for the chat transcript. The hook in useChatSession.ts drives them.
 import type { DisplayMessage, ToolStatus } from './api';
+import { parseSources, type Source } from './sources';
 import type { ToolActivity } from './toolLabels';
 
 export type MessageState = 'streaming' | 'done' | 'stopped' | 'error';
@@ -10,6 +11,8 @@ export interface ChatMessage {
   text: string;
   tools: ToolActivity[];
   actionIds: string[];
+  /** Web pages the answer used (validated, at most five); empty until the turn is done. */
+  sources: Source[];
   state: MessageState;
   error?: string;
 }
@@ -21,6 +24,7 @@ export function fromDisplay(message: DisplayMessage): ChatMessage {
     text: message.text,
     tools: message.tools.map((t) => ({ name: t.name, status: t.status })),
     actionIds: message.pending_action_ids,
+    sources: parseSources(message.sources),
     state: 'done',
   };
 }
@@ -41,8 +45,16 @@ export function beginTurn(
 ): ChatMessage[] {
   return [
     ...messages,
-    { id: userId, role: 'user', text, tools: [], actionIds: [], state: 'done' },
-    { id: assistantId, role: 'assistant', text: '', tools: [], actionIds: [], state: 'streaming' },
+    { id: userId, role: 'user', text, tools: [], actionIds: [], sources: [], state: 'done' },
+    {
+      id: assistantId,
+      role: 'assistant',
+      text: '',
+      tools: [],
+      actionIds: [],
+      sources: [],
+      state: 'streaming',
+    },
   ];
 }
 
@@ -77,11 +89,13 @@ export const finishTurn = (
   id: string,
   reply: string,
   actionIds: string[],
+  sources: Source[] = [],
 ) =>
   update(messages, id, (m) => ({
     ...m,
     text: reply,
     actionIds,
+    sources,
     state: 'done',
     // Anything still marked running when the turn ends finished without a closing event.
     tools: m.tools.map((t) => (t.status === 'started' ? { ...t, status: 'finished' } : t)),

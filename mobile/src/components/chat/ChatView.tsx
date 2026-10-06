@@ -142,6 +142,8 @@ export function ChatView({
   const list = useRef<FlatList<ChatMessage>>(null);
   const stick = useRef(true);
 
+  const openApprovals = useCallback(() => router.navigate('/approvals'), [router]);
+
   const openFromEmpty = useCallback(
     (target: EmptyTarget) => {
       if (target === 'today') router.push('/today');
@@ -256,7 +258,9 @@ export function ChatView({
             contentContainerStyle={styles.list}
             data={session.messages}
             keyExtractor={(m) => m.id}
+            // A tap on the message list (not on a control) or a drag puts the keyboard away.
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             onScroll={onScroll}
             scrollEventThrottle={64}
             onContentSizeChange={() => {
@@ -270,6 +274,7 @@ export function ChatView({
                   message={item}
                   canRetry={!session.busy && item.id === lastAssistant?.id}
                   onRetry={session.retry}
+                  onOpenApprovals={openApprovals}
                 />
               )
             }
