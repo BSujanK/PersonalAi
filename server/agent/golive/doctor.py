@@ -203,7 +203,7 @@ def _check_nvidia_models(ctx: _Ctx) -> CheckResult:
         )
     wanted = (
         ("PERSONALAI_MODEL_PRIMARY", ctx.settings.model_primary, True),
-        ("PERSONALAI_MODEL_FALLBACK", ctx.settings.model_fallback, False),
+        *(("PERSONALAI_MODEL_FALLBACK", m, False) for m in ctx.settings.model_fallbacks),
         ("PERSONALAI_MODEL_LONG", ctx.settings.model_long, False),
     )
     problems: list[str] = []
