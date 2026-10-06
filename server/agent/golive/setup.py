@@ -549,7 +549,7 @@ class _Wizard:
         """(Re)start through ``restart_server``: it also ends a stale server an older install of
         the task left running, which would otherwise keep the port and make the new one exit."""
         out = io.StringIO()
-        if restart_server(self.system, out) != 0:
+        if restart_server(self.system, out, settings=self._settings()) != 0:
             self.p.say("Starting the task failed:")
         for line in out.getvalue().splitlines():
             self.p.say(f"  {line}")

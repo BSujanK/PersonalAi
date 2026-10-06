@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS devices (
@@ -117,6 +117,13 @@ CREATE TABLE IF NOT EXISTS mail_feedback (
     old_category TEXT,
     new_category TEXT NOT NULL CHECK (new_category IN ('important', 'normal', 'promo', 'spam')),
     created_at TEXT NOT NULL
+);
+-- Ids only: which stored mail the deadline scan has already looked at.
+CREATE TABLE IF NOT EXISTS mail_deadline_scans (
+    account TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    scanned_at TEXT NOT NULL,
+    PRIMARY KEY (account, message_id)
 );
 CREATE TABLE IF NOT EXISTS deadline_proposals (
     classroom_account TEXT NOT NULL,

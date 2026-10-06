@@ -300,7 +300,11 @@ def _parse_reply(text: str) -> list[object] | None:
     return None
 
 
-def extract_with_llm(
+class ExtractionFailed(Exception):
+    """The local model could not give a usable answer (down, or an unparseable reply)."""
+
+
+def extract_with_llm_strict(
     llm: LLMClient,
     redactor: Redactor,
     subject: str,
@@ -308,7 +312,8 @@ def extract_with_llm(
     received: datetime,
     local_offset_minutes: int,
 ) -> list[Found]:
-    """Ask the local model. Any problem (model down, unparseable reply) gives no result."""
+    """Ask the local model. Raises ``ExtractionFailed`` when it is down or its reply is unusable,
+    so callers can tell "found nothing" from "could not look"."""
     tz = _tz(local_offset_minutes)
     today = received.astimezone(tz).date()
     rmap = RedactionMap()
@@ -323,11 +328,11 @@ def extract_with_llm(
         response = llm.complete(messages, [])
     except (LLMUnavailable, LLMNotConfigured) as exc:
         log.warning("deadline extraction model unavailable: %s", type(exc).__name__)
-        return []
+        raise ExtractionFailed from exc
     items = _parse_reply(response.content.text) if response.content else None
     if items is None:
         log.warning("deadline extraction reply unparseable")
-        return []
+        raise ExtractionFailed
     found: list[Found] = []
     for item in items:
         valid = _validated(item, today, tz)
@@ -336,12 +341,29 @@ def extract_with_llm(
     return found[:MAX_PER_MAIL]
 
 
+def extract_with_llm(
+    llm: LLMClient,
+    redactor: Redactor,
+    subject: str,
+    body: str,
+    received: datetime,
+    local_offset_minutes: int,
+) -> list[Found]:
+    """Ask the local model. Any problem (model down, unparseable reply) gives no result."""
+    try:
+        return extract_with_llm_strict(llm, redactor, subject, body, received, local_offset_minutes)
+    except ExtractionFailed:
+        return []
+
+
 __all__ = [
     "KINDS",
     "SYSTEM_PROMPT",
+    "ExtractionFailed",
     "Found",
     "RuleScan",
     "extract_deadlines",
     "extract_with_llm",
+    "extract_with_llm_strict",
     "scan_rules",
 ]

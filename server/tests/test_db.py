@@ -18,6 +18,19 @@ def test_schema_is_idempotent_and_versioned(tmp_path: Path) -> None:
     assert db.query("PRAGMA journal_mode")[0][0] == "wal"
 
 
+def test_an_older_database_gains_the_mail_deadline_scan_table(tmp_path: Path) -> None:
+    path = tmp_path / "agent.db"
+    first = Database(path)
+    first.execute("DROP TABLE mail_deadline_scans")
+    first.execute("PRAGMA user_version=8")
+    first.close()
+    db = Database(path)
+    db.execute(
+        "INSERT INTO mail_deadline_scans (account, message_id, scanned_at) VALUES ('a', 'm', 't')"
+    )
+    assert db.query("PRAGMA user_version")[0][0] == SCHEMA_VERSION
+
+
 def test_transaction_commit_rollback_and_nesting() -> None:
     db = Database(":memory:")
     with db.transaction():

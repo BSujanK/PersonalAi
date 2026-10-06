@@ -18,6 +18,7 @@ from agent.core.clock import Clock
 from agent.core.llm import ChatMessage, LLMClient, LLMResponse, StreamingLLMClient, ToolCall
 from agent.core.policy import Decision
 from agent.core.redact import Redacted, RedactionMap, Redactor, StreamRehydrator, from_model
+from agent.core.router import select_tools
 from agent.core.tools import ActionRejected, ToolRegistry
 
 log = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ SYSTEM_PROMPT = (
     "2026-10-14T10:00:00+05:30."
 )
 STEP_LIMIT_REPLY = "I stopped after too many steps."
+ROUTER_HISTORY_TURNS = 3  # recent owner turns whose tool names stay on offer
 
 
 def _fullwidth(ch: str) -> str:
@@ -130,7 +132,8 @@ class AgentLoop:
         system = ChatMessage("system", from_model(self._system_prompt()))
         new: list[ChatMessage] = [ChatMessage("user", self._redactor.redact(user_text, rmap))]
         pending_ids: list[str] = []
-        tools = self._registry.schemas()
+        offered = self._offered_tools(history, user_text)
+        tools = self._registry.schemas(offered)
         for _ in range(self._settings.max_agent_steps):
             if on_text is None:
                 response = self._llm.complete([system, *history, *new], tools)
@@ -150,12 +153,38 @@ class AgentLoop:
                 label = self._tool_label(call)
                 if on_tool is not None:
                     on_tool(label, "started")
-                message = self._handle_call(call, conversation_id, rmap, pending_ids)
+                if offered is not None and call.name not in offered:
+                    # Only tools shown to the model this turn can run. Offer everything from
+                    # the next step on, so a wrongly narrowed list cannot strand the model.
+                    offered = None
+                    tools = self._registry.schemas()
+                    message = self._tool_message(call, "error: unknown tool")
+                else:
+                    message = self._handle_call(call, conversation_id, rmap, pending_ids)
                 if on_tool is not None:
                     failed = message.content.text.startswith("error:")
                     on_tool(label, "failed" if failed else "finished")
                 new.append(message)
         return LoopResult(STEP_LIMIT_REPLY, new, pending_ids)
+
+    def _offered_tools(self, history: list[ChatMessage], user_text: str) -> set[str] | None:
+        """Names of the tools to show the model, or ``None`` for all of them (router off).
+
+        The router sees only the owner's message and the names of tools the conversation called
+        in its last few turns; it never reads tool output.
+        """
+        if not self._settings.tool_router:
+            return None
+        recent: list[str] = []
+        turns = 0
+        for msg in reversed(history):
+            if msg.role == "user":
+                turns += 1
+                if turns == ROUTER_HISTORY_TURNS:
+                    break
+            elif msg.role == "assistant" and msg.tool_calls:
+                recent.extend(c.name for c in msg.tool_calls)
+        return set(select_tools(user_text, recent, self._registry.names()))
 
     def _streamed_step(
         self,
