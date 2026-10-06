@@ -12,9 +12,8 @@ import { useReducedMotion } from 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
-import { PairForm } from '../src/components/PairForm';
+import { PairScreen } from '../src/components/PairScreen';
 import { Loading } from '../src/components/ui';
-import { Screen } from '../src/components/Screen';
 import { AgentStatusProvider } from '../src/lib/AgentStatus';
 import { checkAlerts, handleAlertResponse, requestAlertPermission } from '../src/lib/alerts';
 import { registerBackgroundSync } from '../src/lib/backgroundTasks';
@@ -85,13 +84,7 @@ function Gate() {
       </SafeAreaView>
     );
   }
-  if (pairing === null) {
-    return (
-      <Screen title="Pair" subtitle="Connect this phone to the agent on your laptop.">
-        <PairForm />
-      </Screen>
-    );
-  }
+  if (pairing === null) return <PairScreen />;
   return (
     <AgentStatusProvider>
       <ConversationsProvider>
@@ -103,8 +96,12 @@ function Gate() {
             animation: reduced ? 'fade' : 'default',
           }}
         >
-          <Stack.Screen name="(drawer)" />
+          <Stack.Screen name="(tabs)" />
           <Stack.Screen name="mail/[account]/[id]" />
+          <Stack.Screen name="files" />
+          <Stack.Screen name="settings" />
+          <Stack.Screen name="alerts" />
+          <Stack.Screen name="history" />
         </Stack>
       </ConversationsProvider>
     </AgentStatusProvider>

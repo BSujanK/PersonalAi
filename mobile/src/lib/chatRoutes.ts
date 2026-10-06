@@ -6,9 +6,9 @@ import type { useRouter } from 'expo-router';
 type Router = ReturnType<typeof useRouter>;
 
 export function openNewChat(router: Router, draft = ''): void {
-  router.navigate({ pathname: '/', params: { c: '', k: String(Date.now()), d: draft } });
+  router.navigate({ pathname: '/chat', params: { c: '', k: String(Date.now()), d: draft } });
 }
 
 export function openConversation(router: Router, id: string): void {
-  router.navigate({ pathname: '/', params: { c: id, k: '', d: '' } });
+  router.navigate({ pathname: '/chat', params: { c: id, k: '', d: '' } });
 }

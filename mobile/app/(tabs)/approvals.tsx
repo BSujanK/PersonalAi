@@ -1,11 +1,12 @@
 import { useCallback, useState } from 'react';
 import { Text, View } from 'react-native';
 
+import { Spark } from '../../src/components/brand/Spark';
 import { ApprovalCard } from '../../src/components/chat/ApprovalCard';
 import { Icon } from '../../src/components/Icon';
 import { ResultLink } from '../../src/components/ResultLink';
 import { Screen } from '../../src/components/Screen';
-import { ErrorText, Loading } from '../../src/components/ui';
+import { ErrorText, Loading, Stagger } from '../../src/components/ui';
 import { listApprovals, type Approval } from '../../src/lib/api';
 import { resultLink } from '../../src/lib/approvalFlow';
 import { errorMessage } from '../../src/lib/format';
@@ -14,7 +15,14 @@ import { usePolling } from '../../src/lib/usePolling';
 import { radius, space, type, useTheme, useThemedStyles, type Palette } from '../../src/theme';
 
 const makeStyles = (p: Palette) => ({
-  done: { backgroundColor: p.surface, borderRadius: radius.lg, padding: space.md, gap: space.sm },
+  done: {
+    backgroundColor: p.surface,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: p.glassBorder,
+    padding: space.md,
+    gap: space.sm,
+  },
   doneHead: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: space.sm },
   doneTitle: { ...type.headline, color: p.text, flex: 1 },
   empty: { alignItems: 'center' as const, gap: space.sm, paddingVertical: space.xxl },
@@ -58,7 +66,7 @@ export default function Approvals() {
     <Screen
       title="Approvals"
       subtitle={subtitle}
-      menu
+      tabs
       refreshing={refreshing}
       onRefresh={() => void refresh()}
     >
@@ -75,7 +83,7 @@ export default function Approvals() {
       ))}
       {items?.length === 0 && links.length === 0 ? (
         <View style={styles.empty}>
-          <Icon name="shield" size={32} color={palette.accentText} />
+          <Spark size={56} />
           <Text style={styles.emptyTitle}>All clear</Text>
           <Text style={styles.emptyText}>
             When the agent wants to send, share or change something, it waits here for your
@@ -83,19 +91,20 @@ export default function Approvals() {
           </Text>
         </View>
       ) : null}
-      {items?.map((item) => (
-        <ApprovalCard
-          key={item.id}
-          actionId={item.id}
-          initial={item}
-          onDecided={(approval, result) => {
-            const link = resultLink(result.result);
-            if (link) {
-              setLinks((prev) => [{ id: approval.id, tool: approval.tool_name, link }, ...prev]);
-            }
-            void load();
-          }}
-        />
+      {items?.map((item, i) => (
+        <Stagger key={item.id} index={i}>
+          <ApprovalCard
+            actionId={item.id}
+            initial={item}
+            onDecided={(approval, result) => {
+              const link = resultLink(result.result);
+              if (link) {
+                setLinks((prev) => [{ id: approval.id, tool: approval.tool_name, link }, ...prev]);
+              }
+              void load();
+            }}
+          />
+        </Stagger>
       ))}
     </Screen>
   );

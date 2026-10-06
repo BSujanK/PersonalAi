@@ -26,7 +26,9 @@ const makeStyles = (p: Palette) => ({
     gap: space.sm,
     paddingHorizontal: space.md - space.xs,
     borderRadius: radius.pill,
-    backgroundColor: p.muted,
+    backgroundColor: p.glass,
+    borderWidth: 1,
+    borderColor: p.glassBorder,
     maxWidth: '100%' as const,
   },
   summaryText: { ...type.subhead, flexShrink: 1, color: p.textMuted },
@@ -37,12 +39,11 @@ const makeStyles = (p: Palette) => ({
     gap: space.sm,
     paddingVertical: space.xs,
     paddingHorizontal: space.md - space.xs,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: p.separator,
+    borderRadius: radius.pill,
+    backgroundColor: p.accentSoft,
     alignSelf: 'flex-start' as const,
   },
-  chipText: { ...type.footnote, color: p.text },
+  chipText: { ...type.footnote, color: p.accentText },
 });
 
 function StatusIcon({ status }: { status: Activity['status'] }) {

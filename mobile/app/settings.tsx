@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import Constants from 'expo-constants';
+import { useRouter } from 'expo-router';
 import { StyleSheet, Switch, Text, View } from 'react-native';
 
 import {
@@ -11,17 +12,9 @@ import {
   Notice,
   SegmentedControl,
   TextField,
-} from '../../src/components/ui';
-import { Screen } from '../../src/components/Screen';
-import { alertsPermitted, requestAlertPermission } from '../../src/lib/alerts';
-import {
-  ApiError,
-  getAlertSettings,
-  health,
-  putAlertSettings,
-  type AlertSettings,
-} from '../../src/lib/api';
-import { isValidBriefingTime } from '../../src/lib/briefingTime';
+} from '../src/components/ui';
+import { Screen } from '../src/components/Screen';
+import { health } from '../src/lib/api';
 import {
   flushSmsQueue,
   getCustomSenders,
@@ -32,14 +25,14 @@ import {
   requestSmsPermission,
   saveCustomSenders,
   smsQueueSize,
-} from '../../src/lib/bankSms';
-import { errorMessage } from '../../src/lib/format';
-import { usePairing } from '../../src/lib/PairingContext';
-import { disablePush, enablePush, isPushEnabled, pushAvailable } from '../../src/lib/push';
-import { clearPairing } from '../../src/lib/secureKeys';
-import { normaliseSender } from '../../src/lib/smsSync';
-import { usePolling } from '../../src/lib/usePolling';
-import { fontFamily, space, type, useTheme, type ThemePreference } from '../../src/theme';
+} from '../src/lib/bankSms';
+import { errorMessage } from '../src/lib/format';
+import { usePairing } from '../src/lib/PairingContext';
+import { disablePush, enablePush, isPushEnabled, pushAvailable } from '../src/lib/push';
+import { clearPairing } from '../src/lib/secureKeys';
+import { normaliseSender } from '../src/lib/smsSync';
+import { usePolling } from '../src/lib/usePolling';
+import { fontFamily, space, type, useTheme, type ThemePreference } from '../src/theme';
 
 const IMPORT_DAYS = 30;
 const SENDER_ID = /^[A-Z0-9]{3,16}$/;
@@ -50,6 +43,7 @@ const THEMES: readonly { value: ThemePreference; label: string }[] = [
 ];
 
 export default function Settings() {
+  const router = useRouter();
   const { pairing, reload } = usePairing();
   const { palette, preference, setPreference } = useTheme();
   const [online, setOnline] = useState<boolean | null>(null);
@@ -58,10 +52,6 @@ export default function Settings() {
   const [newSender, setNewSender] = useState('');
   const [queued, setQueued] = useState(0);
   const [push, setPush] = useState(false);
-  const [alerts, setAlerts] = useState<AlertSettings | null>(null);
-  const [alertsMissing, setAlertsMissing] = useState(false);
-  const [briefingTime, setBriefingTime] = useState('');
-  const [permitted, setPermitted] = useState<boolean | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,21 +73,6 @@ export default function Settings() {
       setDefaults(await refreshDefaultSenders());
     })();
   }, []);
-
-  const loadAlerts = useCallback(async () => {
-    setPermitted(await alertsPermitted().catch(() => null));
-    try {
-      const loaded = await getAlertSettings();
-      setAlerts(loaded);
-      setBriefingTime((current) => current || loaded.briefing_time);
-      setAlertsMissing(false);
-    } catch (e) {
-      // An older agent has no alert settings; anything else shows on the next poll.
-      setAlertsMissing(e instanceof ApiError && e.status === 404);
-    }
-  }, []);
-
-  usePolling(loadAlerts);
 
   async function run(task: () => Promise<string | void>) {
     setError(null);
@@ -172,25 +147,6 @@ export default function Settings() {
       if (outcome === 'denied') return 'Notification permission was denied.';
     });
 
-  const saveAlerts = (next: AlertSettings, turnedOn: boolean) =>
-    run(async () => {
-      if (turnedOn) setPermitted(await requestAlertPermission());
-      const saved = await putAlertSettings(next);
-      setAlerts(saved);
-      setBriefingTime(saved.briefing_time);
-    });
-
-  const toggleAlert = (key: 'important_mail' | 'deadlines' | 'briefing', value: boolean) => {
-    if (alerts) void saveAlerts({ ...alerts, [key]: value }, value);
-  };
-
-  const timeValid = isValidBriefingTime(briefingTime);
-  const timeChanged = alerts !== null && briefingTime !== alerts.briefing_time;
-
-  const saveBriefingTime = () => {
-    if (alerts && timeValid) void saveAlerts({ ...alerts, briefing_time: briefingTime }, false);
-  };
-
   const unpair = () =>
     run(async () => {
       await clearPairing();
@@ -201,7 +157,7 @@ export default function Settings() {
   const statusColor = online ? palette.ok : online === null ? palette.textMuted : palette.danger;
 
   return (
-    <Screen title="Settings" menu>
+    <Screen title="Settings" back>
       <ErrorText message={error} />
       {status ? <Notice tone="accent">{status}</Notice> : null}
 
@@ -221,7 +177,6 @@ export default function Settings() {
 
       <ListSection
         title="Agent"
-        inset="icon"
         footer={`Paired device ${pairing?.deviceId.slice(0, 8) ?? ''}. Reached over Tailscale only; approvals need your fingerprint or face.`}
       >
         <ListRow
@@ -248,7 +203,6 @@ export default function Settings() {
 
       <ListSection
         title="Bank SMS"
-        inset="icon"
         footer="Only messages from the senders below (and any starting with BOB) are read and sent to your laptop."
       >
         <ListRow
@@ -306,94 +260,18 @@ export default function Settings() {
         </View>
       </ListSection>
 
-      <ListSection
-        title="Alerts"
-        inset="icon"
-        footer={
-          alertsMissing
-            ? 'This agent does not support alerts yet. Update it on the laptop.'
-            : 'Alerts are made on this phone from what the agent finds, over Tailscale. Their text stays off any push service.'
-        }
-      >
-        {permitted === false ? (
-          <Notice tone="warn" title="Notifications are off">
-            Alerts need permission to show notifications. Allow it when asked, or turn it on in
-            Android settings under Apps, PersonalAi, Notifications.
-          </Notice>
-        ) : null}
+      <ListSection title="Alerts">
         <ListRow
-          icon="mail"
-          title="Important mail"
-          accessory={
-            <Switch
-              accessibilityLabel="Important mail alerts"
-              value={alerts?.important_mail ?? false}
-              onValueChange={(v) => toggleAlert('important_mail', v)}
-              disabled={!alerts}
-              trackColor={{ true: palette.accent, false: palette.border }}
-              thumbColor={palette.surface}
-            />
-          }
+          icon="bell"
+          title="Alerts"
+          subtitle="Important mail, deadlines, morning briefing"
+          chevron
+          onPress={() => router.push('/alerts')}
         />
-        <ListRow
-          icon="flag"
-          title="Deadlines"
-          accessory={
-            <Switch
-              accessibilityLabel="Deadline alerts"
-              value={alerts?.deadlines ?? false}
-              onValueChange={(v) => toggleAlert('deadlines', v)}
-              disabled={!alerts}
-              trackColor={{ true: palette.accent, false: palette.border }}
-              thumbColor={palette.surface}
-            />
-          }
-        />
-        <ListRow
-          icon="sun"
-          title="Morning briefing"
-          accessory={
-            <Switch
-              accessibilityLabel="Morning briefing"
-              value={alerts?.briefing ?? false}
-              onValueChange={(v) => toggleAlert('briefing', v)}
-              disabled={!alerts}
-              trackColor={{ true: palette.accent, false: palette.border }}
-              thumbColor={palette.surface}
-            />
-          }
-        />
-        <View style={[styles.padded, styles.addRow]}>
-          <View style={{ flex: 1 }}>
-            <TextField
-              accessibilityLabel="Briefing time, 24-hour HH:MM"
-              value={briefingTime}
-              onChangeText={setBriefingTime}
-              placeholder="Briefing time, e.g. 07:30"
-              keyboardType="numbers-and-punctuation"
-              maxLength={5}
-              autoCorrect={false}
-              editable={!!alerts}
-              onSubmitEditing={saveBriefingTime}
-            />
-          </View>
-          <Button
-            label="Save"
-            tone="tinted"
-            compact
-            accessibilityLabel="Save briefing time"
-            onPress={saveBriefingTime}
-            disabled={!alerts || !timeChanged || !timeValid}
-          />
-        </View>
-        {alerts && briefingTime && !timeValid ? (
-          <Notice tone="warn">Use 24-hour time as HH:MM, like 07:30.</Notice>
-        ) : null}
       </ListSection>
 
       <ListSection
         title="Notifications"
-        inset="icon"
         footer={
           pushAvailable()
             ? 'Notifications never contain mail, SMS or amounts, only a count.'
@@ -409,8 +287,8 @@ export default function Settings() {
               value={push}
               onValueChange={(v) => void togglePush(v)}
               disabled={!pushAvailable()}
-              trackColor={{ true: palette.accent, false: palette.border }}
-              thumbColor={palette.surface}
+              trackColor={{ true: palette.accentStrong, false: palette.border }}
+              thumbColor={palette.accentOn}
             />
           }
         />

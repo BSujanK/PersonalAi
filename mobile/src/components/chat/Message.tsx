@@ -12,6 +12,7 @@ import {
   useThemedStyles,
   type Palette,
 } from '../../theme';
+import { SparkAvatar } from '../brand/Spark';
 import { Icon } from '../Icon';
 import { ErrorText, PressableScale } from '../ui';
 import { ApprovalCard } from './ApprovalCard';
@@ -23,14 +24,16 @@ const COPIED_MS = 1500;
 const makeStyles = (p: Palette) => ({
   userRow: { alignItems: 'flex-end' as const, paddingLeft: space.xxl },
   userBubble: {
-    backgroundColor: p.muted,
-    borderRadius: radius.xl - 4,
+    backgroundColor: p.accentStrong,
+    borderRadius: radius.xl - 2,
     borderBottomRightRadius: radius.sm - 2,
     paddingHorizontal: space.md - 2,
     paddingVertical: space.sm + 2,
   },
-  userText: { ...type.body, color: p.text },
-  assistant: { gap: space.sm + space.xs },
+  userText: { ...type.body, color: p.accentOn },
+  assistantRow: { flexDirection: 'row' as const, gap: space.sm + space.xs },
+  assistant: { flex: 1, gap: space.sm + space.xs, paddingTop: 4 },
+  thinkingRow: { flexDirection: 'row' as const, alignItems: 'center' as const, minHeight: 28 },
   thinking: { ...type.body, color: p.textMuted },
   note: { ...type.footnote, color: p.textMuted },
   actions: {
@@ -109,39 +112,44 @@ function AssistantMessageImpl({ message, canRetry, onRetry }: AssistantProps) {
   }
 
   return (
-    <View style={styles.assistant}>
-      <ToolActivity activity={message.tools} />
-      {hasText ? <Markdown text={message.text} /> : null}
-      {streaming && !hasText && message.tools.length === 0 ? (
-        <Text accessibilityLiveRegion="polite" style={styles.thinking}>
-          Thinking…
-        </Text>
-      ) : null}
-      {message.actionIds.map((id) => (
-        <ApprovalCard key={id} actionId={id} />
-      ))}
-      {message.state === 'stopped' ? (
-        <Text style={styles.note}>
-          Stopped. The agent may still finish this turn on the laptop.
-        </Text>
-      ) : null}
-      {message.state === 'error' ? (
-        <ErrorText message={message.error ?? 'Something went wrong.'} />
-      ) : null}
-      {!streaming ? (
-        <View style={styles.actions}>
-          {hasText ? (
-            <ActionButton
-              icon={copied ? 'check' : 'copy'}
-              label={copied ? 'Copied' : 'Copy reply'}
-              onPress={() => void copy()}
-            />
-          ) : null}
-          {canRetry ? (
-            <ActionButton icon="refresh-cw" label="Retry" onPress={() => onRetry(message.id)} />
-          ) : null}
-        </View>
-      ) : null}
+    <View style={styles.assistantRow}>
+      <SparkAvatar size={30} thinking={streaming} />
+      <View style={styles.assistant}>
+        <ToolActivity activity={message.tools} />
+        {hasText ? <Markdown text={message.text} /> : null}
+        {streaming && !hasText && message.tools.length === 0 ? (
+          <View style={styles.thinkingRow}>
+            <Text accessibilityLiveRegion="polite" style={styles.thinking}>
+              Thinking…
+            </Text>
+          </View>
+        ) : null}
+        {message.actionIds.map((id) => (
+          <ApprovalCard key={id} actionId={id} />
+        ))}
+        {message.state === 'stopped' ? (
+          <Text style={styles.note}>
+            Stopped. The agent may still finish this turn on the laptop.
+          </Text>
+        ) : null}
+        {message.state === 'error' ? (
+          <ErrorText message={message.error ?? 'Something went wrong.'} />
+        ) : null}
+        {!streaming ? (
+          <View style={styles.actions}>
+            {hasText ? (
+              <ActionButton
+                icon={copied ? 'check' : 'copy'}
+                label={copied ? 'Copied' : 'Copy reply'}
+                onPress={() => void copy()}
+              />
+            ) : null}
+            {canRetry ? (
+              <ActionButton icon="refresh-cw" label="Retry" onPress={() => onRetry(message.id)} />
+            ) : null}
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }

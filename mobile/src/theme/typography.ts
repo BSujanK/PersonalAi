@@ -23,6 +23,7 @@ export const MAX_CHROME_SCALE = 1.5;
 export const MIN_TARGET = 44;
 
 type TextStyleName =
+  | 'hero'
   | 'largeTitle'
   | 'title1'
   | 'title2'
@@ -36,6 +37,14 @@ type TextStyleName =
 
 /** Text styles without colour. Pair with a palette colour at the use site. */
 export const type: Record<TextStyleName, TextStyle> = {
+  /** The one big figure per screen (today's spend, total balance). Tabular so it never jitters. */
+  hero: {
+    fontFamily: fontFamily.display,
+    fontSize: 46,
+    lineHeight: 54,
+    letterSpacing: -1.4,
+    fontVariant: ['tabular-nums'],
+  },
   largeTitle: { fontFamily: fontFamily.display, fontSize: 34, lineHeight: 41, letterSpacing: -0.6 },
   title1: { fontFamily: fontFamily.display, fontSize: 28, lineHeight: 34, letterSpacing: -0.5 },
   title2: { fontFamily: fontFamily.bodyBold, fontSize: 22, lineHeight: 28, letterSpacing: -0.3 },
@@ -65,7 +74,7 @@ export const size = {
   subhead: 15,
   body: 17,
   title: 22,
-  hero: 34,
+  hero: 46,
 } as const;
 
 /** 8-pt grid. `xs` is the half step for tight icon/text pairs; everything else is a multiple of 8. */
@@ -83,6 +92,10 @@ export const radius = {
   md: 12,
   lg: 16,
   xl: 24,
+  /** List cards and Quick Access cards. */
+  card: 20,
+  /** The floating tab bar and the hero panel. */
+  xxl: 28,
   pill: 999,
 } as const;
 

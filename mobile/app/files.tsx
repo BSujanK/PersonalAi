@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
-import { Icon } from '../../src/components/Icon';
-import { Screen } from '../../src/components/Screen';
+import { Icon } from '../src/components/Icon';
+import { Screen } from '../src/components/Screen';
 import {
   Button,
   EmptyRow,
@@ -13,12 +13,12 @@ import {
   ListSection,
   Loading,
   SearchField,
-} from '../../src/components/ui';
-import { sendFileByMail, shareFileLink } from '../../src/lib/agentPrompts';
-import { searchFiles, type FileHit, type FileSearch } from '../../src/lib/api';
-import { openNewChat } from '../../src/lib/chatRoutes';
-import { errorMessage, formatBytes, rowTime } from '../../src/lib/format';
-import { motion, space, type, useTheme, useThemedStyles, type Palette } from '../../src/theme';
+} from '../src/components/ui';
+import { sendFileByMail, shareFileLink } from '../src/lib/agentPrompts';
+import { searchFiles, type FileHit, type FileSearch } from '../src/lib/api';
+import { openNewChat } from '../src/lib/chatRoutes';
+import { errorMessage, formatBytes, rowTime } from '../src/lib/format';
+import { motion, space, type, useTheme, useThemedStyles, type Palette } from '../src/theme';
 
 const DEBOUNCE_MS = 400;
 const MIN_QUERY = 2;
@@ -146,7 +146,7 @@ export default function Files() {
 
   function section(title: string, list: FileHit[] | null, failed: boolean) {
     return (
-      <ListSection title={title} inset="icon">
+      <ListSection title={title}>
         {failed ? <EmptyRow>Could not search here right now.</EmptyRow> : null}
         {!failed && list === null ? <EmptyRow>Not configured on the laptop yet.</EmptyRow> : null}
         {list?.length === 0 ? <EmptyRow>No matches.</EmptyRow> : null}
@@ -168,7 +168,7 @@ export default function Files() {
   }
 
   return (
-    <Screen title="Files" subtitle="Laptop folders and Google Drive" menu>
+    <Screen title="Files" subtitle="Laptop folders and Google Drive" back>
       <SearchField
         accessibilityLabel="Search files"
         placeholder="Search files"

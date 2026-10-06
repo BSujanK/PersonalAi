@@ -1,13 +1,14 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import type { ComponentProps } from 'react';
 import { Alert } from 'react-native';
 
 import { deleteConversation, listConversations, renameConversation } from '../../../lib/api';
 import { ConversationsProvider } from '../../../lib/Conversations';
-import { AppDrawerContent } from '../DrawerContent';
+import { ConversationList } from '../ConversationList';
 
 const mockNavigate = jest.fn();
-jest.mock('expo-router', () => ({ useRouter: () => ({ navigate: mockNavigate }) }));
+jest.mock('expo-router', () => ({
+  useRouter: () => ({ navigate: mockNavigate, back: jest.fn(), canGoBack: () => true }),
+}));
 jest.mock('../../../lib/AgentStatus', () => ({
   useAgentStatus: () => ({ online: true, pendingCount: 3, refresh: jest.fn() }),
 }));
@@ -25,17 +26,10 @@ const ITEMS = [
   { id: 'c2', title: 'Spending in September', updated_at: 'x', preview: '' },
 ];
 
-type DrawerProps = ComponentProps<typeof AppDrawerContent>;
-const closeDrawer = jest.fn();
-const props = {
-  navigation: { closeDrawer },
-  state: { routes: [{ name: 'index' }], index: 0 },
-} as unknown as DrawerProps;
-
-async function renderDrawer() {
+async function renderList() {
   await render(
     <ConversationsProvider>
-      <AppDrawerContent {...props} />
+      <ConversationList />
     </ConversationsProvider>,
   );
   await screen.findByText("What's due this week?");
@@ -43,48 +37,40 @@ async function renderDrawer() {
 
 beforeEach(() => {
   mockNavigate.mockClear();
-  closeDrawer.mockClear();
   jest.mocked(listConversations).mockReset();
   jest.mocked(renameConversation).mockReset();
   jest.mocked(deleteConversation).mockReset();
   jest.mocked(listConversations).mockResolvedValue({ items: ITEMS, next_cursor: null });
 });
 
-describe('AppDrawerContent', () => {
-  it('lists recents and the four destinations with the pending badge', async () => {
-    await renderDrawer();
+describe('ConversationList', () => {
+  it('lists recent chats under a header', async () => {
+    await renderList();
     expect(screen.getByText('Spending in September')).toBeTruthy();
     expect(screen.getByText('Recents')).toBeTruthy();
-    for (const label of ['Today', 'Money', 'Settings']) {
-      expect(screen.getByLabelText(label)).toBeTruthy();
-    }
-    expect(screen.getByLabelText('Approvals, 3 pending')).toBeTruthy();
+    expect(screen.getByText('Chat history')).toBeTruthy();
   });
 
-  it('opens a conversation, a new chat and the other screens', async () => {
-    await renderDrawer();
+  it('opens a conversation and a new chat in the Chat tab', async () => {
+    await renderList();
     await fireEvent.press(screen.getByLabelText('Spending in September'));
     expect(mockNavigate).toHaveBeenLastCalledWith({
-      pathname: '/',
+      pathname: '/chat',
       params: { c: 'c2', k: '', d: '' },
     });
-    expect(closeDrawer).toHaveBeenCalled();
 
     await fireEvent.press(screen.getByLabelText('New chat'));
     const call = mockNavigate.mock.calls[mockNavigate.mock.calls.length - 1][0] as {
       pathname: string;
       params: { c: string; k: string };
     };
-    expect(call.pathname).toBe('/');
+    expect(call.pathname).toBe('/chat');
     expect(call.params.c).toBe('');
     expect(call.params.k).not.toBe('');
-
-    await fireEvent.press(screen.getByLabelText('Approvals, 3 pending'));
-    expect(mockNavigate).toHaveBeenLastCalledWith('/approvals');
   });
 
   it('searches titles through the server after a short pause', async () => {
-    await renderDrawer();
+    await renderList();
     jest.mocked(listConversations).mockResolvedValue({ items: [ITEMS[1]], next_cursor: null });
     await fireEvent.changeText(screen.getByLabelText('Search conversations'), 'spend');
     await waitFor(() =>
@@ -96,7 +82,7 @@ describe('AppDrawerContent', () => {
 
   it('long-press opens the menu and rename saves the new title', async () => {
     jest.mocked(renameConversation).mockResolvedValue({ ...ITEMS[1], title: 'September budget' });
-    await renderDrawer();
+    await renderList();
     await fireEvent(screen.getByLabelText('Spending in September'), 'longPress');
     await fireEvent.press(await screen.findByLabelText('Rename'));
     const field = await screen.findByLabelText('Chat title');
@@ -109,7 +95,7 @@ describe('AppDrawerContent', () => {
   it('delete asks first, then removes the conversation', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
     jest.mocked(deleteConversation).mockResolvedValue({});
-    await renderDrawer();
+    await renderList();
     await fireEvent(screen.getByLabelText("What's due this week?"), 'longPress');
     await fireEvent.press(await screen.findByLabelText('Delete'));
     expect(deleteConversation).not.toHaveBeenCalled(); // nothing is deleted before confirming

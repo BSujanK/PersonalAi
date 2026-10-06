@@ -23,7 +23,7 @@ export {
   space,
   type,
 } from './typography';
-export { easeOut, motion } from './motion';
+export { easeInOut, easeOut, motion, timingEaseOut } from './motion';
 export { brand, darkPalette, lightPalette } from './palette';
 export type { Palette } from './palette';
 

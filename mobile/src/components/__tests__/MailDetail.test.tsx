@@ -85,7 +85,7 @@ describe('MailDetail', () => {
 
     await fireEvent.press(screen.getByLabelText('Reply'));
     let call = mockNavigate.mock.calls[0][0] as { pathname: string; params: { d: string } };
-    expect(call.pathname).toBe('/');
+    expect(call.pathname).toBe('/chat');
     expect(call.params.d).toContain('Draft a reply to the email from Asha Rao');
     expect(call.params.d).toContain('"Project meeting"');
     expect(call.params.d).toContain('message id m1');

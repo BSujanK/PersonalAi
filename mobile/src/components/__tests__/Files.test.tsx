@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 
-import Files from '../../../app/(drawer)/files';
+import Files from '../../../app/files';
 import { searchFiles } from '../../lib/api';
 
 const mockNavigate = jest.fn();

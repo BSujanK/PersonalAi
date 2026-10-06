@@ -7,6 +7,7 @@ import { Screen } from '../../../src/components/Screen';
 import {
   Badge,
   Button,
+  Card,
   ErrorText,
   ListRow,
   ListSection,
@@ -28,7 +29,7 @@ import {
 } from '../../../src/theme';
 
 const makeStyles = (p: Palette) => ({
-  header: { gap: space.md },
+  header: { gap: space.md, padding: space.md },
   subject: { ...type.title2, color: p.text },
   sender: {
     flexDirection: 'row' as const,
@@ -55,7 +56,13 @@ const makeStyles = (p: Palette) => ({
   // Side by side when they fit, stacked at large text sizes or on narrow phones.
   actions: { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: space.sm },
   action: { flexGrow: 1, flexBasis: 140 },
-  bodyCard: { backgroundColor: p.surface, borderRadius: radius.lg, padding: space.md },
+  bodyCard: {
+    backgroundColor: p.surface,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: p.glassBorder,
+    padding: space.md,
+  },
   // Plain text only: the body is never rendered as HTML or markdown, links are not detected, and
   // nothing remote (images, trackers) is ever loaded.
   bodyText: { ...type.body, color: p.text },
@@ -110,7 +117,7 @@ export default function MailDetail() {
       {!mail && !error ? <Loading /> : null}
       {mail ? (
         <>
-          <View style={styles.header}>
+          <Card style={styles.header}>
             <Text selectable accessibilityRole="header" style={styles.subject}>
               {mail.subject || '(no subject)'}
             </Text>
@@ -166,7 +173,7 @@ export default function MailDetail() {
                 <Button
                   label="Reply"
                   icon="corner-up-left"
-                  tone="tinted"
+                  tone="primary"
                   compact
                   accessibilityHint="Starts a chat asking the agent to draft a reply. Nothing is sent without your approval."
                   onPress={() => openNewChat(router, replyToMail(mailRef(mail)))}
@@ -183,7 +190,7 @@ export default function MailDetail() {
                 />
               </View>
             </View>
-          </View>
+          </Card>
 
           {mail.source === 'stored' ? (
             <Notice tone="warn">Showing the saved copy; Gmail could not be reached.</Notice>
@@ -192,7 +199,6 @@ export default function MailDetail() {
           {mail.attachments.length > 0 ? (
             <ListSection
               title={`${mail.attachments.length} attachment${mail.attachments.length === 1 ? '' : 's'}`}
-              inset="icon"
             >
               {mail.attachments.map((a, i) => (
                 <ListRow

@@ -1,6 +1,5 @@
-import { useNavigation, useRouter } from 'expo-router';
-import type { DrawerNavigationProp } from 'expo-router/drawer';
-import type { ReactNode } from 'react';
+import { useRouter } from 'expo-router';
+import type { ReactNode, RefObject } from 'react';
 import { RefreshControl, Text, View } from 'react-native';
 import Animated, {
   Extrapolation,
@@ -22,65 +21,77 @@ import {
   useThemedStyles,
   type Palette,
 } from '../theme';
+import { Spark } from './brand/Spark';
+import { GlowBackground } from './GlowBackground';
+import { useTabBarSpace } from './nav/FloatingTabBar';
 import { COLUMN_MAX, IconButton } from './ui';
 
-const BAR_HEIGHT = 52;
+const BAR_HEIGHT = 56;
 
 const makeStyles = (p: Palette) => ({
-  screen: { flex: 1, backgroundColor: p.bg },
+  screen: { flex: 1, backgroundColor: 'transparent' },
   column: { width: '100%' as const, maxWidth: COLUMN_MAX, alignSelf: 'center' as const },
-  content: { paddingHorizontal: space.md, paddingBottom: space.xxl, gap: space.lg },
+  content: { paddingHorizontal: space.md, gap: space.lg },
   bar: {
     height: BAR_HEIGHT,
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    paddingHorizontal: space.xs,
-    backgroundColor: p.bg,
+    gap: space.sm,
+    paddingHorizontal: space.md - space.xs,
   },
-  barSide: { minWidth: 44, flexDirection: 'row' as const, alignItems: 'center' as const },
+  barSide: {
+    minWidth: 44,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: space.sm,
+  },
   barSideRight: { justifyContent: 'flex-end' as const },
   barTitle: { ...type.headline, flex: 1, textAlign: 'center' as const, color: p.text },
-  barTitleLeft: { textAlign: 'left' as const, paddingLeft: space.sm },
-  hairline: {
+  barTitleLeft: { textAlign: 'left' as const, paddingLeft: space.xs },
+  // A scroll-edge fade instead of a permanent divider: a soft band of the ink under the bar.
+  edge: {
     position: 'absolute' as const,
     left: 0,
     right: 0,
-    bottom: 0,
+    bottom: -1,
     height: 1,
     backgroundColor: p.separator,
   },
   largeTitleWrap: { paddingTop: space.xs, gap: space.xs },
   largeTitle: { ...type.largeTitle, color: p.text },
   subtitle: { ...type.subhead, color: p.textMuted },
+  refreshing: { alignItems: 'center' as const, paddingTop: space.xs },
 });
 
-/** Opens the drawer. Only rendered where a drawer exists (the paired app). */
-function MenuButton() {
-  const navigation = useNavigation<DrawerNavigationProp<Record<string, undefined>>>();
-  return <IconButton icon="menu" label="Open menu" onPress={() => navigation.toggleDrawer()} />;
-}
-
-/** Pops back to where the screen was opened from. Only for screens pushed over the drawer. */
+/** Pops back to where the screen was opened from. */
 function BackButton() {
   const router = useRouter();
-  return <IconButton icon="chevron-left" size={26} label="Back" onPress={() => router.back()} />;
+  return (
+    <IconButton
+      icon="chevron-left"
+      glass
+      label="Back"
+      onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+    />
+  );
 }
 
 /**
  * The compact navigation bar. With a `scrollY`, its title and hairline fade in as the large title
- * scrolls away (a scroll-edge effect instead of a permanent divider). Without one, they show.
+ * scrolls away. Without one, they show.
  */
 export function ScreenHeader({
   title,
-  menu,
   back,
+  left,
   right,
   scrollY,
   alignLeft,
 }: {
   title: string;
-  menu?: boolean;
   back?: boolean;
+  /** Custom content on the left, e.g. an avatar and name. Replaces the title. */
+  left?: ReactNode;
   right?: ReactNode;
   scrollY?: SharedValue<number>;
   alignLeft?: boolean;
@@ -102,54 +113,67 @@ export function ScreenHeader({
   }));
   return (
     <View style={styles.bar}>
-      <View style={styles.barSide}>
-        {menu ? <MenuButton /> : null}
-        {back ? <BackButton /> : null}
-      </View>
-      <Animated.Text
-        accessibilityRole="header"
-        // With a large title on screen, that is the header screen readers announce.
-        importantForAccessibility={scrollY ? 'no-hide-descendants' : 'auto'}
-        accessibilityElementsHidden={!!scrollY}
-        maxFontSizeMultiplier={MAX_CHROME_SCALE}
-        numberOfLines={1}
-        style={[styles.barTitle, alignLeft && styles.barTitleLeft, titleStyle]}
-      >
-        {title}
-      </Animated.Text>
+      {back ? (
+        <View style={styles.barSide}>
+          <BackButton />
+        </View>
+      ) : null}
+      {left ? (
+        <View style={{ flex: 1 }}>{left}</View>
+      ) : (
+        <Animated.Text
+          accessibilityRole="header"
+          // With a large title on screen, that is the header screen readers announce.
+          importantForAccessibility={scrollY ? 'no-hide-descendants' : 'auto'}
+          accessibilityElementsHidden={!!scrollY}
+          maxFontSizeMultiplier={MAX_CHROME_SCALE}
+          numberOfLines={1}
+          style={[styles.barTitle, (alignLeft || !back) && styles.barTitleLeft, titleStyle]}
+        >
+          {title}
+        </Animated.Text>
+      )}
       <View style={[styles.barSide, styles.barSideRight]}>{right}</View>
-      <Animated.View style={[styles.hairline, lineStyle]} pointerEvents="none" />
+      {scrollY ? <Animated.View style={[styles.edge, lineStyle]} pointerEvents="none" /> : null}
     </View>
   );
 }
 
 /**
- * A screen with a large title that collapses into the bar as the content scrolls. Android has no
- * native large title, so this is the scroll-worklet version: scroll offset lives in a shared
- * value, and only opacity and transform animate (no layout per frame).
+ * A screen over the violet glow, with a large title that collapses into the bar as the content
+ * scrolls. Scroll offset lives in a shared value and only opacity and transform animate. Tab
+ * screens (`tabs`) leave room at the bottom for the floating tab bar.
  */
 export function Screen({
   title,
   subtitle,
-  menu,
   back,
+  tabs,
+  header,
   right,
   children,
   refreshing,
   onRefresh,
+  scrollRef,
 }: {
   title?: string;
   subtitle?: string;
-  menu?: boolean;
   back?: boolean;
+  /** A tab screen: content clears the floating tab bar. */
+  tabs?: boolean;
+  /** Custom left side of the bar (Home's avatar and name). */
+  header?: ReactNode;
   right?: ReactNode;
   children: ReactNode;
   refreshing?: boolean;
   onRefresh?: () => void;
+  /** For screens that scroll to one of their sections. */
+  scrollRef?: RefObject<Animated.ScrollView | null>;
 }) {
   const styles = useThemedStyles(makeStyles);
   const { palette } = useTheme();
   const reduced = useReducedMotion();
+  const tabSpace = useTabBarSpace();
   const scrollY = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler((e) => {
     scrollY.set(e.contentOffset.y);
@@ -161,55 +185,68 @@ export function Screen({
       transform: reduced
         ? []
         : [
-            {
-              // Pulled down past the top it grows slightly from its leading edge, as on iOS.
-              scale: interpolate(y, [-120, 0], [1.08, 1], Extrapolation.CLAMP),
-            },
+            { translateY: interpolate(y, [0, motion.titleCollapse], [0, -8], Extrapolation.CLAMP) },
+            // Pulled down past the top it grows slightly from its leading edge, as on iOS.
+            { scale: interpolate(y, [-120, 0], [1.08, 1], Extrapolation.CLAMP) },
           ],
     };
   });
+  const showBar = !!(title || back || header || right);
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
-      {title || menu || back ? (
-        <View style={styles.column}>
-          <ScreenHeader
-            title={title ?? ''}
-            menu={menu}
-            back={back}
-            right={right}
-            scrollY={scrollY}
-          />
-        </View>
-      ) : null}
-      <Animated.ScrollView
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        contentContainerStyle={[styles.content, styles.column]}
-        keyboardShouldPersistTaps="handled"
-        refreshControl={
-          onRefresh ? (
-            <RefreshControl
-              refreshing={refreshing ?? false}
-              onRefresh={onRefresh}
-              colors={[palette.accentText]}
-              tintColor={palette.accentText}
-              progressBackgroundColor={palette.surface}
+    <View style={{ flex: 1, backgroundColor: palette.bg }}>
+      <GlowBackground />
+      <SafeAreaView style={styles.screen} edges={['top']}>
+        {showBar ? (
+          <View style={styles.column}>
+            <ScreenHeader
+              title={title ?? ''}
+              back={back}
+              left={header}
+              right={right}
+              scrollY={title ? scrollY : undefined}
             />
-          ) : undefined
-        }
-      >
-        {title ? (
-          <Animated.View
-            style={[styles.largeTitleWrap, largeStyle, { transformOrigin: 'left center' }]}
-          >
-            <Text accessibilityRole="header" style={styles.largeTitle}>
-              {title}
-            </Text>
-            {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-          </Animated.View>
+          </View>
         ) : null}
-        {children}
-      </Animated.ScrollView>
-    </SafeAreaView>
+        <Animated.ScrollView
+          ref={scrollRef}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          contentContainerStyle={[
+            styles.content,
+            styles.column,
+            { paddingBottom: tabs ? tabSpace : space.xxl },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            onRefresh ? (
+              <RefreshControl
+                refreshing={refreshing ?? false}
+                onRefresh={onRefresh}
+                colors={[palette.accent]}
+                tintColor={palette.accent}
+                progressBackgroundColor={palette.raised}
+              />
+            ) : undefined
+          }
+        >
+          {refreshing ? (
+            <View style={styles.refreshing} accessibilityLabel="Refreshing" accessible>
+              <Spark size={28} thinking />
+            </View>
+          ) : null}
+          {title && !header ? (
+            <Animated.View
+              style={[styles.largeTitleWrap, largeStyle, { transformOrigin: 'left center' }]}
+            >
+              <Text accessibilityRole="header" style={styles.largeTitle}>
+                {title}
+              </Text>
+              {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+            </Animated.View>
+          ) : null}
+          {children}
+        </Animated.ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
