@@ -538,3 +538,32 @@ export const putPushToken = (token: string) =>
   call<unknown>('PUT', '/device/push-token', { body: { token } });
 
 export const deletePushToken = () => call<unknown>('DELETE', '/device/push-token');
+
+/** A local file in an allowed folder on the laptop, or a Drive file, as the Files screen lists it. */
+export type FileHit =
+  | {
+      source: 'local';
+      path: string;
+      name: string;
+      size: number | null;
+      modified: string | null;
+    }
+  | {
+      source: 'drive';
+      account: string;
+      id: string;
+      name: string;
+      mime: string | null;
+      size: number | null;
+      modified: string | null;
+    };
+
+/** null for a source that is not configured on the laptop. */
+export interface FileSearch {
+  local: FileHit[] | null;
+  drive: FileHit[] | null;
+  errors: ('local' | 'drive')[];
+}
+
+export const searchFiles = (query: string, limit = 10) =>
+  call<FileSearch>('GET', `/files/search?q=${encodeURIComponent(query.trim())}&limit=${limit}`);

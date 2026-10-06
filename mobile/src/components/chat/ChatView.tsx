@@ -15,7 +15,7 @@ import { openNewChat } from '../../lib/chatRoutes';
 import type { ChatMessage } from '../../lib/chatState';
 import { useConversations } from '../../lib/Conversations';
 import { useChatSession } from '../../lib/useChatSession';
-import { useThemedStyles, type Palette } from '../../theme';
+import { space, useThemedStyles, type Palette } from '../../theme';
 import { Body, Button, COLUMN_MAX, ErrorText, IconButton, Loading } from '../ui';
 import { ScreenHeader } from '../Screen';
 import { Composer } from './Composer';
@@ -32,13 +32,13 @@ const makeStyles = (p: Palette) => ({
     width: '100%' as const,
     maxWidth: COLUMN_MAX,
     alignSelf: 'center' as const,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 16,
-    gap: 22,
+    paddingHorizontal: space.md,
+    paddingTop: space.sm,
+    paddingBottom: space.md,
+    gap: space.lg,
   },
   column: { width: '100%' as const, maxWidth: COLUMN_MAX, alignSelf: 'center' as const },
-  center: { gap: 12, paddingTop: 24 },
+  center: { gap: space.md - space.xs, paddingTop: space.lg },
 });
 
 /** The keyboard hides the system bar, so the bottom inset must not add a gap above it. */
@@ -55,7 +55,14 @@ function useKeyboardOpen(): boolean {
   return open;
 }
 
-export function ChatView({ conversationId }: { conversationId: string | null }) {
+export function ChatView({
+  conversationId,
+  draft = '',
+}: {
+  conversationId: string | null;
+  /** Text placed in the composer for the owner to edit and send. */
+  draft?: string;
+}) {
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const status = useAgentStatus();
@@ -102,6 +109,7 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
     <SafeAreaView style={styles.screen} edges={['top']}>
       <ScreenHeader
         title={title}
+        alignLeft
         menu
         right={
           session.messages.length > 0 ? (
@@ -152,6 +160,7 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
         />
         <View style={[styles.column, { paddingBottom: keyboardOpen ? 0 : insets.bottom }]}>
           <Composer
+            initialDraft={draft}
             busy={session.busy}
             online={status.online}
             onSend={send}

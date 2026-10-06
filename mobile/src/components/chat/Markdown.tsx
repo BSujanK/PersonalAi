@@ -17,7 +17,7 @@ const makeStyles = (p: Palette) => ({
   strong: { fontFamily: fontFamily.bodySemiBold, fontWeight: 'normal' as const },
   em: { fontStyle: 'italic' as const },
   strike: { textDecorationLine: 'line-through' as const },
-  link: { color: p.accent, textDecorationLine: 'underline' as const },
+  link: { color: p.accentText, textDecorationLine: 'underline' as const },
   inlineCode: {
     fontFamily: fontFamily.mono,
     fontSize: size.body - 2,

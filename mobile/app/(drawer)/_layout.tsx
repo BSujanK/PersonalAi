@@ -23,6 +23,7 @@ export default function DrawerLayout() {
       <Drawer.Screen name="index" options={{ title: 'Chat' }} />
       <Drawer.Screen name="today" options={{ title: 'Today' }} />
       <Drawer.Screen name="approvals" options={{ title: 'Approvals' }} />
+      <Drawer.Screen name="files" options={{ title: 'Files' }} />
       <Drawer.Screen name="money" options={{ title: 'Money' }} />
       <Drawer.Screen name="settings" options={{ title: 'Settings' }} />
     </Drawer>

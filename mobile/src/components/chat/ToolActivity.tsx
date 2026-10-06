@@ -6,46 +6,48 @@ import {
   toolSummaryLine,
   type ToolActivity as Activity,
 } from '../../lib/toolLabels';
-import { fontFamily, MIN_TARGET, size, useTheme, useThemedStyles, type Palette } from '../../theme';
+import {
+  MIN_TARGET,
+  radius,
+  space,
+  type,
+  useTheme,
+  useThemedStyles,
+  type Palette,
+} from '../../theme';
 import { Icon } from '../Icon';
 
 const makeStyles = (p: Palette) => ({
-  root: { gap: 6, alignItems: 'flex-start' as const },
+  root: { gap: space.sm, alignItems: 'flex-start' as const },
   summary: {
     minHeight: MIN_TARGET,
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    gap: 8,
-    paddingHorizontal: 12,
-    borderRadius: MIN_TARGET / 2,
-    borderWidth: 1,
-    borderColor: p.border,
-    backgroundColor: p.surface,
+    gap: space.sm,
+    paddingHorizontal: space.md - space.xs,
+    borderRadius: radius.pill,
+    backgroundColor: p.muted,
     maxWidth: '100%' as const,
   },
-  summaryText: {
-    flexShrink: 1,
-    fontFamily: fontFamily.body,
-    fontSize: size.small + 1,
-    color: p.textMuted,
-  },
-  list: { gap: 6, paddingLeft: 4 },
+  summaryText: { ...type.subhead, flexShrink: 1, color: p.textMuted },
+  list: { gap: space.xs + 2, paddingLeft: space.xs },
   chip: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    gap: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    backgroundColor: p.muted,
+    gap: space.sm,
+    paddingVertical: space.xs,
+    paddingHorizontal: space.md - space.xs,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: p.separator,
     alignSelf: 'flex-start' as const,
   },
-  chipText: { fontFamily: fontFamily.body, fontSize: size.small, color: p.text },
+  chipText: { ...type.footnote, color: p.text },
 });
 
 function StatusIcon({ status }: { status: Activity['status'] }) {
   const { palette } = useTheme();
-  if (status === 'started') return <ActivityIndicator size="small" color={palette.accent} />;
+  if (status === 'started') return <ActivityIndicator size="small" color={palette.accentText} />;
   if (status === 'failed') return <Icon name="alert-circle" size={16} color={palette.danger} />;
   return <Icon name="check" size={16} color={palette.ok} />;
 }
@@ -53,6 +55,7 @@ function StatusIcon({ status }: { status: Activity['status'] }) {
 /** What the agent did this turn, collapsed to one line; tap to see each step. */
 export function ToolActivity({ activity }: { activity: Activity[] }) {
   const styles = useThemedStyles(makeStyles);
+  const { palette } = useTheme();
   const [open, setOpen] = useState(false);
   if (activity.length === 0) return null;
   const chips = summariseTools(activity);
@@ -73,7 +76,7 @@ export function ToolActivity({ activity }: { activity: Activity[] }) {
         <Text style={styles.summaryText} numberOfLines={1}>
           {summary}
         </Text>
-        <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} />
+        <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={palette.textMuted} />
       </Pressable>
       {open ? (
         <View style={styles.list}>

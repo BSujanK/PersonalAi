@@ -5,6 +5,7 @@ import * as Clipboard from 'expo-clipboard';
 import { decideApproval, getApproval, type Approval } from '../../../lib/api';
 import { processDeviceCommands } from '../../../lib/deviceCommands';
 import { signWithBiometrics } from '../../../lib/secureKeys';
+import { previewVectors } from '../../../test/previewVectors';
 import { ApprovalCard } from '../ApprovalCard';
 
 jest.mock('../../../lib/api', () => ({
@@ -57,6 +58,21 @@ describe('ApprovalCard', () => {
     expect(getApproval).toHaveBeenCalledWith(ACTION_ID);
   });
 
+  it('summarises NEW and EXTERNAL recipients in the header of a mail proposal', async () => {
+    const mailSend = previewVectors().mail_send;
+    jest.mocked(getApproval).mockResolvedValue({
+      ...approval('pending'),
+      tool_name: 'mail_send',
+      preview: mailSend.preview,
+    });
+    await render(<ApprovalCard actionId={ACTION_ID} />);
+    expect(await screen.findByText('2 NEW')).toBeTruthy();
+    expect(screen.getByText('1 EXTERNAL')).toBeTruthy();
+    expect(screen.getByLabelText('2 recipients you have never emailed')).toBeTruthy();
+    expect(screen.getByLabelText('1 recipient outside your domains')).toBeTruthy();
+    expect(screen.getByText(mailSend.preview)).toBeTruthy();
+  });
+
   it('approve signs with biometrics over the stored hash and nonce, then posts the signature', async () => {
     jest.mocked(getApproval).mockResolvedValueOnce(approval('pending'));
     jest.mocked(getApproval).mockResolvedValue(approval('executed'));
@@ -82,7 +98,7 @@ describe('ApprovalCard', () => {
     ];
     expect(order[0]).toBeLessThan(order[1]);
     expect(processDeviceCommands).toHaveBeenCalled();
-    expect(await screen.findByText('Approved')).toBeTruthy();
+    expect(await screen.findByText('Approved and done')).toBeTruthy();
     expect(screen.queryByLabelText('Approve this action')).toBeNull();
   });
 
@@ -105,7 +121,7 @@ describe('ApprovalCard', () => {
       expect.objectContaining({ sig: 'd'.repeat(64) }),
     );
     expect(processDeviceCommands).not.toHaveBeenCalled();
-    expect(await screen.findByText('Rejected')).toBeTruthy();
+    expect(await screen.findByText('Rejected. Nothing was sent.')).toBeTruthy();
   });
 
   it('sends nothing when the biometric prompt is cancelled', async () => {
@@ -166,7 +182,7 @@ describe('ApprovalCard', () => {
     });
     await render(<ApprovalCard actionId={ACTION_ID} />);
     await fireEvent.press(await screen.findByLabelText('Approve this action'));
-    expect(await screen.findByText('Approved')).toBeTruthy();
+    expect(await screen.findByText('Approved and done')).toBeTruthy();
     expect(screen.queryByLabelText('Copy link')).toBeNull();
   });
 });

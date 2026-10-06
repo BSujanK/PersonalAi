@@ -1,17 +1,18 @@
 import { Inter_400Regular } from '@expo-google-fonts/inter/400Regular';
 import { Inter_500Medium } from '@expo-google-fonts/inter/500Medium';
 import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
-import { Newsreader_500Medium } from '@expo-google-fonts/newsreader/500Medium';
+import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { AppState, View } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { PairForm } from '../src/components/PairForm';
-import { Loading, Title } from '../src/components/ui';
+import { Loading } from '../src/components/ui';
 import { Screen } from '../src/components/Screen';
 import { AgentStatusProvider } from '../src/lib/AgentStatus';
 import { registerBackgroundSync } from '../src/lib/backgroundTasks';
@@ -33,6 +34,7 @@ async function foregroundSync(): Promise<void> {
 function Gate() {
   const { pairing } = usePairing();
   const { palette } = useTheme();
+  const reduced = useReducedMotion();
   const paired = pairing != null;
 
   useEffect(() => {
@@ -58,8 +60,7 @@ function Gate() {
   }
   if (pairing === null) {
     return (
-      <Screen>
-        <Title>Pair with your agent</Title>
+      <Screen title="Pair" subtitle="Connect this phone to the agent on your laptop.">
         <PairForm />
       </Screen>
     );
@@ -67,8 +68,13 @@ function Gate() {
   return (
     <AgentStatusProvider>
       <ConversationsProvider>
+        {/* Deeper into the hierarchy: the platform push, unmodified; a fade with Reduce Motion. */}
         <Stack
-          screenOptions={{ headerShown: false, contentStyle: { backgroundColor: palette.bg } }}
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: palette.bg },
+            animation: reduced ? 'fade' : 'default',
+          }}
         >
           <Stack.Screen name="(drawer)" />
           <Stack.Screen name="mail/[account]/[id]" />
@@ -85,7 +91,7 @@ function Themed() {
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
-    Newsreader_500Medium,
+    Inter_700Bold,
   });
   return (
     <View style={{ flex: 1, backgroundColor: palette.bg }}>

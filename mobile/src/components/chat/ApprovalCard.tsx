@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
-import { getApproval, type Approval } from '../../lib/api';
+import { parsePreview, recipientWarnings } from '../../lib/actionPreview';
+import { getApproval, type Approval, type DecisionResult } from '../../lib/api';
 import {
   decideWithBiometrics,
   outcomeOf,
@@ -9,62 +11,97 @@ import {
   type ApprovalOutcome,
   type Decision,
 } from '../../lib/approvalFlow';
-import { errorMessage, timeLeft } from '../../lib/format';
+import { errorMessage, expiresWithin, timeLeft } from '../../lib/format';
+import { haptics } from '../../lib/haptics';
 import { onRefresh } from '../../lib/refreshBus';
-import { toolLabel } from '../../lib/toolLabels';
-import { fontFamily, size, useTheme, useThemedStyles, type Palette } from '../../theme';
+import { actionTitle } from '../../lib/toolLabels';
+import {
+  fontFamily,
+  motion,
+  radius,
+  space,
+  type,
+  useTheme,
+  useThemedStyles,
+  type Palette,
+} from '../../theme';
+import { ActionPreview } from '../approval/ActionPreview';
 import { Icon, type IconName } from '../Icon';
 import { ResultLink } from '../ResultLink';
-import { Button, ErrorText } from '../ui';
+import { Badge, Button, ErrorText } from '../ui';
+
+const SOON_MS = 3 * 60_000;
 
 const makeStyles = (p: Palette) => ({
   card: {
     backgroundColor: p.surface,
-    borderColor: p.border,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderRadius: 16,
+    borderColor: p.separator,
     overflow: 'hidden' as const,
   },
   header: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    gap: 10,
-    padding: 14,
-    paddingBottom: 10,
+    gap: space.sm + space.xs,
+    padding: space.md,
+    paddingBottom: space.sm + space.xs,
   },
-  headerText: { flex: 1 },
-  kicker: { fontFamily: fontFamily.bodyMedium, fontSize: size.caption + 1, color: p.textMuted },
-  title: { fontFamily: fontFamily.bodySemiBold, fontSize: size.body, color: p.text },
-  previewWell: {
-    marginHorizontal: 14,
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: p.muted,
+  tile: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md - 2,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor: p.accentSoft,
   },
-  preview: { fontFamily: fontFamily.mono, fontSize: size.small, lineHeight: 20, color: p.text },
-  actions: { flexDirection: 'row' as const, gap: 10, padding: 14 },
+  headerText: { flex: 1, gap: 2 },
+  kicker: { ...type.footnote, fontFamily: fontFamily.bodyMedium, color: p.textMuted },
+  title: { ...type.headline, color: p.text },
+  badges: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    gap: space.sm,
+    paddingHorizontal: space.md,
+    paddingBottom: space.sm + space.xs,
+  },
+  body: { paddingHorizontal: space.md },
+  actions: { flexDirection: 'row' as const, gap: space.sm + space.xs, padding: space.md },
   action: { flex: 1 },
-  footer: { padding: 14, gap: 6 },
-  result: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 8 },
-  resultText: { fontFamily: fontFamily.bodyMedium, fontSize: size.body - 1, color: p.text },
-  hint: { fontFamily: fontFamily.body, fontSize: size.small, color: p.textMuted },
+  footer: { padding: space.md, gap: space.sm },
+  result: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: space.sm },
+  resultText: { ...type.callout, fontFamily: fontFamily.bodyMedium, color: p.text, flex: 1 },
+  hint: { ...type.footnote, color: p.textMuted, textAlign: 'center' as const },
 });
 
 const RESULT: Record<Exclude<ApprovalOutcome, 'pending'>, { icon: IconName; text: string }> = {
-  approved: { icon: 'check-circle', text: 'Approved' },
-  rejected: { icon: 'x-circle', text: 'Rejected' },
+  approved: { icon: 'check-circle', text: 'Approved and done' },
+  rejected: { icon: 'x-circle', text: 'Rejected. Nothing was sent.' },
   failed: { icon: 'alert-circle', text: 'Approved, but the action failed to run' },
   expired: { icon: 'clock', text: 'Expired. Ask again to get a fresh proposal.' },
 };
 
+// Built once: the outcome row is content the owner is waiting on, so it eases in (220 ms).
+const OUTCOME_ENTER = FadeIn.duration(motion.enterMs);
+
 /**
- * A permission-style card for one proposed action. It shows the exact preview the server stored
- * and decides through the same biometric signing flow as the Approvals screen.
+ * A permission-style card for one proposed action: who it goes to (with NEW and EXTERNAL
+ * badges), what is attached, the link scope, and the exact preview the server stored. Approve
+ * and Reject go through the one biometric signing flow (approvalFlow.decideWithBiometrics).
  */
-export function ApprovalCard({ actionId }: { actionId: string }) {
+export function ApprovalCard({
+  actionId,
+  initial,
+  onDecided,
+}: {
+  actionId: string;
+  /** Already-fetched approval (the Approvals screen); skips the first fetch. */
+  initial?: Approval;
+  onDecided?: (approval: Approval, result: DecisionResult) => void;
+}) {
   const styles = useThemedStyles(makeStyles);
   const { palette } = useTheme();
-  const [approval, setApproval] = useState<Approval | null>(null);
+  const [approval, setApproval] = useState<Approval | null>(initial ?? null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<Decision | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +109,7 @@ export function ApprovalCard({ actionId }: { actionId: string }) {
   const [link, setLink] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const mounted = useRef(true);
+  const skipFirst = useRef(initial !== undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,7 +126,8 @@ export function ApprovalCard({ actionId }: { actionId: string }) {
         },
       );
     };
-    run();
+    if (skipFirst.current) skipFirst.current = false;
+    else run();
     const unsubscribe = onRefresh(run);
     return () => {
       cancelled = true;
@@ -103,6 +142,14 @@ export function ApprovalCard({ actionId }: { actionId: string }) {
     };
   }, []);
 
+  const warnings = useMemo(
+    () =>
+      approval
+        ? recipientWarnings(parsePreview(approval.tool_name, approval.preview).recipients)
+        : { fresh: 0, external: 0 },
+    [approval],
+  );
+
   const reload = () => setReloadKey((k) => k + 1);
 
   async function decide(decision: Decision) {
@@ -111,6 +158,9 @@ export function ApprovalCard({ actionId }: { actionId: string }) {
     setError(null);
     try {
       const result = await decideWithBiometrics(approval, decision);
+      if (decision === 'approve' && result.status === 'failed') haptics.error();
+      else haptics.success();
+      onDecided?.(approval, result);
       if (mounted.current) {
         setDecidedStatus(result.status);
         setLink(resultLink(result.result));
@@ -128,19 +178,21 @@ export function ApprovalCard({ actionId }: { actionId: string }) {
     return (
       <View style={styles.card}>
         <View style={styles.header}>
-          <Icon name="shield" size={20} color={palette.accent} />
+          <View style={styles.tile}>
+            <Icon name="shield" size={18} color={palette.accentText} />
+          </View>
           <View style={styles.headerText}>
             <Text style={styles.kicker}>Approval</Text>
             <Text style={styles.title}>
-              {loadError ? 'Could not load this approval' : 'Loading the proposal...'}
+              {loadError ? 'Could not load this approval' : 'Loading the proposal…'}
             </Text>
           </View>
-          {loadError ? null : <ActivityIndicator color={palette.accent} />}
+          {loadError ? null : <ActivityIndicator color={palette.accentText} />}
         </View>
         {loadError ? (
           <View style={styles.footer}>
             <ErrorText message={loadError} />
-            <Button label="Try again" tone="plain" onPress={reload} />
+            <Button label="Try again" tone="plain" compact onPress={reload} />
           </View>
         ) : null}
       </View>
@@ -149,28 +201,49 @@ export function ApprovalCard({ actionId }: { actionId: string }) {
 
   const outcome = outcomeOf(decidedStatus ?? approval.status, approval.expires_at);
   const final = outcome !== 'pending';
+  const soon = !final && expiresWithin(approval.expires_at, SOON_MS);
   return (
     <View
       style={styles.card}
-      accessibilityLabel={`Approval request: ${toolLabel(approval.tool_name)}`}
+      accessibilityLabel={`Approval request: ${actionTitle(approval.tool_name)}`}
     >
       <View style={styles.header}>
-        <Icon name="shield" size={20} color={palette.accent} />
+        <View style={styles.tile}>
+          <Icon name="shield" size={18} color={palette.accentText} />
+        </View>
         <View style={styles.headerText}>
-          <Text style={styles.kicker}>
-            {final ? 'Approval' : `Approval needed - ${timeLeft(approval.expires_at)}`}
+          <Text style={[styles.kicker, soon && { color: palette.warn }]}>
+            {final ? 'Approval' : `Needs your approval · ${timeLeft(approval.expires_at)}`}
           </Text>
-          <Text style={styles.title}>{toolLabel(approval.tool_name)}</Text>
+          <Text style={styles.title}>{actionTitle(approval.tool_name)}</Text>
         </View>
       </View>
-      <View style={styles.previewWell}>
-        <Text selectable style={styles.preview}>
-          {approval.preview}
-        </Text>
+      {warnings.fresh || warnings.external ? (
+        <View style={styles.badges}>
+          {warnings.fresh ? (
+            <Badge
+              label={`${warnings.fresh} NEW`}
+              tone="warn"
+              icon="alert-triangle"
+              spoken={`${warnings.fresh} recipient${warnings.fresh === 1 ? '' : 's'} you have never emailed`}
+            />
+          ) : null}
+          {warnings.external ? (
+            <Badge
+              label={`${warnings.external} EXTERNAL`}
+              tone="danger"
+              icon="globe"
+              spoken={`${warnings.external} recipient${warnings.external === 1 ? '' : 's'} outside your domains`}
+            />
+          ) : null}
+        </View>
+      ) : null}
+      <View style={styles.body}>
+        <ActionPreview toolName={approval.tool_name} preview={approval.preview} />
       </View>
       {final ? (
-        <View style={styles.footer}>
-          <View style={styles.result}>
+        <Animated.View entering={OUTCOME_ENTER} style={styles.footer}>
+          <View style={styles.result} accessibilityLiveRegion="polite">
             <Icon
               name={RESULT[outcome].icon}
               size={20}
@@ -186,13 +259,13 @@ export function ApprovalCard({ actionId }: { actionId: string }) {
           </View>
           {outcome === 'approved' && link ? <ResultLink link={link} /> : null}
           <ErrorText message={error} />
-        </View>
+        </Animated.View>
       ) : (
         <>
           <View style={styles.actions}>
             <View style={styles.action}>
               <Button
-                label="Reject"
+                label={busy === 'reject' ? 'Waiting…' : 'Reject'}
                 tone="plain"
                 accessibilityLabel="Reject this action"
                 onPress={() => void decide('reject')}
@@ -201,8 +274,10 @@ export function ApprovalCard({ actionId }: { actionId: string }) {
             </View>
             <View style={styles.action}>
               <Button
-                label={busy === 'approve' ? 'Waiting...' : 'Approve'}
+                label={busy === 'approve' ? 'Waiting…' : 'Approve'}
+                icon="lock"
                 accessibilityLabel="Approve this action"
+                accessibilityHint="Asks for your fingerprint or face"
                 onPress={() => void decide('approve')}
                 disabled={busy !== null}
               />
