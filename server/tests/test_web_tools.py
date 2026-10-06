@@ -341,8 +341,8 @@ def test_search_tool_returns_results_and_never_the_key() -> None:
         result = rig.run("web_search", {"query": "nvidia blackwell gpu news", "max_results": 2})
     assert result == {
         "results": [
-            {"title": "Title 0", "url": ARTICLE, "snippet": "Snippet 0"},
-            {"title": "Title 1", "url": OTHER, "snippet": "Snippet 1"},
+            {"id": "w1", "title": "Title 0", "url": ARTICLE, "snippet": "Snippet 0"},
+            {"id": "w2", "title": "Title 1", "url": OTHER, "snippet": "Snippet 1"},
         ]
     }
     assert KEY not in json.dumps(result)
@@ -923,3 +923,62 @@ def test_injected_page_text_cannot_widen_what_is_read() -> None:
     result = _loop(rig.env, llm, max_steps=8).run("conv", [], "search and read", RedactionMap())
     assert result.pending_action_ids == []
     assert [str(r.url) for r in rig.page_requests] == [ARTICLE]
+
+
+# --- result ids --------------------------------------------------------------------------------
+
+
+def test_search_results_carry_ids_numbered_across_the_turn() -> None:
+    rig = make_rig()
+    with turn_scope():
+        first = rig.run("web_search", {"query": "nvidia blackwell"})["results"]
+        rig.search_urls = [OTHER, "https://news.example.com/story/2"]
+        second = rig.run("web_search", {"query": "nvidia rubin"})["results"]
+    assert [r["id"] for r in first] == ["w1", "w2"]
+    # A url seen earlier in the turn keeps its id; a new one gets the next.
+    assert [r["id"] for r in second] == ["w2", "w3"]
+
+
+def test_read_by_result_id_and_ids_are_per_turn() -> None:
+    rig = make_rig()
+    with turn_scope():
+        rig.run("web_search", {"query": "nvidia blackwell"})
+        assert rig.run("web_read", {"url": "w2"})["url"] == OTHER
+        assert "web_search" in rig.run("web_read", {"url": "w9"})["error"]
+    with turn_scope():
+        assert "web_search" in rig.run("web_read", {"url": "w1"})["error"]
+    assert [str(r.url) for r in rig.page_requests] == [OTHER]
+
+
+def test_a_url_masked_by_redaction_is_read_by_its_id() -> None:
+    """A long number in a result url reaches the model as a placeholder; the id still works,
+    while the masked url itself is refused and never fetched."""
+    rig = make_rig()
+    numeric = "https://news.example.com/story/202610061234"
+    rig.search_urls = [numeric]
+    llm = FakeLLM(
+        call("web_search", {"query": "nvidia blackwell gpu news"}, "c1"),
+        lambda m: LLMResponse(
+            None,
+            [
+                ToolCall(
+                    "c2",
+                    "web_read",
+                    from_model(
+                        json.dumps(
+                            {"url": re.search(r"https://\S+?(?=\")", m[-1].content.text)[0]},
+                            ensure_ascii=False,
+                        )
+                    ),
+                )
+            ],
+        ),
+        call("web_read", {"url": "w1"}, "c3"),
+        say("Summary."),
+    )
+    result = _loop(rig.env, llm).run("conv", [], "search the web", RedactionMap())
+    tools = [m.content.text for m in result.new_messages if m.role == "tool"]
+    assert "202610061234" not in tools[0] and "⟨" in tools[0]
+    assert "pass its id" in tools[1]
+    assert "Body text." in tools[2]
+    assert [str(r.url) for r in rig.page_requests] == [numeric]

@@ -33,9 +33,9 @@ A private personal agent that runs on the owner's Windows laptop. It reads Gmail
 3. **Redact before the cloud.** Every string sent to the NVIDIA API passes through `agent/core/redact.py`. Never call the LLM client with unredacted connector data, and never send raw ledger rows; send aggregates instead.
 4. **Untrusted content is data, not instructions.** Mail, files, Classroom posts, SMS, news feed text, web search results, web pages and Hugging Face listings are wrapped and labelled as untrusted in prompts and redacted like every tool result. None of it ever reaches a background job or triggers an action. News comes only from the feed URLs in `PERSONALAI_NEWS_FEEDS` (https, read-only), and `news_headlines` takes no URL.
 
-   **Web access (owner decision, 2026-10-06).** Exactly three READ tools reach the open internet, all in `agent/web/`:
+   **Web access (owner decision, 2026-10-06).** Apart from the configured news feeds, exactly three READ tools reach the open internet, all in `agent/web/`:
    - `web_search` sends a query to the Tavily API. Its key lives only in the keyring (`tavily_api_key`).
-   - `web_read(url)` fetches only a URL that `web_search` returned in the *same conversation turn*. The server keeps that allowlist, so the model cannot invent a URL. Every fetch:
+   - `web_read(url)` fetches only a URL that `web_search` returned in the *same conversation turn*, named by its exact URL or by the result id the server issued (`w1`, ...). The server keeps that allowlist, so the model cannot invent a URL. Every fetch:
      - is https GET only, on port 443, to a hostname (no IP literals), with no cookies and no auth;
      - follows redirects only to the same host, and refuses a host that resolves to a non-public address;
      - caps the body at 500 KB and converts HTML to text;
