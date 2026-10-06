@@ -1,8 +1,12 @@
+import { cubicBezier } from 'react-native-reanimated';
+
 // Motion tokens (animate-expo skill). Everything a finger drives is a spring; everything else is a
 // short ease-out. Nothing here runs on the JS thread per frame.
 export const motion = {
   /** Strong ease-out for UI entering or reacting. Never ease-in on UI. */
-  easeOut: 'cubic-bezier(0.23, 1, 0.32, 1)',
+  // Built with Reanimated's cubicBezier(): on device, Reanimated CSS transitions reject the CSS
+  // string form of a cubic bezier with a fatal error at first render.
+  easeOut: cubicBezier(0.23, 1, 0.32, 1),
   /** Press feedback: near-imperceptible, because it happens tens of times a day. */
   pressMs: 120,
   pressScale: 0.97,
