@@ -567,3 +567,96 @@ export interface FileSearch {
 
 export const searchFiles = (query: string, limit = 10) =>
   call<FileSearch>('GET', `/files/search?q=${encodeURIComponent(query.trim())}&limit=${limit}`);
+
+export type InboxCategory = 'important' | 'normal' | 'promo' | 'spam' | 'unclassified';
+
+export interface InboxItem {
+  account: string;
+  id: string;
+  message_id: string;
+  thread_id: string;
+  category: Exclude<InboxCategory, 'unclassified'> | null;
+  from_name: string;
+  from_addr: string;
+  subject: string;
+  snippet: string;
+  reason: string | null;
+  received: string;
+  unread: boolean;
+}
+
+export interface InboxPage {
+  items: InboxItem[];
+  counts: Record<InboxCategory, number>;
+  next_cursor: string | null;
+}
+
+export const getInbox = ({
+  cursor,
+  limit = 50,
+  categories = [],
+}: {
+  cursor?: string | null;
+  limit?: number;
+  categories?: readonly InboxCategory[];
+} = {}) => {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set('cursor', cursor);
+  for (const category of categories) params.append('category', category);
+  return call<InboxPage>('GET', `/mail/inbox?${params.toString()}`);
+};
+
+export type AlertKind = 'important_mail' | 'deadline' | 'briefing' | 'calendar_added';
+
+export type AlertTarget =
+  | { type: 'mail'; account: string; message_id: string }
+  | { type: 'deadline'; deadline_id: number }
+  | { type: 'today' };
+
+export interface AlertItem {
+  id: number;
+  kind: AlertKind;
+  title: string;
+  body: string;
+  created_at: string;
+  target: AlertTarget;
+  actions?: string[];
+}
+
+export interface AlertFeed {
+  items: AlertItem[];
+  latest_id: number;
+}
+
+export interface AlertSettings {
+  important_mail: boolean;
+  deadlines: boolean;
+  briefing: boolean;
+  briefing_time: string;
+}
+
+export const getNotifications = (after: number) =>
+  call<AlertFeed>('GET', `/notifications?after=${after}&limit=100`);
+
+export const getAlertSettings = () => call<AlertSettings>('GET', '/notifications/settings');
+
+export const putAlertSettings = (settings: AlertSettings) =>
+  call<AlertSettings>('PUT', '/notifications/settings', { body: settings });
+
+export const undoAutoEvent = (deadlineId: number) =>
+  call<{ status: string }>('POST', `/deadlines/${deadlineId}/undo`);
+
+export interface UpcomingDeadline {
+  id: number;
+  kind: string;
+  title: string;
+  due: string;
+  source: 'mail' | 'classroom';
+  source_account: string;
+  source_id: string;
+  calendar_added: boolean;
+  status: string;
+}
+
+export const getDeadlines = (days = 14) =>
+  call<{ items: UpcomingDeadline[] }>('GET', `/deadlines?days=${days}`);

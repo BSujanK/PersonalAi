@@ -250,7 +250,7 @@ Go through these once; they are the end-to-end acceptance list from `docs/PLAN.m
 
 - [ ] `scripts/check_nvidia.py` passed (step A4).
 - [ ] Mail: within `PERSONALAI_MAIL_POLL_MINUTES` of starting, the digest in the app covers the last 7 days, and the important/normal split looks right.
-- [ ] Calendar and Classroom: upcoming Classroom deadlines appear as pending approvals; approving one creates the event.
+- [ ] Calendar and Classroom: upcoming Classroom deadlines appear on your calendar with an "Added to calendar" alert on the phone, and Undo removes the event.
 - [ ] Ask "Remind me at 7am": an approval appears on the phone, the fingerprint prompt follows, and the alarm is set in the clock app (open the app after approving).
 - [ ] Ask "Draft a reply to <someone>": the exact text is shown; reject it; check Gmail Sent that nothing was sent.
 - [ ] Bank SMS: **Settings > Import bank SMS**, allow SMS; a real Bank of Baroda SMS appears in Money, and the balance matches the latest "Avl Bal".
@@ -295,9 +295,13 @@ uv run python -m agent restore --in D:\backups\personalai-2026-10-05.paibak     
 | `PERSONALAI_CALENDAR_ACCOUNTS` | Comma-separated Google accounts whose primary calendar the agent reads and proposes changes to | none |
 | `PERSONALAI_CLASSROOM_ACCOUNTS` | Comma-separated Google accounts to read Classroom from | none |
 | `PERSONALAI_DRIVE_ACCOUNTS` | Comma-separated Google accounts to search and read Drive from, and to upload to or share from (with approval) | none |
-| `PERSONALAI_DEADLINE_CALENDAR` | Calendar account that receives proposed Classroom deadlines | first calendar account |
+| `PERSONALAI_DEADLINE_CALENDAR` | Calendar account whose primary calendar receives deadlines found in mail and Classroom | first calendar account |
 | `PERSONALAI_DEADLINE_POLL_MINUTES` | How often Classroom is checked for new deadlines | `60` |
-| `PERSONALAI_DEADLINE_HORIZON_DAYS` | How far ahead deadlines are proposed | `14` |
+| `PERSONALAI_DEADLINE_HORIZON_DAYS` | How far ahead Classroom deadlines are collected, and how old a mail may be to be scanned for one | `14` |
+| `PERSONALAI_CALENDAR_AUTO_ADD` | `off` stops adding found deadlines to your calendar without approval | on |
+| `PERSONALAI_ALERT_POLL_MINUTES` | How often alerts (deadlines, briefing, calendar adds) are prepared | `5` |
+| `PERSONALAI_BRIEFING_TIME` | Default morning briefing time (`HH:MM`, local); the app's Settings override it | `07:30` |
+| `PERSONALAI_NEWS_FEEDS` | Comma-separated https RSS/Atom feed URLs for `news_headlines` (check them with `agent news-check`) | none |
 | `PERSONALAI_FILE_ROOTS` | Absolute folders the agent may read, separated by `;` on Windows (`:` elsewhere) | none |
 | `PERSONALAI_FILE_INDEX_MINUTES` | Local file index refresh interval | `30` |
 | `PERSONALAI_FINANCE_UTC_OFFSET_MINUTES` | Local time offset for finance periods (India is +330) | `330` |
@@ -316,7 +320,7 @@ Secrets are never read from the environment; they live in the OS keyring.
 ## Calendar, Classroom, Drive and local files (M3, finish on the laptop in M7)
 
 1. Authorise the services per account, for example `uv run python scripts/setup_google_oauth.py --account you@example.com --services calendar,drive` and `--account you@college.example.edu --services gmail,classroom,drive`. Earlier scopes are kept.
-2. Set `PERSONALAI_CALENDAR_ACCOUNTS`, `PERSONALAI_CLASSROOM_ACCOUNTS` and `PERSONALAI_DRIVE_ACCOUNTS`. With both a calendar and a Classroom account, upcoming deadlines appear as pending approvals.
+2. Set `PERSONALAI_CALENDAR_ACCOUNTS`, `PERSONALAI_CLASSROOM_ACCOUNTS` and `PERSONALAI_DRIVE_ACCOUNTS`. With both a calendar and a Classroom account, upcoming deadlines are added to your calendar automatically (no guests; undo from the phone).
 3. Set `PERSONALAI_FILE_ROOTS` to the folders the agent may read, for example `C:\Users\you\Documents\College;C:\Users\you\Notes`. The index (txt, md, csv, pdf, docx) is built at startup and refreshed every `PERSONALAI_FILE_INDEX_MINUTES` minutes.
 
 ## Sending mail and sharing files (one-time re-consent for Drive)
@@ -334,6 +338,21 @@ uv run python -m agent doctor
 Google shows the consent screen again and asks to "See, edit, create and delete all of your Google Drive files"; allow it. Until you do, `agent doctor` reports the account with "missing: drive ... re-consent once" and the Drive tools refuse to run. Sending mail needs nothing new: the existing Gmail permission already covers it.
 
 Attachments come from the folders in `PERSONALAI_FILE_ROOTS` (any file type, hidden files excluded) or from Drive files of the accounts in `PERSONALAI_DRIVE_ACCOUNTS`, up to 20 MB per email. Google Docs, Sheets and Slides cannot be attached; ask the agent to share them instead.
+
+## Alerts, deadlines and news
+
+- **Deadlines.** Mail (not promo or spam) is scanned for fees, exams, submissions, bills and events; Classroom due dates are collected too. Each one is added to your own primary calendar without asking, with no guests and nobody notified, and the phone shows "Added to calendar" with an **Undo** button. Turn this off with `PERSONALAI_CALENDAR_AUTO_ADD=off`.
+- **Alerts on the phone.** In Settings > Alerts, turn on Important mail, Deadlines (a day and two hours before) and the Morning briefing, and set its time. Android 13+ asks for notification permission the first time. The app checks for alerts about every 15 minutes in the background and whenever you open it; alerts come over Tailscale, never through Google push.
+- **News feeds.** No feed is on by default, because the build environment could not reach any news site to confirm a URL. Check candidates on the laptop, then set the ones that pass:
+
+  ```powershell
+  cd server
+  uv run python -m agent news-check https://www.thehindu.com/news/national/feeder/default.rss https://indianexpress.com/section/india/feed/ https://feeds.feedburner.com/ndtvnews-top-stories https://www.livemint.com/rss/news https://feeds.arstechnica.com/arstechnica/index https://www.theverge.com/rss/index.xml https://techcrunch.com/feed/
+  setx PERSONALAI_NEWS_FEEDS "https://...,https://..."
+  uv run python -m agent restart
+  ```
+
+  `news-check` with no URLs checks the configured list.
 
 ## Finance (M4, finish with the phone app in M5 and on the laptop in M7)
 
@@ -370,7 +389,7 @@ The Android app lives in `mobile/` (Expo SDK 57, TypeScript). It is a dev-client
 ### Permissions
 
 - SMS (read and receive): Settings, then "Import bank SMS" asks the first time. Only messages from the bank sender list (plus any sender starting with `BOB`) are stored and sent. Add your own sender IDs in Settings. Queued messages upload when the app opens, after an import and about every 15 minutes in the background.
-- Notifications: asked when you turn on push, and needed for reminders.
+- Notifications: asked when you turn on an alert type or push, and needed for reminders and alerts (Android 13+).
 - Camera: only for scanning the pairing QR.
 - Alarms and timers set by the agent are created through the Android clock app after you approve them. They run while the app is open (Android blocks launching the clock from the background), so open the app after approving.
 

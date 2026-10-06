@@ -1,8 +1,13 @@
+/** Starter chips: a short label, and the complete request that tapping it sends. */
 export const SUGGESTIONS = [
-  "What's due this week?",
-  "Today's digest",
-  'How much did I spend this month?',
-  'Any important mail?',
+  { label: 'Emails', prompt: 'Show my latest emails, important ones first.' },
+  {
+    label: "Today's digest",
+    prompt: "Give me today's digest: important mail, deadlines and today's events.",
+  },
+  { label: 'News', prompt: "What are today's top news headlines?" },
+  { label: 'Account', prompt: "Show my account balances and this month's spending." },
+  { label: "What's due this week?", prompt: "What's due this week?" },
 ] as const;
 
 /** "Good morning" before noon, "Good afternoon" until 5pm, otherwise "Good evening". */

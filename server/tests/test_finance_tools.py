@@ -49,7 +49,7 @@ def _run(registry: ToolRegistry, name: str, args: dict[str, Any]) -> dict[str, A
 
 def test_tools_are_read_only_and_untrusted() -> None:
     registry, _ = _setup()
-    for name in ("spend_summary", "balances", "transactions"):
+    for name in ("spend_summary", "balances", "transactions", "account_overview"):
         tool = registry.get(name)
         assert tool is not None and tool.kind is ToolKind.READ and tool.untrusted_output
         assert tool.parameters["additionalProperties"] is False
@@ -82,6 +82,20 @@ def test_balances_report_reported_figure() -> None:
     assert "never estimated" in out["note"]
 
 
+def test_account_overview_is_balances_plus_this_month_aggregates() -> None:
+    registry, _ = _setup()
+    out = _run(registry, "account_overview", {})
+    assert set(out) == {"balances", "this_month"}
+    assert out["balances"] == _run(registry, "balances", {})
+    assert out["this_month"] == _run(registry, "spend_summary", {"period": "this_month"})
+    assert (out["this_month"]["from"], out["this_month"]["to"]) == ("2026-10-01", "2026-10-31")
+    text = json.dumps(out)
+    assert REFERENCE not in text and RAW_SMS not in text  # aggregates only, no ledger rows
+    tool = registry.get("account_overview")
+    assert tool is not None and tool.parameters["properties"] == {}
+    assert tool.parameters["additionalProperties"] is False
+
+
 def test_transactions_filters_and_groups() -> None:
     registry, _ = _setup()
     out = _run(
@@ -111,6 +125,8 @@ def test_transactions_filters_and_groups() -> None:
         ("spend_summary", {"from": "2024-01-01", "to": "2026-01-01"}),
         ("spend_summary", {"period": "today", "category": "gold"}),
         ("balances", {"x": 1}),
+        ("account_overview", {"x": 1}),
+        ("account_overview", {"period": "today"}),
         ("transactions", {"limit": 21}),
         ("transactions", {"limit": 0}),
         ("transactions", {"limit": True}),
@@ -134,6 +150,7 @@ def _all_outputs() -> list[dict[str, Any]]:
     calls: list[tuple[str, dict[str, Any]]] = [
         ("spend_summary", {"period": "today"}),
         ("balances", {}),
+        ("account_overview", {}),
         *(
             ("transactions", {"period": "today", "group_by": g})
             for g in ("category", "counterparty", "day", "week", "month", "account", "channel")

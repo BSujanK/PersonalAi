@@ -14,14 +14,13 @@ from agent.connectors.drive_google import build_drive_api
 from agent.connectors.files import FileIndex, FileRoots
 from agent.connectors.gcal_google import build_calendar_api
 from agent.connectors.google_auth import GoogleAuth
-from agent.core.approvals import ApprovalEngine
 from agent.core.clock import Clock
 from agent.core.tools import ToolRegistry
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.workspace.calendar_tools import register_calendar_tools
 from agent.workspace.classroom_tools import register_classroom_tools
-from agent.workspace.deadlines import DeadlineProposer, register_deadline_tool
+from agent.workspace.deadlines import register_deadline_tool
 from agent.workspace.drive_tools import register_drive_tools
 from agent.workspace.file_tools import register_file_tools
 
@@ -73,25 +72,3 @@ def setup_workspace(
         file_index = FileIndex(db, FieldCipher(db_key), db_key, roots, clock)
         register_file_tools(registry, file_index, roots)
     return WorkspaceServices(classroom_for, file_index, drive_for, roots)
-
-
-def deadline_proposer(
-    settings: Settings,
-    db: Database,
-    approvals: ApprovalEngine,
-    services: WorkspaceServices,
-    clock: Clock,
-) -> DeadlineProposer | None:
-    """Only when both a Classroom and a calendar account are configured."""
-    calendar = settings.deadline_calendar
-    if services.classroom_api_for is None or calendar is None:
-        return None
-    return DeadlineProposer(
-        db,
-        approvals,
-        services.classroom_api_for,
-        settings.classroom_accounts,
-        calendar,
-        clock,
-        settings.deadline_horizon_days,
-    )

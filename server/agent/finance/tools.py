@@ -181,6 +181,10 @@ def register_finance_tools(
             **group_transactions(txns, group_by, offset_minutes, limit),
         }
 
+    def overview(args: dict[str, Any]) -> Any:
+        _reject_unknown(args, set())
+        return {"balances": balances({}), "this_month": spend({"period": "this_month"})}
+
     registry.register(
         Tool(
             name="spend_summary",
@@ -236,5 +240,17 @@ def register_finance_tools(
             },
             kind=ToolKind.READ,
             run=transactions,
+        )
+    )
+    registry.register(
+        Tool(
+            name="account_overview",
+            description=(
+                "Account balances as last reported by the bank's messages plus this month's "
+                "spending summary, in one call. Aggregates only, amounts in rupees."
+            ),
+            parameters={"type": "object", "properties": {}, "additionalProperties": False},
+            kind=ToolKind.READ,
+            run=overview,
         )
     )

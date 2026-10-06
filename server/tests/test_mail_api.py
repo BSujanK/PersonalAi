@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import base64
+import json
 from dataclasses import dataclass
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from agent.api.app import create_app
@@ -145,3 +148,166 @@ def test_mail_routes_absent_without_mail_services() -> None:
     paths = {getattr(r, "path", "") for r in app.routes}
     assert not any(p.startswith("/mail") for p in paths)
     assert not hasattr(app.state, "mail")
+
+
+# --- GET /mail/inbox ---------------------------------------------------------------------------
+
+INBOX_ORDER = ("important", "normal", None, "promo", "spam")
+
+
+def _seed_inbox(api: MailApi) -> None:
+    """Two mails per category (and two unclassified), newest has the highest number."""
+    for rank, category in enumerate(INBOX_ORDER):
+        for n in range(2):
+            message_id = f"{category or 'none'}-{n}"
+            _store_mail(api.store, message_id, internal_date=NOW_MS - 1000 * (10 * rank + n))
+            if category is not None:
+                api.store.set_category(ACCOUNT, message_id, category, "rule", "test")
+
+
+def _inbox(api: MailApi, query: str = "") -> dict[str, Any]:
+    response = api.client.get(f"/mail/inbox?{query}", headers=api.headers)
+    assert response.status_code == 200, response.text
+    body: dict[str, Any] = response.json()
+    return body
+
+
+def _ids(body: dict[str, Any]) -> list[str]:
+    return [item["id"] for item in body["items"]]
+
+
+def test_inbox_orders_by_category_rank_then_newest() -> None:
+    api = _mail_api()
+    _seed_inbox(api)
+    body = _inbox(api)
+    assert _ids(body) == [
+        "important-0", "important-1", "normal-0", "normal-1", "none-0", "none-1",
+        "promo-0", "promo-1", "spam-0", "spam-1",
+    ]  # fmt: skip
+    assert body["next_cursor"] is None
+    assert body["counts"] == {
+        "important": 2, "normal": 2, "promo": 2, "spam": 2, "unclassified": 2,
+    }  # fmt: skip
+
+
+def test_inbox_item_shape_and_unread_flag() -> None:
+    api = _mail_api()
+    _store_mail(api.store, "m1", label_ids=("INBOX", "UNREAD"), from_name="Alice")
+    _store_mail(api.store, "m2", label_ids=("INBOX",), internal_date=NOW_MS - 5000)
+    api.store.set_category(ACCOUNT, "m1", "important", "rule", "vip")
+    first, second = _inbox(api)["items"]
+    assert first == {
+        "account": ACCOUNT,
+        "id": "m1",
+        "message_id": "m1",
+        "thread_id": "t",
+        "category": "important",
+        "from_name": "Alice",
+        "from_addr": "alice@example.com",
+        "subject": "Subject m1",
+        "snippet": "snip",
+        "reason": "vip",
+        "received": "2026-10-05T11:59:59+00:00",
+        "unread": True,
+    }
+    assert (second["category"], second["reason"], second["unread"]) == (None, None, False)
+
+
+def test_inbox_excludes_deleted_messages_everywhere() -> None:
+    api = _mail_api()
+    _seed_inbox(api)
+    api.store.mark_deleted(ACCOUNT, "important-0")
+    body = _inbox(api)
+    assert "important-0" not in _ids(body) and body["counts"]["important"] == 1
+
+
+def test_inbox_pages_through_every_message_once_in_order() -> None:
+    api = _mail_api()
+    _seed_inbox(api)
+    full = _ids(_inbox(api))
+    for size in (1, 3, 4):
+        seen: list[str] = []
+        cursor: str | None = None
+        for _ in range(20):
+            query = f"limit={size}" + (f"&cursor={cursor}" if cursor else "")
+            page = _inbox(api, query)
+            assert len(page["items"]) <= size
+            seen += _ids(page)
+            cursor = page["next_cursor"]
+            if cursor is None:
+                break
+        assert seen == full, size
+
+
+def test_inbox_cursor_breaks_ties_by_account_then_id() -> None:
+    api = _mail_api()
+    for account, message_id in (("b@example.com", "z"), (ACCOUNT, "y"), (ACCOUNT, "x")):
+        _store_mail(api.store, message_id, account=account, internal_date=NOW_MS - 1)
+    seen: list[tuple[str, str]] = []
+    cursor: str | None = None
+    while True:
+        page = _inbox(api, "limit=1" + (f"&cursor={cursor}" if cursor else ""))
+        seen += [(i["account"], i["id"]) for i in page["items"]]
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+    assert seen == [("b@example.com", "z"), (ACCOUNT, "x"), (ACCOUNT, "y")]
+
+
+def test_inbox_category_filter_is_repeatable_and_counts_ignore_it() -> None:
+    api = _mail_api()
+    _seed_inbox(api)
+    body = _inbox(api, "category=promo&category=unclassified")
+    assert _ids(body) == ["none-0", "none-1", "promo-0", "promo-1"]
+    assert body["counts"]["important"] == 2
+    assert _ids(_inbox(api, "category=spam")) == ["spam-0", "spam-1"]
+    paged = _inbox(api, "category=unclassified&limit=1")
+    assert _ids(paged) == ["none-0"] and paged["next_cursor"] is not None
+    assert _ids(_inbox(api, f"category=unclassified&limit=1&cursor={paged['next_cursor']}")) == [
+        "none-1"
+    ]
+
+
+def test_inbox_validates_parameters() -> None:
+    api = _mail_api()
+    for query in (
+        "limit=0",
+        "limit=101",
+        "limit=x",
+        "category=urgent",
+        "category=important&category=x",
+    ):
+        assert api.client.get(f"/mail/inbox?{query}", headers=api.headers).status_code == 422, query
+    assert api.client.get("/mail/inbox?limit=100", headers=api.headers).status_code == 200
+
+
+def _cursor(value: object) -> str:
+    return base64.urlsafe_b64encode(json.dumps(value).encode()).decode().rstrip("=")
+
+
+@pytest.mark.parametrize(
+    "cursor",
+    [
+        "!!!",
+        "bm90IGpzb24",  # base64 of "not json"
+        _cursor({"rank": 0}),
+        _cursor([0, 1, "a"]),
+        _cursor([0, 1, "a", "b", "c"]),
+        _cursor(["0", 1, "a", "b"]),
+        _cursor([0, "1", "a", "b"]),
+        _cursor([0, 1, 2, "b"]),
+        _cursor([0, 1, "a", None]),
+        _cursor([True, 1, "a", "b"]),
+        _cursor([9, 1, "a", "b"]),
+        _cursor([-1, 1, "a", "b"]),
+    ],
+)
+def test_inbox_rejects_malformed_cursors(cursor: str) -> None:
+    api = _mail_api()
+    response = api.client.get(f"/mail/inbox?cursor={cursor}", headers=api.headers)
+    assert (response.status_code, response.json()) == (400, {"detail": "bad_cursor"})
+
+
+def test_inbox_needs_the_device_token() -> None:
+    api = _mail_api()
+    assert api.client.get("/mail/inbox").status_code in (401, 403)

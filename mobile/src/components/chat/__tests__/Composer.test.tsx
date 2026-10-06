@@ -44,20 +44,31 @@ describe('Composer', () => {
 });
 
 describe('EmptyState', () => {
-  it('greets by time of day and offers the four suggestions', async () => {
+  it('greets by time of day and offers the starter suggestions', async () => {
     const onPick = jest.fn();
     await render(<EmptyState onPick={onPick} now={new Date(2026, 9, 6, 19, 30)} />);
     expect(screen.getByText('Good evening')).toBeTruthy();
-    for (const text of SUGGESTIONS) expect(screen.getByText(text)).toBeTruthy();
+    for (const { label } of SUGGESTIONS) expect(screen.getByText(label)).toBeTruthy();
     await fireEvent.press(screen.getByText("Today's digest"));
-    expect(onPick).toHaveBeenCalledWith("Today's digest");
+    expect(onPick).toHaveBeenCalledWith(
+      "Give me today's digest: important mail, deadlines and today's events.",
+    );
+  });
+
+  it.each(SUGGESTIONS)('the $label chip sends its full request', async ({ label, prompt }) => {
+    const onPick = jest.fn();
+    await render(<EmptyState onPick={onPick} now={new Date(2026, 9, 6, 8, 0)} />);
+    await fireEvent.press(screen.getByText(label));
+    expect(onPick).toHaveBeenCalledTimes(1);
+    expect(onPick).toHaveBeenCalledWith(prompt);
+    expect(prompt.endsWith('.') || prompt.endsWith('?')).toBe(true);
   });
 
   it('ignores taps while disabled', async () => {
     const onPick = jest.fn();
     await render(<EmptyState onPick={onPick} disabled now={new Date(2026, 9, 6, 8, 0)} />);
     expect(screen.getByText('Good morning')).toBeTruthy();
-    await fireEvent.press(screen.getByText('Any important mail?'));
+    await fireEvent.press(screen.getByText('Emails'));
     expect(onPick).not.toHaveBeenCalled();
   });
 });

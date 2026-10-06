@@ -11,6 +11,7 @@ from agent.api import device as device_routes
 from agent.api import files as files_routes
 from agent.api import finance as finance_routes
 from agent.api import mail as mail_routes
+from agent.api import notifications as notifications_routes
 from agent.api import pair as pair_routes
 from agent.api import today as today_routes
 from agent.api.auth import require_device
@@ -29,6 +30,7 @@ from agent.mail.services import MailServices
 from agent.phone.commands import CommandQueue
 from agent.phone.push import PushNotifier
 from agent.phone.tools import register_phone_tools
+from agent.proactive.services import ProactiveServices
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.keystore import KeyStore
@@ -44,6 +46,7 @@ def create_app(
     clock: Clock = utcnow,
     mail: MailServices | None = None,
     finance: FinanceServices | None = None,
+    proactive: ProactiveServices | None = None,
 ) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(BodySizeLimit)
@@ -89,6 +92,10 @@ def create_app(
     if finance is not None:
         app.state.finance = finance
         app.include_router(finance_routes.router, dependencies=protected)
+
+    if proactive is not None:
+        app.state.proactive = proactive
+        app.include_router(notifications_routes.router, dependencies=protected)
 
     health = APIRouter(dependencies=protected)
 

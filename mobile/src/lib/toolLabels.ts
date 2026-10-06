@@ -48,6 +48,8 @@ const WORDING: Record<string, Wording> = {
   files_search: { done: 'Searched local files', running: 'Searching local files' },
   files_read: { done: 'Read a local file', running: 'Reading a local file' },
   spend_summary: { done: 'Summarised spending', running: 'Summarising spending' },
+  account_overview: { done: 'Checked accounts', running: 'Checking accounts' },
+  news_headlines: { done: 'Checked the news', running: 'Checking the news' },
   balances: { done: 'Checked balances', running: 'Checking balances' },
   transactions: { done: 'Checked transactions', running: 'Checking transactions' },
   phone_set_alarm: { done: 'Proposed an alarm', running: 'Drafting an alarm' },

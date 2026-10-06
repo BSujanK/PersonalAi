@@ -112,8 +112,8 @@ describe('greeting', () => {
     expect(greeting(at(19))).toBe('Good evening');
     expect(greeting(at(2))).toBe('Good evening');
   });
-  it('offers the four starter questions', () => {
-    expect(SUGGESTIONS).toHaveLength(4);
+  it('offers the five starter chips', () => {
+    expect(SUGGESTIONS).toHaveLength(5);
   });
 });
 

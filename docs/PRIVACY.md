@@ -5,7 +5,7 @@ _Last updated: 2026-10-06_
 PersonalAi is a private, self-hosted assistant. Its only user is its owner, who runs it on their own computer. It is not offered to the public.
 
 ## What it accesses
-With the owner's permission, granted through Google sign-in, PersonalAi reads the owner's Gmail, Google Calendar, Google Classroom and Google Drive. It also reads bank SMS that the owner's own phone forwards to it.
+With the owner's permission, granted through Google sign-in, PersonalAi reads the owner's Gmail, Google Calendar, Google Classroom and Google Drive. It also reads bank SMS that the owner's own phone forwards to it, and public news feeds the owner lists in its settings.
 
 ## Where data is stored
 - All data is stored on the owner's own computer, encrypted.
@@ -17,7 +17,7 @@ With the owner's permission, granted through Google sign-in, PersonalAi reads th
 - **No one else:** data is not sold, not used for advertising, and not shared with any other party.
 
 ## Changes made on the owner's behalf
-PersonalAi never changes anything unless the owner approves that specific action on their phone with a fingerprint check. That covers sending or labelling mail, creating calendar events, creating files and setting alarms.
+PersonalAi never changes anything unless the owner approves that specific action on their phone with a fingerprint check. That covers sending or labelling mail, creating calendar events, creating files and setting alarms. The one exception, chosen by the owner: deadlines it finds in the owner's mail or Classroom are added to the owner's own Google Calendar as private entries with no guests, and the owner can undo each one from the phone.
 
 ## Google API data
 PersonalAi's use of information received from Google APIs follows the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.

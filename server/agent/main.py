@@ -11,6 +11,7 @@ import logging.handlers
 import sys
 import threading
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
@@ -20,9 +21,12 @@ import uvicorn
 from agent.api.app import create_app
 from agent.api.pair import open_pairing_window
 from agent.config import Settings
+from agent.connectors.accounts import cached_factory
+from agent.connectors.gcal import OwnCalendarApi
+from agent.connectors.gcal_google import build_own_calendar_api
+from agent.connectors.gmail import MailMessage
 from agent.connectors.gmail_google import build_gmail_api
 from agent.connectors.google_auth import GoogleAuth
-from agent.core.approvals import ApprovalEngine
 from agent.core.audit import AuditLog
 from agent.core.clock import utcnow
 from agent.core.llm import build_default_client
@@ -41,9 +45,13 @@ from agent.mail.services import MailServices, cached_api_factory
 from agent.mail.store import MailStore
 from agent.mail.sync import MailSync, sync_and_record
 from agent.mail.tools import register_mail_tools
+from agent.news.feeds import NewsFeeds
+from agent.news.tools import register_news_tool
 from agent.outbound.services import register_outbound_tools
+from agent.proactive.services import Fanout, ProactiveServices, setup_proactive
 from agent.scheduler import (
-    DEADLINE_JOB_ID,
+    ALERT_JOB_ID,
+    CLASSROOM_DEADLINE_JOB_ID,
     FILE_INDEX_JOB_ID,
     FINANCE_CATEGORIZE_JOB_ID,
     MAIL_JOB_ID,
@@ -55,7 +63,7 @@ from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.devices import list_devices, revoke_devices
 from agent.store.keystore import InsecureKeyringError, KeyStore, assert_secure_backend
-from agent.workspace.services import WorkspaceServices, deadline_proposer, setup_workspace
+from agent.workspace.services import WorkspaceServices, setup_workspace
 
 EXIT_REFUSED = 2
 SERVER_DIR = Path(__file__).resolve().parents[1]
@@ -67,13 +75,22 @@ def _refuse(message: str) -> int:
     return EXIT_REFUSED
 
 
+@dataclass(frozen=True)
+class _MailHooks:
+    """What runs around mail sync. Filled in as the services that listen are built."""
+
+    on_new: Fanout[[MailMessage]]
+    pass_start: Fanout[[]]
+    pass_end: Fanout[[]]
+
+
 def _setup_mail(
     settings: Settings,
     db: Database,
     db_key: bytes,
     google_auth: GoogleAuth,
     registry: ToolRegistry,
-    finance: FinanceServices,
+    hooks: _MailHooks,
 ) -> MailServices:
     store = MailStore(db, FieldCipher(db_key), db_key)
     api_for = cached_api_factory(
@@ -88,19 +105,57 @@ def _setup_mail(
         classifier,
         utcnow,
         settings.mail_initial_days,
-        on_new=finance.ingest.ingest_email,
+        on_new=hooks.on_new,
+        on_pass_start=hooks.pass_start,
+        on_pass_end=hooks.pass_end,
     )
     register_mail_tools(registry, store, api_for, utcnow)
     return MailServices(store, sync, api_for)
 
 
+def _setup_proactive(
+    settings: Settings,
+    db: Database,
+    db_key: bytes,
+    google_auth: GoogleAuth,
+    registry: ToolRegistry,
+    mail: MailServices | None,
+    workspace: WorkspaceServices,
+    hooks: _MailHooks,
+) -> ProactiveServices:
+    own_calendar_api_for: Callable[[str], OwnCalendarApi] | None = None
+    if settings.calendar_accounts:
+        own_calendar_api_for = cached_factory(
+            settings.calendar_accounts, lambda account: build_own_calendar_api(account, google_auth)
+        )
+    proactive = setup_proactive(
+        settings,
+        db,
+        db_key,
+        registry,
+        utcnow,
+        mail_store=mail.store if mail is not None else None,
+        classifier_llm=build_classifier_llm(settings),
+        classroom_api_for=workspace.classroom_api_for,
+        own_calendar_api_for=own_calendar_api_for,
+    )
+    hooks.on_new.add(proactive.deadlines.on_new_mail)
+    if proactive.mail_alerts is not None:
+        hooks.on_new.add(proactive.mail_alerts.on_new_mail)
+        hooks.pass_start.add(proactive.mail_alerts.begin_pass)
+        hooks.pass_end.add(proactive.mail_alerts.end_pass)
+    if settings.news_feeds:
+        register_news_tool(registry, NewsFeeds(settings.news_feeds))
+    return proactive
+
+
 def _background_jobs(
     settings: Settings,
     db: Database,
-    approvals: ApprovalEngine,
     mail: MailServices | None,
     workspace: WorkspaceServices,
     finance: FinanceServices,
+    proactive: ProactiveServices,
 ) -> list[Job]:
     jobs: list[Job] = []
     if mail is not None:
@@ -112,9 +167,14 @@ def _background_jobs(
                 settings.mail_poll_minutes,
             )
         )
-    proposer = deadline_proposer(settings, db, approvals, workspace, utcnow)
-    if proposer is not None:
-        jobs.append(Job(DEADLINE_JOB_ID, proposer.run_and_record, settings.deadline_poll_minutes))
+    if workspace.classroom_api_for is not None:
+        jobs.append(
+            Job(
+                CLASSROOM_DEADLINE_JOB_ID,
+                proactive.deadlines.scan_classroom,
+                settings.deadline_poll_minutes,
+            )
+        )
     if workspace.file_index is not None:
         jobs.append(
             Job(FILE_INDEX_JOB_ID, workspace.file_index.refresh, settings.file_index_minutes)
@@ -122,6 +182,7 @@ def _background_jobs(
     jobs.append(
         Job(FINANCE_CATEGORIZE_JOB_ID, finance.categorizer.run, settings.finance_categorize_minutes)
     )
+    jobs.append(Job(ALERT_JOB_ID, proactive.alert_job.run, settings.alert_poll_minutes))
     return jobs
 
 
@@ -191,9 +252,14 @@ def _run_server(settings: Settings) -> int:
         db_key = keystore.get_or_create_bytes("db_key")
         google_auth = GoogleAuth(keystore)
         finance = setup_finance(settings, db, db_key, registry, utcnow)
+        hooks = _MailHooks(Fanout(), Fanout(), Fanout())
+        hooks.on_new.add(finance.ingest.ingest_email)
         if settings.mail_accounts:
-            mail = _setup_mail(settings, db, db_key, google_auth, registry, finance)
+            mail = _setup_mail(settings, db, db_key, google_auth, registry, hooks)
         workspace = setup_workspace(settings, db, db_key, registry, google_auth, utcnow)
+        proactive = _setup_proactive(
+            settings, db, db_key, google_auth, registry, mail, workspace, hooks
+        )
         register_outbound_tools(
             registry, settings, mail, workspace.drive_api_for, workspace.file_roots
         )
@@ -202,11 +268,16 @@ def _run_server(settings: Settings) -> int:
         return _refuse(str(exc))
     logging.getLogger("agent").info("server starting: hosts=%d port=%d", len(hosts), settings.port)
     app = create_app(
-        settings, db=db, keystore=keystore, llm=llm, registry=registry, mail=mail, finance=finance
+        settings,
+        db=db,
+        keystore=keystore,
+        llm=llm,
+        registry=registry,
+        mail=mail,
+        finance=finance,
+        proactive=proactive,
     )
-    scheduler = start_jobs(
-        _background_jobs(settings, db, app.state.approvals, mail, workspace, finance)
-    )
+    scheduler = start_jobs(_background_jobs(settings, db, mail, workspace, finance, proactive))
     servers = [
         uvicorn.Server(
             uvicorn.Config(
@@ -371,6 +442,25 @@ def _setup(redo: list[str]) -> int:
     )
 
 
+def _news_check(settings: Settings, urls: Sequence[str], out: TextIO) -> int:
+    """Fetch each feed (the configured ones, or ``urls``) and say whether it can be read."""
+    wanted = list(urls) or list(settings.news_feeds)
+    if not wanted:
+        print("No feeds to check: set PERSONALAI_NEWS_FEEDS or pass URLs.", file=out)
+        return 1
+    feeds = NewsFeeds(wanted)
+    failed = False
+    for url in wanted:
+        try:
+            feed = feeds.fetch(url)
+        except Exception as exc:  # a failing feed must not stop the others being checked
+            failed = True
+            print(f"FAIL {type(exc).__name__} {url}", file=out)
+        else:
+            print(f"OK  {len(feed.items)} items  {url}", file=out)
+    return 1 if failed else 0
+
+
 def _tolerate_any_output(*streams: TextIO | None) -> None:
     """Never crash on a character the console's code page lacks (e.g. ``✓`` or ``⟨PHONE_1⟩``).
 
@@ -430,6 +520,10 @@ def main(
         "(run this after updating the code)",
     )
     restart.add_argument("--task", default=TASK_NAME, help=argparse.SUPPRESS)
+    news = sub.add_parser(
+        "news-check", help="fetch the configured news feeds (or the given URLs) and report"
+    )
+    news.add_argument("urls", nargs="*", help="https feed URLs; default: PERSONALAI_NEWS_FEEDS")
     sub.add_parser(
         "supervise",
         help="run the server under a console-less supervisor (used by the scheduled task)",
@@ -447,6 +541,8 @@ def main(
         return _supervise(settings)
     if args.command == "doctor":
         return _doctor(settings, args.json)
+    if args.command == "news-check":
+        return _news_check(settings, args.urls, sys.stdout)
     if args.command == "pair":
         return _pair(settings, args.url)
     if args.command == "devices":
