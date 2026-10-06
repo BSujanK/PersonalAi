@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import type { DrawerContentComponentProps } from 'expo-router/drawer';
 import { useState } from 'react';
-import { Alert, FlatList, Pressable, Text, View } from 'react-native';
+import { Alert, FlatList, Image, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAgentStatus } from '../../lib/AgentStatus';
@@ -28,14 +28,7 @@ const makeStyles = (p: Palette) => ({
   root: { flex: 1, backgroundColor: p.drawer },
   top: { paddingHorizontal: space.md, paddingTop: space.md - space.xs, gap: space.md - space.xs },
   brandRow: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: space.sm },
-  brandMark: {
-    width: 28,
-    height: 28,
-    borderRadius: radius.sm,
-    backgroundColor: p.accent,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-  },
+  brandMark: { width: 28, height: 28, borderRadius: radius.sm },
   brand: { ...type.title2, color: p.text },
   newChat: {
     minHeight: MIN_TARGET + 4,
@@ -102,6 +95,9 @@ const makeStyles = (p: Palette) => ({
   badgeText: { ...type.caption, fontFamily: fontFamily.bodyBold, color: p.accentOn },
 });
 
+// The app's own icon, bundled with the app (never fetched).
+const APP_ICON = require('../../../assets/icon.png') as number;
+
 const LINKS: { route: string; path: string; label: string; icon: IconName }[] = [
   { route: 'today', path: '/today', label: 'Today', icon: 'sun' },
   { route: 'approvals', path: '/approvals', label: 'Approvals', icon: 'shield' },
@@ -158,9 +154,12 @@ export function AppDrawerContent({ navigation, state }: DrawerContentComponentPr
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <View style={styles.top}>
         <View style={styles.brandRow}>
-          <View style={styles.brandMark}>
-            <Icon name="cpu" size={16} color={palette.accentOn} />
-          </View>
+          <Image
+            source={APP_ICON}
+            style={styles.brandMark}
+            accessibilityIgnoresInvertColors
+            accessible={false}
+          />
           <Text
             accessibilityRole="header"
             style={styles.brand}

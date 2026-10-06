@@ -32,7 +32,15 @@ export function expiresWithin(expiresAt: string, ms: number, now: number = Date.
 export function shortDateTime(iso: string | undefined | null): string {
   if (!iso) return '';
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+  if (Number.isNaN(date.getTime())) return iso;
+  // "Wed, 7 Oct, 12:36": no seconds, no year; the weekday helps more than the date for plans.
+  return date.toLocaleString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 /** "1.2 MB", "340 KB" or "12 B". */

@@ -55,6 +55,25 @@ const WORDING: Record<string, Wording> = {
   phone_reminder: { done: 'Proposed a reminder', running: 'Drafting a reminder' },
 };
 
+/** What a proposed action will do, for the approval card title. */
+const ACTION_TITLES: Record<string, string> = {
+  mail_send: 'Send an email',
+  mail_reply: 'Send a reply',
+  drive_upload: 'Upload a file to Drive',
+  drive_share: 'Share a Drive file',
+  drive_create_text_file: 'Create a Drive file',
+  calendar_create_event: 'Add a calendar event',
+  calendar_update_event: 'Change a calendar event',
+  calendar_add_deadline: 'Add a deadline',
+  phone_set_alarm: 'Set an alarm',
+  phone_set_timer: 'Set a timer',
+  phone_reminder: 'Set a reminder',
+};
+
+export function actionTitle(name: string): string {
+  return ACTION_TITLES[name] ?? toolLabel(name);
+}
+
 function humanise(name: string): string {
   const words = name.replace(/[_-]+/g, ' ').trim();
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : 'a tool';

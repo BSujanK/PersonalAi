@@ -14,7 +14,7 @@ import {
 import { errorMessage, expiresWithin, timeLeft } from '../../lib/format';
 import { haptics } from '../../lib/haptics';
 import { onRefresh } from '../../lib/refreshBus';
-import { toolLabel } from '../../lib/toolLabels';
+import { actionTitle } from '../../lib/toolLabels';
 import {
   fontFamily,
   motion,
@@ -205,7 +205,7 @@ export function ApprovalCard({
   return (
     <View
       style={styles.card}
-      accessibilityLabel={`Approval request: ${toolLabel(approval.tool_name)}`}
+      accessibilityLabel={`Approval request: ${actionTitle(approval.tool_name)}`}
     >
       <View style={styles.header}>
         <View style={styles.tile}>
@@ -215,7 +215,7 @@ export function ApprovalCard({
           <Text style={[styles.kicker, soon && { color: palette.warn }]}>
             {final ? 'Approval' : `Needs your approval · ${timeLeft(approval.expires_at)}`}
           </Text>
-          <Text style={styles.title}>{toolLabel(approval.tool_name)}</Text>
+          <Text style={styles.title}>{actionTitle(approval.tool_name)}</Text>
         </View>
       </View>
       {warnings.fresh || warnings.external ? (

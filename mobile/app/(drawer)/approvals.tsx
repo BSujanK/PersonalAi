@@ -9,7 +9,7 @@ import { ErrorText, Loading } from '../../src/components/ui';
 import { listApprovals, type Approval } from '../../src/lib/api';
 import { resultLink } from '../../src/lib/approvalFlow';
 import { errorMessage } from '../../src/lib/format';
-import { toolLabel } from '../../src/lib/toolLabels';
+import { actionTitle } from '../../src/lib/toolLabels';
 import { usePolling } from '../../src/lib/usePolling';
 import { radius, space, type, useTheme, useThemedStyles, type Palette } from '../../src/theme';
 
@@ -68,7 +68,7 @@ export default function Approvals() {
         <View key={`done:${id}`} style={styles.done}>
           <View style={styles.doneHead}>
             <Icon name="check-circle" size={20} color={palette.ok} />
-            <Text style={styles.doneTitle}>{toolLabel(tool)}</Text>
+            <Text style={styles.doneTitle}>{actionTitle(tool)}</Text>
           </View>
           <ResultLink link={link} />
         </View>

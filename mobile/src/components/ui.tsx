@@ -559,7 +559,13 @@ export function ListRow({
   const content = (
     <>
       {icon ? (
-        <View style={[styles.iconTile, { backgroundColor: palette.muted }]}>
+        <View
+          style={[
+            styles.iconTile,
+            { backgroundColor: palette.muted },
+            children ? { alignSelf: 'flex-start' as const } : null,
+          ]}
+        >
           <Icon name={icon} size={17} color={destructive ? palette.danger : tint} />
         </View>
       ) : null}

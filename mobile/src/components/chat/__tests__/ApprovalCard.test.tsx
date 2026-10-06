@@ -60,13 +60,11 @@ describe('ApprovalCard', () => {
 
   it('summarises NEW and EXTERNAL recipients in the header of a mail proposal', async () => {
     const mailSend = previewVectors().mail_send;
-    jest
-      .mocked(getApproval)
-      .mockResolvedValue({
-        ...approval('pending'),
-        tool_name: 'mail_send',
-        preview: mailSend.preview,
-      });
+    jest.mocked(getApproval).mockResolvedValue({
+      ...approval('pending'),
+      tool_name: 'mail_send',
+      preview: mailSend.preview,
+    });
     await render(<ApprovalCard actionId={ACTION_ID} />);
     expect(await screen.findByText('2 NEW')).toBeTruthy();
     expect(screen.getByText('1 EXTERNAL')).toBeTruthy();

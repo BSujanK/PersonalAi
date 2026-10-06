@@ -12,7 +12,8 @@ export const fontFamily = {
   bodyBold: 'Inter_700Bold',
   /** Large titles and greetings. */
   display: 'Inter_700Bold',
-  mono: Platform.select({ android: 'monospace', default: 'Menlo' }) ?? 'monospace',
+  mono:
+    Platform.select({ android: 'monospace', ios: 'Menlo', default: 'monospace' }) ?? 'monospace',
 } as const;
 
 /** Largest text scale the fixed-height chrome (nav bar title, badges) is allowed to reach. */
