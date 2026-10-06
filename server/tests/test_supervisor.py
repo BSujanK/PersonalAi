@@ -75,8 +75,10 @@ def test_starts_the_server_hidden_and_logs_pids_only(tmp_path: Path) -> None:
 )
 def test_exit_code_is_propagated_and_logged_in_hex(tmp_path: Path, code: int, text: str) -> None:
     log = tmp_path / "agent.log"
-    assert supervise(["x"], tmp_path, log, popen=FakePopen(code), job=object) == code
+    popen = FakePopen(code)
+    assert supervise(["x"], tmp_path, log, popen=popen, job=object, max_restarts=0) == code
     assert f"server exited code={text}" in log.read_text(encoding="utf-8")
+    assert len(popen.calls) == 1
 
 
 def test_no_job_object_means_no_server(tmp_path: Path) -> None:
@@ -101,7 +103,7 @@ def test_unwritable_log_never_stops_the_server(tmp_path: Path) -> None:
     blocker = tmp_path / "file"
     blocker.write_text("x", encoding="utf-8")
     log = blocker / "agent.log"  # the parent is a file, so nothing can be written
-    assert supervise(["x"], tmp_path, log, popen=FakePopen(7), job=object) == 7
+    assert supervise(["x"], tmp_path, log, popen=FakePopen(7), job=object, max_restarts=0) == 7
 
 
 def test_server_command_uses_python_next_to_pythonw(
@@ -190,3 +192,54 @@ def test_killing_the_supervisor_kills_the_server(tmp_path: Path) -> None:
                 capture_output=True,
                 check=False,
             )
+
+
+class SequencePopen(FakePopen):
+    """Each start returns the next exit code from ``codes``."""
+
+    def __init__(self, codes: list[int]) -> None:
+        super().__init__()
+        self.codes = list(codes)
+
+    def __call__(self, command: list[str], **kwargs: Any) -> FakeChild:
+        self.calls.append((command, kwargs))
+        return FakeChild(self.codes.pop(0))
+
+
+def test_a_crashed_server_is_restarted_after_a_back_off(tmp_path: Path) -> None:
+    log, slept = tmp_path / "agent.log", []
+    popen = SequencePopen([0xC0000005, 0])
+    code = supervise(["x"], tmp_path, log, popen=popen, job=object, sleep=slept.append)
+    assert code == 0 and len(popen.calls) == 2 and slept == [5.0]
+    text = log.read_text(encoding="utf-8")
+    assert "restarting server in 5s (crash 1)" in text
+
+
+def test_supervisor_gives_up_after_too_many_crashes(tmp_path: Path) -> None:
+    log, slept = tmp_path / "agent.log", []
+    popen = SequencePopen([7] * 10)
+    code = supervise(
+        ["x"], tmp_path, log, popen=popen, job=object, max_restarts=3, sleep=slept.append
+    )
+    assert code == 7 and len(popen.calls) == 4 and len(slept) == 3
+    assert "giving up after 4 crashes" in log.read_text(encoding="utf-8")
+
+
+def test_crashes_outside_the_window_do_not_count(tmp_path: Path) -> None:
+    log, now = tmp_path / "agent.log", [0.0]
+
+    def sleep(seconds: float) -> None:
+        now[0] += 1000.0  # every crash is far apart
+
+    popen = SequencePopen([7, 7, 7, 0])
+    code = supervise(
+        ["x"],
+        tmp_path,
+        log,
+        popen=popen,
+        job=object,
+        max_restarts=1,
+        sleep=sleep,
+        clock=lambda: now[0],
+    )
+    assert code == 0 and len(popen.calls) == 4
