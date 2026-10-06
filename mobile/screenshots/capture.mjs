@@ -5,6 +5,8 @@
 import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join } from 'node:path';
+// Playwright is a dev tool installed separately, not an app dependency.
+// eslint-disable-next-line import/no-unresolved
 import { chromium } from 'playwright';
 
 const [root, out] = process.argv.slice(2);

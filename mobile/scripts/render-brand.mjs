@@ -4,6 +4,8 @@
 // The geometry is the same module the app draws with (src/components/brand/sparkGeometry.ts).
 // Needs Node 22+ and Playwright's Chromium (not an app dependency):
 //   node --experimental-strip-types scripts/render-brand.mjs
+// Playwright is a dev tool installed separately, not an app dependency.
+// eslint-disable-next-line import/no-unresolved
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
