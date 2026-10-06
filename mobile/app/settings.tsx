@@ -32,6 +32,7 @@ import { errorMessage } from '../src/lib/format';
 import { usePairing } from '../src/lib/PairingContext';
 import { disablePush, enablePush, isPushEnabled, pushAvailable } from '../src/lib/push';
 import { clearPairing } from '../src/lib/secureKeys';
+import { autoImportBankSms } from '../src/lib/smsAutoImport';
 import { normaliseSender } from '../src/lib/smsSync';
 import { usePolling } from '../src/lib/usePolling';
 import { fontFamily, space, type, useTheme, type ThemePreference } from '../src/theme';
@@ -53,6 +54,7 @@ export default function Settings() {
   const [custom, setCustom] = useState<string[]>([]);
   const [newSender, setNewSender] = useState('');
   const [queued, setQueued] = useState(0);
+  const [smsAllowed, setSmsAllowed] = useState<boolean | null>(null);
   const [push, setPush] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +65,7 @@ export default function Settings() {
       () => setOnline(false),
     );
     setQueued(await smsQueueSize().catch(() => 0));
+    setSmsAllowed(await hasSmsPermission().catch(() => false));
   }, []);
 
   usePolling(load);
@@ -101,6 +104,18 @@ export default function Settings() {
       await ensureSmsPermission();
       const added = await importRecent(IMPORT_DAYS);
       return `Queued ${added} bank message${added === 1 ? '' : 's'} from the last ${IMPORT_DAYS} days.`;
+    });
+
+  const allowSms = () =>
+    run(async () => {
+      if (!(await requestSmsPermission())) {
+        return 'SMS permission was not granted. You can allow it in Android settings under Apps, PersonalAi, Permissions.';
+      }
+      const result = await autoImportBankSms();
+      if (result.status === 'synced') {
+        return `SMS access is on. Synced ${result.fresh} new bank message${result.fresh === 1 ? '' : 's'}.`;
+      }
+      return 'SMS access is on. New bank messages will sync automatically.';
     });
 
   const sendQueue = () =>
@@ -205,8 +220,22 @@ export default function Settings() {
 
       <ListSection
         title="Bank SMS"
-        footer="Only messages from the senders below (and any starting with BOB) are read and sent to your laptop."
+        footer="Imported automatically when the app opens. Only messages from the senders below (and any starting with BOB) are read and sent to your laptop."
       >
+        {smsAllowed === false ? (
+          <View style={styles.permission}>
+            <Notice tone="warn" title="SMS access is off">
+              New bank messages are imported automatically each time you open the app once you allow
+              SMS access. Only bank and UPI senders are ever read.
+            </Notice>
+            <Button
+              label="Allow SMS access"
+              icon="unlock"
+              onPress={() => void allowSms()}
+              accessibilityHint="Asks Android for permission to read bank SMS"
+            />
+          </View>
+        ) : null}
         <ListRow
           icon="inbox"
           title="Waiting to send"
@@ -314,5 +343,6 @@ const styles = StyleSheet.create({
   addRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   status: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   dot: { width: 8, height: 8, borderRadius: 4 },
+  permission: { gap: space.sm },
   statusText: { ...type.callout, fontFamily: fontFamily.bodyMedium },
 });

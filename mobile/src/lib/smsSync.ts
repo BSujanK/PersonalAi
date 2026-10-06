@@ -29,10 +29,18 @@ export interface FlushDeps {
 
 export interface FlushResult {
   sent: number;
+  /** Messages the server had not seen before (its `accepted` count); overlaps are not counted. */
+  fresh: number;
   /** Messages the server refused one by one as invalid (422); they are dropped, not retried. */
   dropped: number;
   /** Why the flush stopped early; the queue keeps everything that was not accepted. */
   stoppedBy: 'offline' | 'rejected' | null;
+}
+
+/** The server's count of new messages in a batch; 0 when an older server does not report it. */
+function acceptedOf(response: unknown): number {
+  const accepted = (response as { accepted?: unknown } | null)?.accepted;
+  return typeof accepted === 'number' && accepted > 0 ? accepted : 0;
 }
 
 function invalid(error: unknown): boolean {
@@ -46,6 +54,7 @@ function invalid(error: unknown): boolean {
  */
 export async function flushQueue({ peek, remove, post }: FlushDeps): Promise<FlushResult> {
   let sent = 0;
+  let fresh = 0;
   let dropped = 0;
   const strip = ({ sender, body, received_at }: QueuedMessage): SmsPayload => ({
     sender,
@@ -54,25 +63,25 @@ export async function flushQueue({ peek, remove, post }: FlushDeps): Promise<Flu
   });
   for (;;) {
     const batch = await peek(MAX_BATCH);
-    if (batch.length === 0) return { sent, dropped, stoppedBy: null };
+    if (batch.length === 0) return { sent, fresh, dropped, stoppedBy: null };
     try {
-      await post(batch.map(strip));
+      fresh += acceptedOf(await post(batch.map(strip)));
       await remove(batch.map((m) => m.id));
       sent += batch.length;
     } catch (error) {
-      if (error instanceof OfflineError) return { sent, dropped, stoppedBy: 'offline' };
+      if (error instanceof OfflineError) return { sent, fresh, dropped, stoppedBy: 'offline' };
       if (!invalid(error)) {
-        if (error instanceof ApiError) return { sent, dropped, stoppedBy: 'rejected' };
+        if (error instanceof ApiError) return { sent, fresh, dropped, stoppedBy: 'rejected' };
         throw error;
       }
       for (const message of batch) {
         try {
-          await post([strip(message)]);
+          fresh += acceptedOf(await post([strip(message)]));
           sent += 1;
         } catch (inner) {
-          if (inner instanceof OfflineError) return { sent, dropped, stoppedBy: 'offline' };
+          if (inner instanceof OfflineError) return { sent, fresh, dropped, stoppedBy: 'offline' };
           if (!invalid(inner)) {
-            if (inner instanceof ApiError) return { sent, dropped, stoppedBy: 'rejected' };
+            if (inner instanceof ApiError) return { sent, fresh, dropped, stoppedBy: 'rejected' };
             throw inner;
           }
           dropped += 1;
@@ -80,6 +89,6 @@ export async function flushQueue({ peek, remove, post }: FlushDeps): Promise<Flu
         await remove([message.id]);
       }
     }
-    if (batch.length < MAX_BATCH) return { sent, dropped, stoppedBy: null };
+    if (batch.length < MAX_BATCH) return { sent, fresh, dropped, stoppedBy: null };
   }
 }

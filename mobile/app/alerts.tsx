@@ -4,6 +4,7 @@ import { Switch, Text, View } from 'react-native';
 
 import { Screen } from '../src/components/Screen';
 import {
+  Badge,
   Button,
   EmptyRow,
   ErrorText,
@@ -14,7 +15,14 @@ import {
   TextField,
   switchColors,
 } from '../src/components/ui';
-import { alertsPermitted, requestAlertPermission, routeForTarget } from '../src/lib/alerts';
+import {
+  alertAccount,
+  alertsPermitted,
+  requestAlertPermission,
+  routeForTarget,
+  type AlertRoute,
+} from '../src/lib/alerts';
+import { useAccountLabels } from '../src/lib/accountLabels';
 import {
   ApiError,
   getAlertSettings,
@@ -34,6 +42,7 @@ import type { IconName } from '../src/components/Icon';
 const makeStyles = (p: Palette) => ({
   time: { ...type.footnote, color: p.textMuted },
   undo: { alignSelf: 'flex-start' as const, paddingTop: space.xs },
+  source: { paddingTop: space.xs },
   padded: { padding: space.md - space.xs },
   field: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: space.sm },
 });
@@ -43,6 +52,12 @@ const KIND_ICON: Record<AlertKind, IconName> = {
   deadline: 'flag',
   briefing: 'sun',
   calendar_added: 'calendar',
+};
+
+const DESTINATION: Record<AlertRoute['pathname'], string> = {
+  '/mail/[account]/[id]': 'Opens the mail',
+  '/inbox': 'Opens all mail',
+  '/today': 'Opens Today',
 };
 
 /** The deadline an auto-added calendar event came from, the only thing Undo needs. */
@@ -55,6 +70,7 @@ export default function Alerts() {
   const styles = useThemedStyles(makeStyles);
   const { palette } = useTheme();
   const router = useRouter();
+  const labelFor = useAccountLabels();
   const [items, setItems] = useState<AlertItem[] | null>(null);
   const [feedMissing, setFeedMissing] = useState(false);
   const [feedError, setFeedError] = useState<string | null>(null);
@@ -176,6 +192,9 @@ export default function Alerts() {
         ) : null}
         {items?.map((item) => {
           const deadlineId = undoableDeadline(item);
+          const account = alertAccount(item);
+          const accountLabel = item.source_label ?? (account ? labelFor(account) : null);
+          const route = routeForTarget(item.target);
           return (
             <ListRow
               key={item.id}
@@ -190,8 +209,20 @@ export default function Alerts() {
               title={item.title}
               subtitle={item.body}
               meta={<Text style={styles.time}>{rowTime(item.created_at)}</Text>}
-              onPress={() => router.push(routeForTarget(item.target))}
+              chevron
+              accessibilityHint={DESTINATION[route.pathname]}
+              onPress={() => router.push(route)}
             >
+              {accountLabel ? (
+                <View style={styles.source}>
+                  <Badge
+                    label={accountLabel}
+                    tone="neutral"
+                    icon="inbox"
+                    spoken={`From ${accountLabel}`}
+                  />
+                </View>
+              ) : null}
               {deadlineId !== null ? (
                 <View style={styles.undo}>
                   <Button

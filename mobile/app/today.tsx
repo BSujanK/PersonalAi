@@ -1,8 +1,9 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 import type Animated from 'react-native-reanimated';
 
+import { MailCard } from '../src/components/MailCard';
 import { Screen } from '../src/components/Screen';
 import {
   Badge,
@@ -13,101 +14,31 @@ import {
   ListSection,
   Loading,
 } from '../src/components/ui';
+import { useAccountLabels } from '../src/lib/accountLabels';
 import { askAboutDeadline, askAboutEvent } from '../src/lib/agentPrompts';
 import {
   ApiError,
   getDeadlines,
-  getInbox,
   getToday,
-  type DigestItem,
-  type InboxCategory,
-  type InboxItem,
   type Today,
   type UpcomingDeadline,
 } from '../src/lib/api';
 import { openNewChat } from '../src/lib/chatRoutes';
-import {
-  dueLabel,
-  errorMessage,
-  initials,
-  longDate,
-  rowTime,
-  shortDateTime,
-} from '../src/lib/format';
-import { appendPage, groupInbox, mailKey } from '../src/lib/inbox';
+import { dueLabel, errorMessage, longDate, rowTime, shortDateTime } from '../src/lib/format';
 import { usePolling } from '../src/lib/usePolling';
-import { fontFamily, space, type, useTheme, useThemedStyles, type Palette } from '../src/theme';
+import { space, useTheme } from '../src/theme';
 
-const INBOX_PAGE = 50;
 const DEADLINE_DAYS = 7;
 const NOT_CONFIGURED = 'Not configured on the laptop yet.';
-const AVATAR = 40;
 
-const makeStyles = (p: Palette) => ({
-  avatar: {
-    width: AVATAR,
-    height: AVATAR,
-    borderRadius: AVATAR / 2,
-    backgroundColor: p.accentSoft,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-  },
-  avatarText: { ...type.subheadline, fontFamily: fontFamily.bodySemiBold, color: p.accentText },
-});
-
-interface Inbox {
-  items: InboxItem[];
-  counts: Record<InboxCategory, number>;
-  next: string | null;
-  /** Pages loaded by "Load more", beyond the first. */
-  extraPages: number;
-}
-
-function MailAvatar({ name }: { name: string }) {
-  const styles = useThemedStyles(makeStyles);
-  return (
-    <View style={styles.avatar}>
-      <Text style={styles.avatarText} maxFontSizeMultiplier={1.3}>
-        {initials(name)}
-      </Text>
-    </View>
-  );
-}
-
-function MailRow({
-  mail,
-  unread,
-  onPress,
-}: {
-  mail: DigestItem | InboxItem;
-  unread?: boolean;
-  onPress: () => void;
-}) {
-  const { palette } = useTheme();
-  const sender = mail.from_name || mail.from_addr;
-  const time = rowTime(mail.received);
-  return (
-    <ListRow
-      leading={<MailAvatar name={sender} />}
-      title={sender}
-      subtitle={mail.subject || '(no subject)'}
-      subtitleLines={1}
-      value={time || null}
-      valueMuted
-      dot={unread ? palette.accent : undefined}
-      onPress={onPress}
-      accessibilityLabel={`${unread ? 'Unread mail' : 'Mail'} from ${sender}: ${mail.subject}. ${time}`}
-      accessibilityHint="Opens the full message"
-    >
-      {mail.reason ? <Badge label={mail.reason} tone="accent" /> : null}
-    </ListRow>
-  );
-}
-
-/** Today: important mail, deadlines, events and all mail. Reached from More and the chat chips. */
+/**
+ * Today: important mail, deadlines and events. Reached from More and the digest chip; "See all
+ * mail" opens the full inbox.
+ */
 export default function TodayScreen() {
   const router = useRouter();
   const { palette } = useTheme();
+  const labelFor = useAccountLabels();
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const scroll = useRef<Animated.ScrollView>(null);
   const offsets = useRef<Record<'mail' | 'events', number>>({ mail: 0, events: 0 });
@@ -116,9 +47,6 @@ export default function TodayScreen() {
   const [error, setError] = useState<string | null>(null);
   // null until loaded, or when the agent has no /deadlines (then today's own list is shown).
   const [upcoming, setUpcoming] = useState<UpcomingDeadline[] | null>(null);
-  const [inbox, setInbox] = useState<Inbox | null>(null);
-  const [inboxError, setInboxError] = useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -131,39 +59,7 @@ export default function TodayScreen() {
       (r) => setUpcoming(r.items.filter((d) => d.status === 'active')),
       () => setUpcoming(null),
     );
-    getInbox({ limit: INBOX_PAGE }).then(
-      (page) => {
-        setInboxError(null);
-        // A refresh keeps pages the owner already loaded, and their "Load more" position.
-        setInbox((prev) =>
-          prev && prev.extraPages > 0
-            ? { ...prev, items: appendPage(page.items, prev.items), counts: page.counts }
-            : { items: page.items, counts: page.counts, next: page.next_cursor, extraPages: 0 },
-        );
-      },
-      (e: unknown) =>
-        setInboxError(e instanceof ApiError && e.status === 404 ? null : errorMessage(e)),
-    );
   }, []);
-
-  async function loadMore() {
-    if (!inbox?.next || loadingMore) return;
-    setLoadingMore(true);
-    try {
-      const page = await getInbox({ cursor: inbox.next, limit: INBOX_PAGE });
-      setInbox({
-        items: appendPage(inbox.items, page.items),
-        counts: page.counts,
-        next: page.next_cursor,
-        extraPages: inbox.extraPages + 1,
-      });
-      setInboxError(null);
-    } catch (e) {
-      setInboxError(errorMessage(e));
-    } finally {
-      setLoadingMore(false);
-    }
-  }
 
   usePolling(load);
 
@@ -174,10 +70,6 @@ export default function TodayScreen() {
   }
 
   const important = useMemo(() => today?.mail?.important ?? [], [today]);
-  const groups = useMemo(
-    () => groupInbox(inbox?.items ?? [], inbox?.counts ?? {}, new Set(important.map(mailKey))),
-    [inbox, important],
-  );
   const deadlineCount = upcoming?.length ?? today?.deadlines?.length ?? 0;
   const openMail = (mail: { account: string; id: string }) =>
     router.push({
@@ -208,16 +100,30 @@ export default function TodayScreen() {
       {!today && !error ? <Loading /> : null}
       {today ? (
         <>
-          <ListSection title="Important mail" stagger>
+          <ListSection
+            title="Important mail"
+            stagger
+            footer={
+              <View style={{ paddingTop: space.sm + space.xs }}>
+                <Button
+                  label="See all mail"
+                  icon="inbox"
+                  tone="plain"
+                  accessibilityHint="Opens every synced mail, grouped by category"
+                  onPress={() => router.push('/inbox')}
+                />
+              </View>
+            }
+          >
             {today.mail === null ? <EmptyRow>{NOT_CONFIGURED}</EmptyRow> : null}
             {today.mail && important.length === 0 ? (
               <EmptyRow>Nothing important. Enjoy the quiet.</EmptyRow>
             ) : null}
             {important.map((mail) => (
-              <MailRow
+              <MailCard
                 key={`${mail.account}:${mail.id}`}
                 mail={mail}
-                unread
+                accountLabel={labelFor(mail.account)}
                 onPress={() => openMail(mail)}
               />
             ))}
@@ -278,41 +184,6 @@ export default function TodayScreen() {
                 />
               ))}
             </ListSection>
-          </View>
-
-          <View style={{ gap: space.lg }} onLayout={(e) => focusOn('mail', e.nativeEvent.layout.y)}>
-            <ListSection
-              title="All mail"
-              footer={
-                inboxError ? (
-                  <EmptyRow>{inboxError}</EmptyRow>
-                ) : inbox && groups.length === 0 && !inbox.next ? (
-                  <EmptyRow>No other mail.</EmptyRow>
-                ) : undefined
-              }
-            >
-              {null}
-            </ListSection>
-            {groups.map((group) => (
-              <ListSection key={group.category} title={`${group.title} (${group.count})`}>
-                {group.items.map((mail) => (
-                  <MailRow
-                    key={mailKey(mail)}
-                    mail={mail}
-                    unread={mail.unread}
-                    onPress={() => openMail(mail)}
-                  />
-                ))}
-              </ListSection>
-            ))}
-            {inbox?.next ? (
-              <Button
-                label={loadingMore ? 'Loading…' : 'Load more'}
-                tone="tinted"
-                disabled={loadingMore}
-                onPress={() => void loadMore()}
-              />
-            ) : null}
           </View>
         </>
       ) : null}

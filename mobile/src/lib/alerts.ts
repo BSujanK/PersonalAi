@@ -42,19 +42,44 @@ export function isKindEnabled(kind: AlertKind, settings: AlertSettings): boolean
 }
 
 export interface AlertRoute {
-  pathname: '/mail/[account]/[id]' | '/today';
+  pathname: '/mail/[account]/[id]' | '/today' | '/inbox';
   params?: { account: string; id: string };
 }
 
-/** Where tapping an alert goes: a mail opens its message, everything else opens Today. */
+const mailRoute = (account: string, id: string): AlertRoute => ({
+  pathname: '/mail/[account]/[id]',
+  params: { account, id },
+});
+
+/**
+ * Where tapping an alert goes: a mail opens that message; a deadline found in mail opens the mail
+ * it came from; "more important mail" opens the inbox; everything else (a briefing, a Classroom
+ * deadline, an alert from an older agent without a source) opens Today.
+ */
 export function routeForTarget(target: AlertTarget | null | undefined): AlertRoute {
-  if (target?.type === 'mail') {
-    return {
-      pathname: '/mail/[account]/[id]',
-      params: { account: target.account, id: target.message_id },
-    };
+  switch (target?.type) {
+    case 'mail': {
+      const id = target.id ?? target.message_id;
+      return id ? mailRoute(target.account, id) : { pathname: '/today' };
+    }
+    case 'deadline':
+      return target.source === 'mail' && target.account && target.message_id
+        ? mailRoute(target.account, target.message_id)
+        : { pathname: '/today' };
+    case 'inbox':
+      return { pathname: '/inbox' };
+    default:
+      return { pathname: '/today' };
   }
-  return { pathname: '/today' };
+}
+
+/** The account an alert came from, if the agent said so. */
+export function alertAccount(item: AlertItem): string | null {
+  if (item.source_account) return item.source_account;
+  const t = item.target;
+  if (t.type === 'mail') return t.account;
+  if (t.type === 'deadline' || t.type === 'inbox') return t.account ?? null;
+  return null;
 }
 
 export interface AlertData extends Record<string, unknown> {

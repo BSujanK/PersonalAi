@@ -304,6 +304,7 @@ uv run python -m agent restore --in D:\backups\personalai-2026-10-05.paibak     
 | `PERSONALAI_CALENDAR_AUTO_ADD` | `off` stops adding found deadlines to your calendar without approval | on |
 | `PERSONALAI_ALERT_POLL_MINUTES` | How often alerts (deadlines, briefing, calendar adds) are prepared | `5` |
 | `PERSONALAI_BRIEFING_TIME` | Default morning briefing time (`HH:MM`, local); the app's Settings override it | `07:30` |
+| `PERSONALAI_ACCOUNT_LABELS` | Comma-separated `address=Label` pairs naming your Google accounts in the app, e.g. `college@example.edu=College,me@example.com=Personal`. Without one, consumer addresses (Gmail, Outlook, ...) show in full and others show their domain name (`someone@cs.example.edu` shows as `Example`) | none |
 | `PERSONALAI_NEWS_FEEDS` | Comma-separated https RSS/Atom feed URLs for `news_headlines` (check them with `agent news-check`) | none |
 | `PERSONALAI_FILE_ROOTS` | Absolute folders the agent may read, separated by `;` on Windows (`:` elsewhere) | none |
 | `PERSONALAI_FILE_INDEX_MINUTES` | Local file index refresh interval | `30` |

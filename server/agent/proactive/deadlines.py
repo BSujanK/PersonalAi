@@ -7,6 +7,7 @@ import sqlite3
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
+from typing import Any
 
 from agent.connectors.classroom import ClassroomApi, due_instant, due_of
 from agent.connectors.gmail import MailMessage
@@ -59,6 +60,24 @@ class Deadline:
     found_by: str
     created_at: str
     status: str
+
+
+def deadline_target(item: Deadline) -> dict[str, Any]:
+    """Where an alert about ``item`` leads in the app: ids and the source account, never text.
+    A Classroom deadline's course id is the middle part of its ``account/course/work`` key."""
+    target: dict[str, Any] = {
+        "type": "deadline",
+        "deadline_id": item.id,
+        "source": item.source,
+        "account": item.source_account,
+    }
+    if item.source == "mail":
+        target["message_id"] = item.source_id
+    elif item.source == "classroom":
+        parts = item.source_key.split("/")
+        if len(parts) == 3:
+            target["course_id"] = parts[1]
+    return target
 
 
 def _aad(source: str, source_key: str) -> str:

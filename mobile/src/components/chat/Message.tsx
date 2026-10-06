@@ -16,7 +16,7 @@ import { SparkAvatar } from '../brand/Spark';
 import { Icon } from '../Icon';
 import { ErrorText, PressableScale } from '../ui';
 import { ApprovalCard } from './ApprovalCard';
-import { Markdown } from './Markdown';
+import { StreamingText } from './StreamingText';
 import { ToolActivity } from './ToolActivity';
 
 const COPIED_MS = 1500;
@@ -116,7 +116,7 @@ function AssistantMessageImpl({ message, canRetry, onRetry }: AssistantProps) {
       <SparkAvatar size={30} thinking={streaming} />
       <View style={styles.assistant}>
         <ToolActivity activity={message.tools} />
-        {hasText ? <Markdown text={message.text} /> : null}
+        {hasText ? <StreamingText text={message.text} streaming={streaming} /> : null}
         {streaming && !hasText && message.tools.length === 0 ? (
           <View style={styles.thinkingRow}>
             <Text accessibilityLiveRegion="polite" style={styles.thinking}>

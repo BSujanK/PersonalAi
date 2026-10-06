@@ -12,8 +12,10 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from agent.api.auth import require_device
+from agent.config import Settings, account_label
 from agent.core.audit import AuditLog
 from agent.proactive.alerts import Alert, AlertSettings
+from agent.proactive.deadlines import DeadlineStore, deadline_target
 from agent.proactive.services import ProactiveServices
 from agent.store.models import Device
 
@@ -34,15 +36,42 @@ def _services(request: Request) -> ProactiveServices:
     return services
 
 
-def _alert_json(alert: Alert) -> dict[str, Any]:
+def _enriched_target(target: dict[str, Any], deadlines: DeadlineStore) -> dict[str, Any]:
+    """The stored target, completed for alerts raised before targets carried their source: a
+    deadline target gains its source fields, a mail target gets ``id`` from ``message_id``."""
+    out = dict(target)
+    if out.get("type") == "deadline" and "source" not in out:
+        deadline_id = out.get("deadline_id")
+        found = deadlines.get(deadline_id) if isinstance(deadline_id, int) else None
+        if found is not None:
+            out.update(deadline_target(found))
+    elif out.get("type") == "mail" and "id" not in out and "message_id" in out:
+        out["id"] = out["message_id"]
+    return out
+
+
+def _target_account(target: dict[str, Any]) -> str | None:
+    account = target.get("account")
+    if not isinstance(account, str):
+        source = target.get("source")
+        account = source.get("account") if isinstance(source, dict) else None
+    return account if isinstance(account, str) and account else None
+
+
+def _alert_json(alert: Alert, deadlines: DeadlineStore, settings: Settings) -> dict[str, Any]:
+    target = _enriched_target(alert.target, deadlines)
     item: dict[str, Any] = {
         "id": alert.id,
         "kind": alert.kind,
         "title": alert.title,
         "body": alert.body,
         "created_at": alert.created_at,
-        "target": alert.target,
+        "target": target,
     }
+    account = _target_account(target)
+    if account is not None:
+        item["source_account"] = account
+        item["source_label"] = account_label(settings, account)
     if alert.actions:
         item["actions"] = list(alert.actions)
     return item
@@ -63,9 +92,13 @@ def notifications(
     after: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> dict[str, Any]:
-    alerts = _services(request).alerts
+    services = _services(request)
+    alerts = services.alerts
+    settings: Settings = request.app.state.settings
     return {
-        "items": [_alert_json(a) for a in alerts.since(after, limit)],
+        "items": [
+            _alert_json(a, services.deadlines.store, settings) for a in alerts.since(after, limit)
+        ],
         "latest_id": alerts.latest_id(),
     }
 

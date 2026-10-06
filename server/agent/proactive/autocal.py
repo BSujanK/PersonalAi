@@ -21,7 +21,7 @@ from typing import Any, Protocol
 from agent.connectors.gcal import EventNotFound, NotOwnEvent, OwnCalendarApi
 from agent.core.audit import AuditLog
 from agent.core.clock import Clock
-from agent.proactive.deadlines import Deadline, DeadlineStore, due_span, local_tz
+from agent.proactive.deadlines import Deadline, DeadlineStore, deadline_target, due_span, local_tz
 from agent.store.db import Database
 from agent.workspace.calendar_tools import time_field
 
@@ -234,7 +234,7 @@ class AutoCalendar:
             f"calendar_added:{deadline.id}",
             "Added to your calendar",
             f"{deadline.title} · {shown}",
-            {"type": "deadline", "deadline_id": deadline.id},
+            deadline_target(deadline),
             ("undo",),
         )
 

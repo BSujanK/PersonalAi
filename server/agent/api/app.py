@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, FastAPI
 
+from agent.api import accounts as accounts_routes
 from agent.api import approvals as approvals_routes
 from agent.api import chat as chat_routes
 from agent.api import conversations as conversations_routes
@@ -86,6 +87,7 @@ def create_app(
     app.include_router(device_routes.router, dependencies=protected)
     app.include_router(today_routes.router, dependencies=protected)
     app.include_router(files_routes.router, dependencies=protected)
+    app.include_router(accounts_routes.router, dependencies=protected)
     if mail is not None:
         app.state.mail = mail
         app.include_router(mail_routes.router, dependencies=protected)

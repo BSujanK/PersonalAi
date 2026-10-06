@@ -131,7 +131,14 @@ def test_timed_deadline_alerts_one_day_and_two_hours_before() -> None:
     [first] = _alerts(env, "deadline")
     assert first.title == "Due tomorrow: Tuition fee"
     assert first.body == "Fee · Tue 06 Oct 23:30"
-    assert first.target == {"type": "deadline", "deadline_id": 1} and first.actions == ()
+    assert first.target == {
+        "type": "deadline",
+        "deadline_id": 1,
+        "source": "mail",
+        "account": ME,
+        "message_id": "a",
+    }
+    assert first.actions == ()
     env.clock.now = due - timedelta(hours=2, minutes=1)
     job.run()
     assert len(_alerts(env, "deadline")) == 1  # still the same one-day alert
@@ -188,7 +195,7 @@ def test_deadline_alerts_follow_the_setting_and_skip_undone_deadlines() -> None:
     env.services.alerts.save_settings(AlertSettings(True, True, True, "07:30"))
     env.services.alert_job.run()
     [alert] = _alerts(env, "deadline")
-    assert alert.target == {"type": "deadline", "deadline_id": 1}
+    assert alert.target["deadline_id"] == 1
 
 
 def test_long_titles_are_cut_to_the_alert_limit() -> None:
@@ -342,7 +349,12 @@ def test_important_mail_alert_has_sender_subject_and_target() -> None:
     env.services.mail_alerts.on_new_mail(msg)  # type: ignore[union-attr]
     [alert] = _alerts(env, "important_mail")
     assert (alert.title, alert.body) == ("Dean Rao", "Interview call")
-    assert alert.target == {"type": "mail", "account": ME, "message_id": "a"}
+    assert alert.target == {
+        "type": "mail",
+        "account": ME,
+        "id": "a",
+        "message_id": "a",
+    }
     env.services.mail_alerts.on_new_mail(msg)  # type: ignore[union-attr]
     assert len(_alerts(env, "important_mail")) == 1
 
@@ -386,8 +398,12 @@ def test_at_most_five_alerts_per_pass_and_one_summary_per_account() -> None:
     assert [a.title for a in alerts[:5]] == ["Registrar"] * 5
     summary = alerts[5:]
     assert [(a.title, a.body, a.target) for a in summary] == [
-        ("More important mail", "4 more important mails", {"type": "today"}),
-        ("More important mail", "1 more important mail", {"type": "today"}),
+        ("More important mail", "4 more important mails", {"type": "inbox", "account": ME}),
+        (
+            "More important mail",
+            "1 more important mail",
+            {"type": "inbox", "account": "two@example.org"},
+        ),
     ]
     hook.end_pass()  # nothing is repeated
     assert len(_alerts(env, "important_mail")) == 7

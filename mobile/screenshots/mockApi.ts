@@ -3,6 +3,7 @@
 // Every name, address, account and amount here is made up (example.com, fake account numbers).
 import vectors from '../../shared/test-vectors/action-previews.json';
 import type {
+  AccountInfo,
   AlertFeed,
   AlertSettings,
   Approval,
@@ -37,7 +38,18 @@ const resolve = <T>(value: T) => new Promise<T>((r) => setTimeout(() => r(value)
 const params = () =>
   typeof location === 'undefined' ? new URLSearchParams() : new URLSearchParams(location.search);
 
+// Two made-up Google accounts: a personal one shown in full, a college one with a label.
+const PERSONAL = 'me@example.com';
+const COLLEGE = 'student@college.example.com';
+
 export const health = () => resolve({ status: 'ok' });
+export const getAccounts = (): Promise<{ accounts: AccountInfo[] }> =>
+  resolve({
+    accounts: [
+      { account: PERSONAL, label: PERSONAL, kinds: ['mail', 'calendar', 'drive'] },
+      { account: COLLEGE, label: 'College', kinds: ['mail', 'calendar', 'classroom', 'drive'] },
+    ],
+  });
 
 // --- Home ---------------------------------------------------------------------------------------
 
@@ -47,7 +59,7 @@ export const getToday = (): Promise<Today> =>
     mail: {
       important: [
         {
-          account: 'college',
+          account: COLLEGE,
           id: 'm1',
           from_name: 'Prof. Anita Rao',
           from_addr: 'anita.rao@college.example.com',
@@ -57,7 +69,7 @@ export const getToday = (): Promise<Today> =>
           received: ago(35),
         },
         {
-          account: 'personal',
+          account: PERSONAL,
           id: 'm2',
           from_name: 'Placement Cell',
           from_addr: 'placements@college.example.com',
@@ -86,7 +98,7 @@ export const getDeadlines = (): Promise<{ items: UpcomingDeadline[] }> =>
         title: 'Lab report 4',
         due: ahead(60 * 50),
         source: 'classroom',
-        source_account: 'college',
+        source_account: COLLEGE,
         source_id: 'c1',
         calendar_added: true,
         status: 'active',
@@ -97,7 +109,7 @@ export const getDeadlines = (): Promise<{ items: UpcomingDeadline[] }> =>
         title: 'Semester fee payment',
         due: ahead(60 * 24 * 5),
         source: 'mail',
-        source_account: 'personal',
+        source_account: PERSONAL,
         source_id: 'm9',
         calendar_added: false,
         status: 'active',
@@ -137,7 +149,7 @@ export const getInbox = (): Promise<InboxPage> =>
         true,
       ],
     ].map(([id, name, addr, subject, category, minutes, unread]) => ({
-      account: 'personal',
+      account: PERSONAL,
       id: id as string,
       message_id: `<${id as string}@example.com>`,
       thread_id: `t-${id as string}`,
@@ -384,7 +396,7 @@ export const searchFiles = (): Promise<FileSearch> =>
     drive: [
       {
         source: 'drive',
-        account: 'college',
+        account: COLLEGE,
         id: 'd1',
         name: 'Lab 4 shared notes',
         mime: 'application/vnd.google-apps.document',
@@ -404,8 +416,16 @@ export const getNotifications = (): Promise<AlertFeed> =>
         title: 'Added to your calendar: Lab report 4',
         body: 'Due Friday at 5 pm. From Google Classroom.',
         created_at: ago(30),
-        target: { type: 'deadline', deadline_id: 1 },
+        target: {
+          type: 'deadline',
+          deadline_id: 1,
+          source: 'classroom',
+          account: COLLEGE,
+          course_id: 'c1',
+        },
         actions: ['undo'],
+        source_account: COLLEGE,
+        source_label: 'College',
       },
       {
         id: 3,
@@ -413,7 +433,9 @@ export const getNotifications = (): Promise<AlertFeed> =>
         title: 'Prof. Anita Rao',
         body: 'Lab report 4: submission moved to Friday',
         created_at: ago(35),
-        target: { type: 'mail', account: 'college', message_id: 'm1' },
+        target: { type: 'mail', account: COLLEGE, id: 'm1', message_id: 'm1' },
+        source_account: COLLEGE,
+        source_label: 'College',
       },
       {
         id: 2,
@@ -421,7 +443,15 @@ export const getNotifications = (): Promise<AlertFeed> =>
         title: 'Semester fee due Tuesday',
         body: 'Found in mail from Accounts Office.',
         created_at: ago(300),
-        target: { type: 'deadline', deadline_id: 2 },
+        target: {
+          type: 'deadline',
+          deadline_id: 2,
+          source: 'mail',
+          account: PERSONAL,
+          message_id: 'm9',
+        },
+        source_account: PERSONAL,
+        source_label: PERSONAL,
       },
       {
         id: 1,

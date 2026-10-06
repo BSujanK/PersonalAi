@@ -8,6 +8,7 @@ import {
   outcomeForResponse,
   routeForTarget,
   toContent,
+  alertAccount,
 } from '../alerts';
 import { getAlertSettings, getNotifications, undoAutoEvent } from '../api';
 import type { AlertItem, AlertSettings } from '../api';
@@ -214,5 +215,56 @@ describe('responses', () => {
     );
     expect(navigate).toHaveBeenCalledWith({ pathname: '/today' });
     expect(undoAutoEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('every alert opens its source', () => {
+  it('opens a mail by id, or by message_id from an older agent', () => {
+    const route = {
+      pathname: '/mail/[account]/[id]',
+      params: { account: 'me@example.com', id: 'm1' },
+    };
+    expect(routeForTarget({ type: 'mail', account: 'me@example.com', id: 'm1' })).toEqual(route);
+    expect(routeForTarget({ type: 'mail', account: 'me@example.com', message_id: 'm1' })).toEqual(
+      route,
+    );
+  });
+
+  it('opens the mail a deadline was found in; Classroom deadlines open Today', () => {
+    expect(
+      routeForTarget({
+        type: 'deadline',
+        deadline_id: 3,
+        source: 'mail',
+        account: 'college@example.edu',
+        message_id: 'm9',
+      }),
+    ).toEqual({
+      pathname: '/mail/[account]/[id]',
+      params: { account: 'college@example.edu', id: 'm9' },
+    });
+    expect(
+      routeForTarget({ type: 'deadline', deadline_id: 4, source: 'classroom', course_id: 'c1' }),
+    ).toEqual({ pathname: '/today' });
+  });
+
+  it('opens the inbox for "more important mail"', () => {
+    expect(routeForTarget({ type: 'inbox', account: 'me@example.com' })).toEqual({
+      pathname: '/inbox',
+    });
+  });
+
+  it('knows which account an alert came from', () => {
+    const base = { id: 1, kind: 'deadline' as const, title: 't', body: 'b', created_at: 'x' };
+    expect(
+      alertAccount({ ...base, target: { type: 'today' }, source_account: 'a@example.com' }),
+    ).toBe('a@example.com');
+    expect(
+      alertAccount({
+        ...base,
+        target: { type: 'deadline', deadline_id: 1, account: 'b@example.com' },
+      }),
+    ).toBe('b@example.com');
+    expect(alertAccount({ ...base, target: { type: 'today' } })).toBeNull();
   });
 });

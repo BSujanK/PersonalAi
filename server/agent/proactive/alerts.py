@@ -17,7 +17,13 @@ from agent.core.textutil import one_line
 from agent.core.tools import ToolKind, ToolRegistry
 from agent.mail.store import MailStore
 from agent.proactive.autocal import AutoCalendar
-from agent.proactive.deadlines import Deadline, DeadlineCollector, due_span, local_tz
+from agent.proactive.deadlines import (
+    Deadline,
+    DeadlineCollector,
+    deadline_target,
+    due_span,
+    local_tz,
+)
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 
@@ -246,7 +252,7 @@ class AlertJob:
                     f"deadline:{item.id}:{stage}:{item.due.isoformat()}",
                     f"{_STAGE_TITLES[stage]}: {item.title}",
                     deadline_body(item, self._offset),
-                    {"type": "deadline", "deadline_id": item.id},
+                    deadline_target(item),
                 )
 
     def _briefing(self, now: datetime, briefing_time: str) -> None:
@@ -341,7 +347,12 @@ class ImportantMailAlerts:
             f"mail:{msg.account}/{msg.id}",
             stored.from_name or stored.from_addr,
             stored.subject,
-            {"type": "mail", "account": msg.account, "message_id": msg.id},
+            {
+                "type": "mail",
+                "account": msg.account,
+                "id": msg.id,
+                "message_id": msg.id,  # older app builds read this
+            },
         )
 
     def end_pass(self) -> None:
@@ -351,6 +362,6 @@ class ImportantMailAlerts:
                 f"mail-batch:{account}:{first_id}",
                 "More important mail",
                 _plural(count, "more important mail"),
-                {"type": "today"},
+                {"type": "inbox", "account": account},
             )
         self._overflow = {}

@@ -614,8 +614,23 @@ export const getInbox = ({
 export type AlertKind = 'important_mail' | 'deadline' | 'briefing' | 'calendar_added';
 
 export type AlertTarget =
-  | { type: 'mail'; account: string; message_id: string }
-  | { type: 'deadline'; deadline_id: number }
+  | {
+      type: 'mail';
+      account: string;
+      /** The mail's id; older agents only send `message_id`. */
+      id?: string;
+      message_id?: string;
+    }
+  | {
+      type: 'deadline';
+      deadline_id: number;
+      /** Where the deadline was found; the agent adds these, older alerts may lack them. */
+      source?: 'mail' | 'classroom';
+      account?: string;
+      message_id?: string;
+      course_id?: string;
+    }
+  | { type: 'inbox'; account?: string }
   | { type: 'today' };
 
 export interface AlertItem {
@@ -626,6 +641,9 @@ export interface AlertItem {
   created_at: string;
   target: AlertTarget;
   actions?: string[];
+  /** The mail account the alert came from, and its friendly label, when known. */
+  source_account?: string;
+  source_label?: string;
 }
 
 export interface AlertFeed {
@@ -665,3 +683,12 @@ export interface UpcomingDeadline {
 
 export const getDeadlines = (days = 14) =>
   call<{ items: UpcomingDeadline[] }>('GET', `/deadlines?days=${days}`);
+
+/** A configured Google account and the owner's friendly label for it ("College"). */
+export interface AccountInfo {
+  account: string;
+  label: string;
+  kinds: string[];
+}
+
+export const getAccounts = () => call<{ accounts: AccountInfo[] }>('GET', '/accounts');

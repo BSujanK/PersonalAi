@@ -16,11 +16,14 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { IntroProvider } from '../src/components/brand/LaunchIntro';
 import { PairScreen } from '../src/components/PairScreen';
+import { ToastHost } from '../src/components/Toast';
 import { Loading } from '../src/components/ui';
 import { AgentStatusProvider } from '../src/lib/AgentStatus';
 import { checkAlerts, handleAlertResponse, requestAlertPermission } from '../src/lib/alerts';
 import { registerBackgroundSync } from '../src/lib/backgroundTasks';
-import { flushSmsQueue, refreshDefaultSenders } from '../src/lib/bankSms';
+import { refreshDefaultSenders } from '../src/lib/bankSms';
+import { autoImportBankSms } from '../src/lib/smsAutoImport';
+import { showToast } from '../src/lib/toast';
 import { getJson, setJson } from '../src/lib/prefs';
 import { ConversationsProvider } from '../src/lib/Conversations';
 import { processDeviceCommands } from '../src/lib/deviceCommands';
@@ -30,9 +33,17 @@ import { emitRefresh } from '../src/lib/refreshBus';
 import { ThemeProvider, useTheme } from '../src/theme';
 
 /** Work done whenever the app is in the foreground and paired. Failures are retried next time. */
+/** Import new bank SMS in the background and say so only when the server got new ones. */
+async function syncBankSms(): Promise<void> {
+  const result = await autoImportBankSms();
+  if (result.status === 'synced' && result.fresh > 0) {
+    showToast(`Synced ${result.fresh} bank message${result.fresh === 1 ? '' : 's'}`);
+  }
+}
+
 async function foregroundSync(): Promise<void> {
   await refreshDefaultSenders();
-  await Promise.allSettled([flushSmsQueue(), processDeviceCommands(), checkAlerts()]);
+  await Promise.allSettled([syncBankSms(), processDeviceCommands(), checkAlerts()]);
   emitRefresh();
 }
 
@@ -105,6 +116,7 @@ function Gate() {
           <Stack.Screen name="settings" />
           <Stack.Screen name="alerts" />
           <Stack.Screen name="history" />
+          <Stack.Screen name="inbox" />
         </Stack>
       </ConversationsProvider>
     </AgentStatusProvider>
@@ -130,6 +142,7 @@ function Themed() {
           <PairingProvider>
             <Gate />
           </PairingProvider>
+          <ToastHost />
         </IntroProvider>
       ) : null}
     </View>
