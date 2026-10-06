@@ -20,6 +20,7 @@ import uvicorn
 
 from agent.api.app import create_app
 from agent.api.pair import open_pairing_window
+from agent.api.today_cache import TodayCache
 from agent.config import Settings
 from agent.connectors.accounts import cached_factory
 from agent.connectors.gcal import OwnCalendarApi
@@ -47,7 +48,12 @@ from agent.mail.sync import MailSync, sync_and_record
 from agent.mail.tools import register_mail_tools
 from agent.news.feeds import NewsFeeds
 from agent.news.tools import register_news_tool
+from agent.news.topics import parse_news_topics
 from agent.outbound.services import register_outbound_tools
+from agent.proactive.alerts import AlertStore
+from agent.proactive.autocal import AutoCalendar
+from agent.proactive.deadlines import DeadlineStore
+from agent.proactive.recheck import apply_rejections, find_rejected
 from agent.proactive.services import Fanout, ProactiveServices, setup_proactive
 from agent.scheduler import (
     ALERT_JOB_ID,
@@ -58,6 +64,7 @@ from agent.scheduler import (
     MAIL_DEADLINE_SCAN_DELAY_SECONDS,
     MAIL_DEADLINE_SCAN_MINUTES,
     MAIL_JOB_ID,
+    TODAY_JOB_ID,
     Job,
     start_jobs,
 )
@@ -66,6 +73,7 @@ from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.devices import list_devices, revoke_devices
 from agent.store.keystore import InsecureKeyringError, KeyStore, assert_secure_backend
+from agent.web.tools import register_web_tools
 from agent.workspace.services import WorkspaceServices, setup_workspace
 
 EXIT_REFUSED = 2
@@ -148,7 +156,8 @@ def _setup_proactive(
         hooks.pass_start.add(proactive.mail_alerts.begin_pass)
         hooks.pass_end.add(proactive.mail_alerts.end_pass)
     if settings.news_feeds:
-        register_news_tool(registry, NewsFeeds(settings.news_feeds))
+        news_topics = parse_news_topics(settings.news_topics)
+        register_news_tool(registry, NewsFeeds(settings.news_feeds, topics=news_topics))
     return proactive
 
 
@@ -159,6 +168,7 @@ def _background_jobs(
     workspace: WorkspaceServices,
     finance: FinanceServices,
     proactive: ProactiveServices,
+    today: TodayCache,
 ) -> list[Job]:
     jobs: list[Job] = []
     if mail is not None:
@@ -197,6 +207,7 @@ def _background_jobs(
         Job(FINANCE_CATEGORIZE_JOB_ID, finance.categorizer.run, settings.finance_categorize_minutes)
     )
     jobs.append(Job(ALERT_JOB_ID, proactive.alert_job.run, settings.alert_poll_minutes))
+    jobs.append(Job(TODAY_JOB_ID, today.refresh, settings.today_refresh_minutes))
     return jobs
 
 
@@ -233,6 +244,36 @@ def _configure_logging(settings: Settings) -> None:
         handler.setFormatter(formatter)
         logger.addHandler(handler)
     logger.setLevel(logging.INFO)
+    _log_uvicorn_errors(logger)
+
+
+class _NoTraceback(logging.Filter):
+    """Keeps a traceback (whose frames and values can carry content) out of the log: the record
+    is written without it and the message ends with the exception type instead."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.exc_info and record.exc_info[0] is not None:
+            record.msg = f"{record.getMessage()} ({record.exc_info[0].__name__})"
+            record.args = None
+        record.exc_info = None
+        record.exc_text = None
+        record.stack_info = None
+        return True
+
+
+def _log_uvicorn_errors(agent_logger: logging.Logger) -> None:
+    """Send uvicorn's own warnings and errors (e.g. a crashed request) to the agent's handlers.
+
+    uvicorn is started with ``log_config=None``: its default config would replace these handlers.
+    """
+    uvicorn_logger = logging.getLogger("uvicorn.error")
+    for handler in agent_logger.handlers:
+        if handler not in uvicorn_logger.handlers:
+            uvicorn_logger.addHandler(handler)
+    if not any(isinstance(f, _NoTraceback) for f in uvicorn_logger.filters):
+        uvicorn_logger.addFilter(_NoTraceback())
+    uvicorn_logger.setLevel(logging.WARNING)
+    uvicorn_logger.propagate = False  # the handlers above already write it
 
 
 def _supervise(settings: Settings) -> int:
@@ -274,6 +315,8 @@ def _run_server(settings: Settings) -> int:
         proactive = _setup_proactive(
             settings, db, db_key, google_auth, registry, mail, workspace, hooks
         )
+        if settings.web_tools:
+            register_web_tools(registry, settings, keystore)
         register_outbound_tools(
             registry, settings, mail, workspace.drive_api_for, workspace.file_roots
         )
@@ -291,7 +334,12 @@ def _run_server(settings: Settings) -> int:
         finance=finance,
         proactive=proactive,
     )
-    scheduler = start_jobs(_background_jobs(settings, db, mail, workspace, finance, proactive))
+    today: TodayCache = app.state.today
+    if mail is not None:
+        hooks.pass_end.add(today.refresh_mail)  # new mail shows on /today without waiting
+    scheduler = start_jobs(
+        _background_jobs(settings, db, mail, workspace, finance, proactive, today)
+    )
     servers = [
         uvicorn.Server(
             uvicorn.Config(
@@ -302,6 +350,7 @@ def _run_server(settings: Settings) -> int:
                 proxy_headers=False,
                 access_log=False,
                 log_level="warning",
+                log_config=None,
             )
         )
         for host in hosts
@@ -456,6 +505,61 @@ def _setup(redo: list[str]) -> int:
     )
 
 
+def _deadlines_recheck(settings: Settings, apply: bool, out: TextIO) -> int:
+    """List mail deadlines the current rules reject; with ``apply``, undo or dismiss them."""
+    if not settings.mail_accounts:
+        print(
+            "No mail accounts are configured (PERSONALAI_MAIL_ACCOUNTS): nothing to check.",
+            file=out,
+        )
+        return 0
+    try:
+        assert_secure_backend()
+    except InsecureKeyringError as exc:
+        return _refuse(str(exc))
+    db = Database(settings.db_path)
+    db_key = KeyStore().get_or_create_bytes("db_key")
+    cipher = FieldCipher(db_key)
+    deadlines = DeadlineStore(db, cipher, utcnow)
+    offset = settings.finance_utc_offset_minutes
+    rejected = find_rejected(db, deadlines, MailStore(db, cipher, db_key), settings, offset)
+    for item in rejected:
+        print(
+            f"{item.deadline_id}  {item.kind}  {item.due.isoformat()}  {item.account}  "
+            f"{item.title}  on calendar: {'yes' if item.on_calendar else 'no'}  {item.reason}",
+            file=out,
+        )
+    if not rejected:
+        print("No wrongly found mail deadlines.", file=out)
+        return 0
+    if not apply:
+        print("dry run: nothing changed; re-run with --apply", file=out)
+        return 0
+    google_auth = GoogleAuth(KeyStore())
+    api_for = cached_factory(
+        settings.calendar_accounts, lambda account: build_own_calendar_api(account, google_auth)
+    )
+    audit = AuditLog(db, utcnow)
+    autocal = AutoCalendar(
+        db,
+        deadlines,
+        api_for,
+        settings.deadline_calendar,
+        utcnow,
+        audit,
+        AlertStore(db, cipher, utcnow, settings.briefing_time),
+        settings.calendar_auto_add,
+        offset,
+    )
+    counts = apply_rejections(rejected, autocal, db, audit)
+    print(
+        f"undone {counts.undone}, dismissed {counts.dismissed}, "
+        f"refused {counts.refused}, failed {counts.failed}",
+        file=out,
+    )
+    return 0
+
+
 def _news_check(settings: Settings, urls: Sequence[str], out: TextIO) -> int:
     """Fetch each feed (the configured ones, or ``urls``) and say whether it can be read."""
     wanted = list(urls) or list(settings.news_feeds)
@@ -538,6 +642,13 @@ def main(
         "news-check", help="fetch the configured news feeds (or the given URLs) and report"
     )
     news.add_argument("urls", nargs="*", help="https feed URLs; default: PERSONALAI_NEWS_FEEDS")
+    recheck = sub.add_parser(
+        "deadlines-recheck",
+        help="find mail deadlines the newsletter filter now rejects (dry run unless --apply)",
+    )
+    recheck.add_argument(
+        "--apply", action="store_true", help="remove their calendar events and dismiss them"
+    )
     sub.add_parser(
         "supervise",
         help="run the server under a console-less supervisor (used by the scheduled task)",
@@ -557,6 +668,8 @@ def main(
         return _doctor(settings, args.json)
     if args.command == "news-check":
         return _news_check(settings, args.urls, sys.stdout)
+    if args.command == "deadlines-recheck":
+        return _deadlines_recheck(settings, args.apply, sys.stdout)
     if args.command == "pair":
         return _pair(settings, args.url)
     if args.command == "devices":

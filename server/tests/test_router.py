@@ -45,6 +45,9 @@ NAMES = [
     "phone_set_timer",
     "phone_reminder",
     "news_headlines",
+    "web_search",
+    "web_read",
+    "hf_models",
 ]
 
 
@@ -121,6 +124,27 @@ def test_news_intent() -> None:
     assert "news_headlines" in pick("Any news today?")
     assert "news_headlines" in pick("top headlines")
     assert "news_headlines" not in pick("check my mail")
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "search the web for the Rust 2024 edition",
+        "latest model releases on hugging face",
+        "look up the RTX 5090 price",
+        "what is trending on HF?",
+        "google the opening hours",
+    ],
+)
+def test_web_intent(message: str) -> None:
+    chosen = pick(message)
+    assert {"web_search", "web_read", "hf_models"} <= chosen
+    assert not chosen & {"mail_send", "spend_summary", "drive_share"}
+
+
+def test_web_tools_stay_out_of_other_intents() -> None:
+    assert not pick("Any new email?") & {"web_search", "web_read", "hf_models"}
+    assert not pick("what did I spend on food") & {"web_search", "web_read", "hf_models"}
 
 
 def test_matching_is_case_insensitive_and_word_bounded() -> None:

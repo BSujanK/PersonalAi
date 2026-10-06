@@ -1,45 +1,31 @@
 """GET /today: the phone's digest of important mail, upcoming deadlines and events.
 
-The data goes only to the owner's paired phone, never to the LLM. Sources that are not
-configured come back as null; a source that fails is listed in ``unavailable``."""
+The data goes only to the owner's paired phone, never to the LLM. The request reads only the
+cache that a background job fills (``TodayCache``), so it never waits on Google. ``sections``
+limits the response to the named parts. A source that is not configured comes back as null; one
+with nothing cached yet is null and listed in ``unavailable``; one whose data is old or whose last
+refresh failed is listed in ``stale``."""
 
 from __future__ import annotations
 
-import logging
+from datetime import timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from agent.core.tools import ToolKind, ToolRegistry
-from agent.mail.digest import build_digest
-
-log = logging.getLogger(__name__)
+from agent.api.today_cache import SOURCES, TodayCache
 
 router = APIRouter()
 
-EVENT_DAYS = 2
-DEADLINE_DAYS = 7
-SECTIONS = ("mail", "events", "deadlines")
-
-
-def _read(registry: ToolRegistry, name: str, args: dict[str, Any], failed: list[str]) -> Any:
-    tool = registry.get(name)
-    if tool is None or tool.kind is not ToolKind.READ:
-        return None
-    try:
-        return tool.run(args)
-    except Exception as exc:  # one broken connector must not hide the rest
-        log.warning("today: %s failed: %s", name, type(exc).__name__)
-        failed.append(name)
-        return None
+STALE_AFTER_REFRESHES = 3
 
 
 def _requested(sections: str | None) -> frozenset[str]:
     """The sections asked for: every one without the parameter, else the named subset."""
     if sections is None:
-        return frozenset(SECTIONS)
+        return frozenset(SOURCES)
     names = sections.split(",")
-    if any(name not in SECTIONS for name in names):
+    if any(name not in SOURCES for name in names):
         raise HTTPException(status_code=422, detail="invalid_sections")
     return frozenset(names)
 
@@ -49,21 +35,33 @@ def today(
     request: Request, sections: Annotated[str | None, Query(max_length=64)] = None
 ) -> dict[str, Any]:
     """The digest. ``sections`` (comma-separated ``mail``, ``events``, ``deadlines``) limits it:
-    sections not named are left out of the response and their connector is not called."""
+    sections not named are left out of the response, and so are their ``updated_at`` entries."""
     wanted = _requested(sections)
     state = request.app.state
-    registry: ToolRegistry = state.registry
+    cache: TodayCache = state.today
     now = state.clock()
-    failed: list[str] = []
-    out: dict[str, Any] = {"generated_at": now.isoformat()}
-    if "mail" in wanted:
-        mail = getattr(state, "mail", None)
-        out["mail"] = build_digest(mail.store, now, 24).to_json() if mail is not None else None
-    if "deadlines" in wanted:
-        out["deadlines"] = _read(registry, "classroom_coursework", {"days": DEADLINE_DAYS}, failed)
-    if "events" in wanted:
-        out["events"] = _read(
-            registry, "calendar_events", {"days": EVENT_DAYS, "limit": 20}, failed
-        )
-    out["unavailable"] = failed
-    return out
+    stale_after = timedelta(minutes=STALE_AFTER_REFRESHES * state.settings.today_refresh_minutes)
+    snapshot = cache.snapshot()
+    body: dict[str, Any] = {"generated_at": now.isoformat()}
+    unavailable: list[str] = []
+    stale: list[str] = []
+    updated_at: dict[str, str | None] = {}
+    for source in SOURCES:
+        if source not in wanted:
+            continue
+        current = snapshot.get(source)
+        body[source] = None
+        updated_at[source] = None
+        if current is None:
+            continue
+        if not current.has_data or current.updated_at is None:
+            unavailable.append(source)
+            continue
+        body[source] = current.data
+        updated_at[source] = current.updated_at.isoformat()
+        if current.failed or now - current.updated_at > stale_after:
+            stale.append(source)
+    body["unavailable"] = unavailable
+    body["stale"] = stale
+    body["updated_at"] = updated_at
+    return body

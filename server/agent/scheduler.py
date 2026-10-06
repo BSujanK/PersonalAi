@@ -19,6 +19,7 @@ MAIL_DEADLINE_SCAN_DELAY_SECONDS = 60
 ALERT_JOB_ID = "alerts"
 FILE_INDEX_JOB_ID = "file_index"
 FINANCE_CATEGORIZE_JOB_ID = "finance_categorize"
+TODAY_JOB_ID = "today_cache"
 
 
 @dataclass(frozen=True)

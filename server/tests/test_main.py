@@ -19,6 +19,7 @@ from agent.scheduler import (
     FINANCE_CATEGORIZE_JOB_ID,
     MAIL_DEADLINE_JOB_ID,
     MAIL_JOB_ID,
+    TODAY_JOB_ID,
     Job,
 )
 
@@ -160,11 +161,12 @@ def test_serve_with_mail_accounts_polls_and_stops_scheduler(
         (MAIL_DEADLINE_JOB_ID, 24 * 60),
         (FINANCE_CATEGORIZE_JOB_ID, 15),
         (ALERT_JOB_ID, 5),
+        (TODAY_JOB_ID, 3),
     ]
     assert scheduler.shutdowns == [False]
     [scan] = [j for j in captured[0] if j.id == MAIL_DEADLINE_JOB_ID]
     assert 0 < scan.start_delay_seconds <= 300  # a kick shortly after startup, then daily
-    assert [j.start_delay_seconds for j in captured[0] if j is not scan] == [0, 0, 0]
+    assert [j.start_delay_seconds for j in captured[0] if j is not scan] == [0, 0, 0, 0]
 
 
 def test_serve_without_accounts_only_categorises_finance(
@@ -177,6 +179,7 @@ def test_serve_without_accounts_only_categorises_finance(
     assert [(job.id, job.minutes) for job in captured[0]] == [
         (FINANCE_CATEGORIZE_JOB_ID, 15),
         (ALERT_JOB_ID, 5),
+        (TODAY_JOB_ID, 3),
     ]
 
 
@@ -197,6 +200,7 @@ def test_serve_with_workspace_registers_jobs(
         (FILE_INDEX_JOB_ID, 30),
         (FINANCE_CATEGORIZE_JOB_ID, 15),
         (ALERT_JOB_ID, 5),
+        (TODAY_JOB_ID, 3),
     ]
 
 
@@ -275,12 +279,23 @@ def test_doctor_and_setup_subcommands_dispatch(monkeypatch: pytest.MonkeyPatch) 
 @pytest.fixture
 def clean_agent_logger() -> Iterator[logging.Logger]:
     logger = logging.getLogger("agent")
+    uvicorn_logger = logging.getLogger("uvicorn.error")
     before = list(logger.handlers)
+    uvicorn_before = (
+        list(uvicorn_logger.handlers),
+        list(uvicorn_logger.filters),
+        uvicorn_logger.level,
+        uvicorn_logger.propagate,
+    )
     logger.handlers[:] = []
     yield logger
     for handler in logger.handlers:
         handler.close()
     logger.handlers[:] = before
+    uvicorn_logger.handlers[:] = uvicorn_before[0]
+    uvicorn_logger.filters[:] = uvicorn_before[1]
+    uvicorn_logger.setLevel(uvicorn_before[2])
+    uvicorn_logger.propagate = uvicorn_before[3]
 
 
 def test_serve_logs_to_a_rotating_file_next_to_the_database(

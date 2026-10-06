@@ -334,11 +334,12 @@ def test_today_reports_configured_sources_and_failures() -> None:
     registry.register(Tool("calendar_events", "e", params, ToolKind.READ, events))
     registry.register(Tool("classroom_coursework", "c", params, ToolKind.READ, coursework))
     api = _phone_api(registry=registry)
+    api.client.app.state.today.refresh()  # type: ignore[attr-defined]
     body = api.client.get("/today", headers=api.headers).json()
     assert body["mail"] is None
     assert body["events"][0]["summary"] == "Lab"
     assert body["deadlines"] is None
-    assert body["unavailable"] == ["classroom_coursework"]
+    assert body["unavailable"] == ["deadlines"]
     assert body["generated_at"] == START.isoformat()
 
 
@@ -351,6 +352,8 @@ def test_today_with_nothing_configured() -> None:
         "deadlines": None,
         "events": None,
         "unavailable": [],
+        "stale": [],
+        "updated_at": {"mail": None, "deadlines": None, "events": None},
     }
 
 
@@ -371,9 +374,11 @@ def _counting_registry() -> tuple[ToolRegistry, list[str]]:
     return registry, calls
 
 
-def test_today_sections_return_only_what_was_asked_and_skip_other_connectors() -> None:
+def test_today_sections_return_only_what_was_asked_and_never_call_connectors() -> None:
     registry, calls = _counting_registry()
     api = _phone_api(registry=registry)
+    api.client.app.state.today.refresh()  # type: ignore[attr-defined]
+    calls.clear()
     cases = {
         "mail": {"mail"},
         "events": {"events"},
@@ -383,12 +388,11 @@ def test_today_sections_return_only_what_was_asked_and_skip_other_connectors() -
         "deadlines,events,mail": {"deadlines", "events", "mail"},
     }
     for query, keys in cases.items():
-        calls.clear()
         body = api.client.get(f"/today?sections={query}", headers=api.headers).json()
-        assert set(body) == {"generated_at", "unavailable", *keys}, query
+        assert set(body) == {"generated_at", "unavailable", "stale", "updated_at", *keys}, query
+        assert set(body["updated_at"]) == keys, query
         assert body["generated_at"] == START.isoformat() and body["unavailable"] == []
-        expected_calls = {"events": ["events"], "deadlines": ["work"]}
-        assert sorted(calls) == sorted(c for k in keys for c in expected_calls.get(k, [])), query
+    assert calls == []  # every section is served from the cache
 
 
 def test_today_section_failure_is_reported_only_for_that_section() -> None:
@@ -400,11 +404,14 @@ def test_today_section_failure_is_reported_only_for_that_section() -> None:
     params = {"type": "object", "properties": {}}
     registry.register(Tool("classroom_coursework", "c", params, ToolKind.READ, boom))
     api = _phone_api(registry=registry)
+    api.client.app.state.today.refresh()  # type: ignore[attr-defined]
     body = api.client.get("/today?sections=deadlines", headers=api.headers).json()
     assert body == {
         "generated_at": START.isoformat(),
         "deadlines": None,
-        "unavailable": ["classroom_coursework"],
+        "unavailable": ["deadlines"],
+        "stale": [],
+        "updated_at": {"deadlines": None},
     }
 
 
@@ -419,9 +426,13 @@ def test_today_rejects_unknown_or_empty_sections(query: str) -> None:
     assert calls == []
 
 
-def test_today_without_sections_calls_every_connector() -> None:
+def test_today_without_sections_returns_everything_from_the_cache() -> None:
     registry, calls = _counting_registry()
     api = _phone_api(registry=registry)
+    api.client.app.state.today.refresh()  # type: ignore[attr-defined]
+    assert sorted(calls) == ["events", "work"]  # the background refresh calls the connectors
     body = api.client.get("/today", headers=api.headers).json()
-    assert set(body) == {"generated_at", "mail", "deadlines", "events", "unavailable"}
-    assert sorted(calls) == ["events", "work"]
+    assert set(body) == {
+        "generated_at", "mail", "deadlines", "events", "unavailable", "stale", "updated_at"
+    }  # fmt: skip
+    assert sorted(calls) == ["events", "work"]  # the request itself called none

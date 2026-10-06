@@ -686,3 +686,45 @@ def test_settings_parse_fallback_list() -> None:
 
     settings = Settings.from_env({"PERSONALAI_MODEL_FALLBACK": "a, b,,a ,c"})
     assert settings.model_fallbacks == ("a", "b", "c")
+
+
+def test_complete_excluding_skips_the_named_route() -> None:
+    up = _Upstream()
+    out = _routed(up, model_fallback="fb-model").complete_excluding(_msgs("hi"), [], {"primary"})
+    assert up.models == ["fb-model"]
+    assert out.route == "fallback"
+    assert out.content is not None and out.content.text == "from fb-model"
+
+
+def test_stream_complete_excluding_skips_the_named_route() -> None:
+    up = _Upstream()
+    out = _routed(up, model_fallback="fb-model").stream_complete_excluding(
+        _msgs("hi"), [], lambda _d: None, lambda: None, {"primary"}
+    )
+    assert up.models == ["fb-model"]
+    assert out.route == "fallback"
+
+
+def test_excluding_falls_through_to_local_when_it_is_the_only_other_route() -> None:
+    up = _Upstream()
+    out = _routed(up).complete_excluding(_msgs("hi"), [], {"primary"})
+    assert out.route == "local"
+    assert up.models == [Settings().ollama_model]
+
+
+def test_excluding_every_route_raises_without_calling_a_model() -> None:
+    up = _Upstream()
+    router = _routed(up, model_fallback="fb-model")
+    with pytest.raises(LLMUnavailable, match="no other route"):
+        router.complete_excluding(_msgs("hi"), [], {"primary", "fallback", "local"})
+    with pytest.raises(LLMUnavailable, match="no other route"):
+        router.stream_complete_excluding(
+            _msgs("hi"), [], lambda _d: None, lambda: None, {"primary", "fallback", "local"}
+        )
+    assert up.models == []
+
+
+def test_router_supports_route_exclusion() -> None:
+    from agent.core.llm import RouteExcludingLLMClient
+
+    assert isinstance(_routed(_Upstream()), RouteExcludingLLMClient)

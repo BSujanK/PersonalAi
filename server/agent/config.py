@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from agent.news.topics import parse_news_topics
+
 log = logging.getLogger(__name__)
 
 
@@ -129,6 +131,11 @@ def account_label(settings: Settings, account: str) -> str:
     return settings.account_labels.get(key) or _default_label(key)
 
 
+def _news_topics(value: str) -> str:
+    parse_news_topics(value)  # fail at startup; the raw text is parsed again where it is used
+    return value.strip()
+
+
 def _flag(value: str, default: bool) -> bool:
     text = value.strip().lower()
     if not text:
@@ -187,6 +194,12 @@ class Settings:
     alert_poll_minutes: int = 5
     briefing_time: str = "07:30"
     account_labels: Mapping[str, str] = field(default_factory=dict)
+    # Web tools (web_search via Tavily, web_read, hf_models). The Tavily key is keyring-only.
+    web_tools: bool = True
+    web_searches_per_hour: int = 20
+    # "name=weight" or "name=weight:kw1|kw2" entries that re-weight or add news topics.
+    news_topics: str = ""
+    today_refresh_minutes: int = 3  # how often the /today cache is refreshed in the background
 
     @property
     def google_accounts(self) -> tuple[str, ...]:
@@ -292,4 +305,14 @@ class Settings:
             ),
             briefing_time=_clock_time(e.get("PERSONALAI_BRIEFING_TIME", defaults.briefing_time)),
             account_labels=_account_labels(e.get("PERSONALAI_ACCOUNT_LABELS", "")),
+            web_tools=_flag(e.get("PERSONALAI_WEB_TOOLS", ""), defaults.web_tools),
+            web_searches_per_hour=_positive_int(
+                "PERSONALAI_WEB_SEARCHES_PER_HOUR",
+                e.get("PERSONALAI_WEB_SEARCHES_PER_HOUR", str(defaults.web_searches_per_hour)),
+            ),
+            news_topics=_news_topics(e.get("PERSONALAI_NEWS_TOPICS", defaults.news_topics)),
+            today_refresh_minutes=_positive_int(
+                "PERSONALAI_TODAY_REFRESH_MINUTES",
+                e.get("PERSONALAI_TODAY_REFRESH_MINUTES", str(defaults.today_refresh_minutes)),
+            ),
         )

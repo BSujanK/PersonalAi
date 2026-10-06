@@ -6,7 +6,7 @@ import json
 import logging
 import re
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import timedelta, timezone
 from typing import Any
@@ -15,11 +15,21 @@ from agent.config import Settings
 from agent.core import policy
 from agent.core.approvals import ApprovalEngine
 from agent.core.clock import Clock
-from agent.core.llm import ChatMessage, LLMClient, LLMResponse, StreamingLLMClient, ToolCall
+from agent.core.llm import (
+    ChatMessage,
+    LLMClient,
+    LLMNotConfigured,
+    LLMResponse,
+    LLMUnavailable,
+    RouteExcludingLLMClient,
+    StreamingLLMClient,
+    ToolCall,
+)
 from agent.core.policy import Decision
 from agent.core.redact import Redacted, RedactionMap, Redactor, StreamRehydrator, from_model
 from agent.core.router import select_tools
 from agent.core.tools import ActionRejected, ToolRegistry
+from agent.core.turn import turn_scope
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +48,13 @@ SYSTEM_PROMPT = (
     "- Chain tools. Every id and account you pass to a tool must be copied exactly from an "
     "earlier tool result: search a mail, then read it; list the courses, then ask for that "
     "course's coursework or announcements.\n"
+    "- Never invent errors, timeouts or failures. Report an error only when a tool result in "
+    "this conversation actually returned one; if you have not called the tool yet, call it.\n"
+    "- To send a file, find it with files_search or drive_search, then call mail_send with it as "
+    "an attachment.\n"
+    "- For current events, prices, releases or anything outside the owner's own data, call "
+    "web_search, then web_read on a URL it returned. Never put names, email addresses, account "
+    "numbers or ⟨...⟩ placeholders in a web search.\n"
     "- To put a date on the calendar or set a reminder, first find the date with the read tools, "
     "then call calendar_create_event, calendar_add_deadline or phone_reminder with that date. "
     "Do not ask the owner for details you can read yourself. These calls only propose the "
@@ -47,6 +64,28 @@ SYSTEM_PROMPT = (
 )
 STEP_LIMIT_REPLY = "I stopped after too many steps."
 ROUTER_HISTORY_TURNS = 3  # recent owner turns whose tool names stay on offer
+_FABRICATED_WINDOW = 400  # characters from the start of a reply that are checked
+_FABRICATED_ERROR = re.compile(
+    "|".join(
+        f"(?:{pattern})"
+        for pattern in (
+            r"^\s*\[\s*error",
+            r"\btimed out after\b",
+            r"\b(?:api|request|call|function|tool)\s+(?:call\s+)?failed\b",
+            r"\bfunction\s+\w+\s+(?:timed out|failed)",
+            r"traceback \(most recent call last\)",
+            r"\binternal server error\b",
+            r"\berror code:?\s*\d{3}\b",
+        )
+    ),
+    re.IGNORECASE,
+)
+
+
+def looks_like_fabricated_error(text: str) -> bool:
+    """Whether a reply that called no tool opens like an error report (an incident: a model
+    answered "Function ... timed out after 90.0 seconds" instead of calling the tool offered)."""
+    return _FABRICATED_ERROR.search(text[:_FABRICATED_WINDOW]) is not None
 
 
 def _fullwidth(ch: str) -> str:
@@ -129,24 +168,51 @@ class AgentLoop:
         on_reset: Callable[[], None] | None = None,
         on_tool: Callable[[str, str], None] | None = None,
     ) -> LoopResult:
+        with turn_scope():
+            return self._run_turn(
+                conversation_id, history, user_text, rmap, on_text, on_reset, on_tool
+            )
+
+    def _run_turn(
+        self,
+        conversation_id: str,
+        history: list[ChatMessage],
+        user_text: str,
+        rmap: RedactionMap,
+        on_text: Callable[[str], None] | None,
+        on_reset: Callable[[], None] | None,
+        on_tool: Callable[[str, str], None] | None,
+    ) -> LoopResult:
         system = ChatMessage("system", from_model(self._system_prompt()))
         new: list[ChatMessage] = [ChatMessage("user", self._redactor.redact(user_text, rmap))]
         pending_ids: list[str] = []
         offered = self._offered_tools(history, user_text)
         tools = self._registry.schemas(offered)
+        called_tools = False
+        retried = False
         for _ in range(self._settings.max_agent_steps):
-            if on_text is None:
-                response = self._llm.complete([system, *history, *new], tools)
-                emitted = False
-            else:
-                response, emitted = self._streamed_step(
-                    [system, *history, *new], tools, rmap, on_text, on_reset
-                )
+            messages = [system, *history, *new]
+            response, emitted = self._step(messages, tools, rmap, on_text, on_reset)
             content = response.content if response.content is not None else from_model("")
+            if (
+                not response.tool_calls
+                and not called_tools
+                and not retried
+                and looks_like_fabricated_error(content.text)
+            ):
+                retried = True
+                log.warning(
+                    "model reply looked like an invented error (route=%s); retrying", response.route
+                )
+                response, emitted = self._retry_step(
+                    response, emitted, messages, tools, rmap, on_text, on_reset
+                )
+                content = response.content if response.content is not None else from_model("")
             new.append(ChatMessage("assistant", content, tool_calls=response.tool_calls or None))
             if not response.tool_calls:
                 reply = Redactor.rehydrate(content.text, rmap)
                 return LoopResult(reply, new, pending_ids)
+            called_tools = True
             if emitted and on_reset is not None:
                 on_reset()  # text shown before a tool call is not part of the final answer
             for call in response.tool_calls:
@@ -186,6 +252,53 @@ class AgentLoop:
                 recent.extend(c.name for c in msg.tool_calls)
         return set(select_tools(user_text, recent, self._registry.names()))
 
+    def _step(
+        self,
+        messages: list[ChatMessage],
+        tools: list[dict[str, Any]],
+        rmap: RedactionMap,
+        on_text: Callable[[str], None] | None,
+        on_reset: Callable[[], None] | None,
+        exclude: Collection[str] | None = None,
+    ) -> tuple[LLMResponse, bool]:
+        """One model call (streamed when ``on_text`` is set); returns the response and whether
+        any text was shown. ``exclude`` names routes to skip, where the client supports it."""
+        if on_text is None:
+            return self._complete(messages, tools, exclude), False
+        return self._streamed_step(messages, tools, rmap, on_text, on_reset, exclude)
+
+    def _complete(
+        self,
+        messages: list[ChatMessage],
+        tools: list[dict[str, Any]],
+        exclude: Collection[str] | None,
+    ) -> LLMResponse:
+        if exclude and isinstance(self._llm, RouteExcludingLLMClient):
+            return self._llm.complete_excluding(messages, tools, exclude)
+        return self._llm.complete(messages, tools)
+
+    def _retry_step(
+        self,
+        original: LLMResponse,
+        emitted: bool,
+        messages: list[ChatMessage],
+        tools: list[dict[str, Any]],
+        rmap: RedactionMap,
+        on_text: Callable[[str], None] | None,
+        on_reset: Callable[[], None] | None,
+    ) -> tuple[LLMResponse, bool]:
+        """Ask again, on another route when the client has one, after a reply that looked like an
+        invented error. If no answer comes back, the original reply stands."""
+        exclude = {original.route} if original.route is not None else None
+        if emitted and on_reset is not None:
+            on_reset()  # the invented error was already shown
+        try:
+            return self._step(messages, tools, rmap, on_text, on_reset, exclude)
+        except (LLMUnavailable, LLMNotConfigured):
+            if emitted and on_text is not None and original.content is not None:
+                on_text(Redactor.rehydrate(original.content.text, rmap))
+            return original, emitted
+
     def _streamed_step(
         self,
         messages: list[ChatMessage],
@@ -193,6 +306,7 @@ class AgentLoop:
         rmap: RedactionMap,
         on_text: Callable[[str], None],
         on_reset: Callable[[], None] | None,
+        exclude: Collection[str] | None = None,
     ) -> tuple[LLMResponse, bool]:
         """One model call that streams safe text; returns the response and whether any was shown."""
         rehydrator = StreamRehydrator(rmap)
@@ -205,7 +319,7 @@ class AgentLoop:
                 on_text(text)
 
         if not isinstance(self._llm, StreamingLLMClient):
-            response = self._llm.complete(messages, tools)
+            response = self._complete(messages, tools, exclude)
             if not response.tool_calls and response.content is not None:
                 emit(Redactor.rehydrate(response.content.text, rmap))
             return response, emitted
@@ -221,7 +335,12 @@ class AgentLoop:
                 if on_reset is not None:
                     on_reset()
 
-        response = self._llm.stream_complete(messages, tools, on_delta, reset)
+        if exclude and isinstance(self._llm, RouteExcludingLLMClient):
+            response = self._llm.stream_complete_excluding(
+                messages, tools, on_delta, reset, exclude
+            )
+        else:
+            response = self._llm.stream_complete(messages, tools, on_delta, reset)
         if not response.tool_calls:
             emit(rehydrator.flush())
         return response, emitted
@@ -244,11 +363,13 @@ class AgentLoop:
             raw_args = json.loads(call.arguments.text)
         except ValueError:
             return self._tool_message(call, "error: invalid arguments")
-        args: Any = Redactor.rehydrate_obj(raw_args, rmap)
+        tool = self._registry.get(call.name)
+        # Tools whose arguments leave the machine get them still masked (Tool.rehydrate_args).
+        rehydrate = tool is None or tool.rehydrate_args
+        args: Any = Redactor.rehydrate_obj(raw_args, rmap) if rehydrate else raw_args
         decision, reason = policy.evaluate_tool_call(
             self._registry, call.name, args, self._approvals.pending_count()
         )
-        tool = self._registry.get(call.name)
         if decision is Decision.DENY or tool is None:
             return self._tool_message(call, f"error: {reason}")
         if decision is Decision.PROPOSE_WRITE:

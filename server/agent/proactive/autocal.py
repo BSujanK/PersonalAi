@@ -240,8 +240,10 @@ class AutoCalendar:
 
     # --- undoing ----------------------------------------------------------------------------
 
-    def undo(self, deadline_id: int, device_id: str) -> str:
-        """Delete an event this module created. One of ``undone``, ``not_found``, ``refused``."""
+    def undo(self, deadline_id: int, actor: str) -> str:
+        """Delete an event this module created. One of ``undone``, ``not_found``, ``refused``.
+
+        ``actor`` is the audit actor, such as ``device:<id>`` or ``cli:recheck``."""
         rows = self._db.query(
             "SELECT calendar_account, event_id, marker FROM auto_events "
             "WHERE deadline_id = ? AND undone_at IS NULL AND event_id != ''",
@@ -262,7 +264,5 @@ class AutoCalendar:
                 (self._clock().isoformat(), deadline_id),
             )
             self._db.execute("UPDATE deadlines SET status = 'undone' WHERE id = ?", (deadline_id,))
-            self._audit.record(
-                "calendar_auto_undo", actor=f"device:{device_id}", detail=f"deadline:{deadline_id}"
-            )
+            self._audit.record("calendar_auto_undo", actor=actor, detail=f"deadline:{deadline_id}")
         return "undone"

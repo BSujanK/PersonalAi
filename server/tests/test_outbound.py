@@ -357,6 +357,7 @@ def test_mail_detail_falls_back_to_the_stored_copy_and_needs_the_device_token(
 
 def test_today_and_digest_items_carry_message_ids(world: World) -> None:
     world.mail.store.set_category(ME, "m-base", "important", "rule", "keyword")
+    world.app.state.today.refresh()
     today = world.client.get("/today", headers=world.headers).json()
     (item,) = today["mail"]["important"]
     assert item["account"] == ME and item["id"] == item["message_id"] == "m-base"

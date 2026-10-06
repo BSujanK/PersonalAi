@@ -35,19 +35,20 @@ From `server\`:
 uv run python -m agent setup
 ```
 
-It follows the appendix below in order and asks before every change. Each step checks whether it is already done and skips it, so you can stop at any point (Ctrl+C) and run it again to continue; `--redo STEP` repeats one step (`prereqs`, `nvidia_key`, `models`, `ollama`, `google`, `profile`, `network`, `task`, `power`, `pair`). The steps:
+It follows the appendix below in order and asks before every change. Each step checks whether it is already done and skips it, so you can stop at any point (Ctrl+C) and run it again to continue; `--redo STEP` repeats one step (`prereqs`, `nvidia_key`, `tavily_key`, `models`, `ollama`, `google`, `profile`, `network`, `task`, `power`, `pair`). The steps:
 
 1. checks Python and uv, runs `uv sync`;
 2. asks for the NVIDIA key with hidden input and stores it in Windows Credential Manager only;
-3. lists the models your key can use, offers to run `scripts/eval_models.py` on the ones you pick, then sets `PERSONALAI_MODEL_PRIMARY`, `_FALLBACK` and `_LONG` from your choice ([A4a](#a4a-choose-the-nvidia-models) explains how to choose);
-4. pulls the Ollama models and sets `OLLAMA_CONTEXT_LENGTH` and `PERSONALAI_LOCAL_CONTEXT_TOKENS` to the same value (quit Ollama from the tray and start it again afterwards);
-5. signs in each Google account you enter, with the services you choose (a browser opens), and adds it to the `PERSONALAI_*_ACCOUNTS` variables; delete the client JSON afterwards;
-6. asks for your addresses, VIP senders, college domains and readable folders;
-7. finds the laptop's Tailscale `100.x.y.z` address and sets `PERSONALAI_BIND_HOSTS` to `127.0.0.1,100.x.y.z`;
-8. installs and starts the "PersonalAi agent" scheduled task;
-9. checks the power settings and shows the `powercfg` commands for you to run yourself (it never changes them);
-10. opens a pairing window and shows the QR code to scan in the app (**Settings > Pair**);
-11. finishes by running `agent doctor`.
+3. optionally asks for a [Tavily](https://tavily.com/) API key (starts with `tvly-`; press Enter to skip) for web search, hidden input, stored in Windows Credential Manager only ([Web search](#web-search));
+4. lists the models your key can use, offers to run `scripts/eval_models.py` on the ones you pick, then sets `PERSONALAI_MODEL_PRIMARY`, `_FALLBACK` and `_LONG` from your choice ([A4a](#a4a-choose-the-nvidia-models) explains how to choose);
+5. pulls the Ollama models and sets `OLLAMA_CONTEXT_LENGTH` and `PERSONALAI_LOCAL_CONTEXT_TOKENS` to the same value (quit Ollama from the tray and start it again afterwards);
+6. signs in each Google account you enter, with the services you choose (a browser opens), and adds it to the `PERSONALAI_*_ACCOUNTS` variables; delete the client JSON afterwards;
+7. asks for your addresses, VIP senders, college domains and readable folders;
+8. finds the laptop's Tailscale `100.x.y.z` address and sets `PERSONALAI_BIND_HOSTS` to `127.0.0.1,100.x.y.z`;
+9. installs and starts the "PersonalAi agent" scheduled task;
+10. checks the power settings and shows the `powercfg` commands for you to run yourself (it never changes them);
+11. opens a pairing window and shows the QR code to scan in the app (**Settings > Pair**);
+12. finishes by running `agent doctor`.
 
 Every value is written as a Windows **user** environment variable (no file in the repo), and every secret goes only to Credential Manager. Open a new PowerShell window afterwards so it sees the variables.
 
@@ -57,7 +58,7 @@ Every value is written as a Windows **user** environment variable (no file in th
 uv run python -m agent doctor
 ```
 
-It prints a pass/fail line per prerequisite, with the exact command that fixes each failure: Python and uv, the keyring backend, the NVIDIA key and that the configured models exist, Ollama and its context length, each Google account's granted services, the bind addresses and Tailscale, the database, its key and the audit chain, the scheduled task, power settings, a paired phone, whether the running server is older than the code on disk, and the last mail, SMS and Classroom sync times. It exits with 0 only when every required check passes (the sync and server-age lines are informational, but a sync whose latest run failed, for example Classroom with no usable Google token, shows `[FAIL]` with the reason instead of a stale "OK" time). `--json` prints the same as JSON. It never prints keys, tokens, mail or SMS. Run it again whenever something seems off.
+It prints a pass/fail line per prerequisite, with the exact command that fixes each failure: Python and uv, the keyring backend, the NVIDIA key and that the configured models exist, the optional Tavily key (a warning, never a failure), Ollama and its context length, each Google account's granted services, the bind addresses and Tailscale, the database, its key and the audit chain, the scheduled task, power settings, a paired phone, whether the running server is older than the code on disk, and the last mail, SMS and Classroom sync times. It exits with 0 only when every required check passes (the sync and server-age lines are informational, but a sync whose latest run failed, for example Classroom with no usable Google token, shows `[FAIL]` with the reason instead of a stale "OK" time). `--json` prints the same as JSON. It never prints keys, tokens, mail or SMS. Run it again whenever something seems off.
 
 Then go through the first sync checks in [A12](#a12-first-sync-checks).
 
@@ -270,7 +271,7 @@ uv run python -m agent restore --in D:\backups\personalai-2026-10-05.paibak     
 
 - The passphrase is prompted for (twice for a backup), at least 12 characters, and never taken from the command line or environment. Without it the backup cannot be opened, so keep it in a password manager, not on the laptop.
 - Format: AES-256-GCM with a key derived from the passphrase by scrypt; the header is authenticated too, so any change to the file makes it fail to open. A backup never overwrites an existing file.
-- The backup does **not** hold the phone pairing, approval keys, Google tokens or the NVIDIA key. After restoring on a new laptop, redo steps A3 (sign-in only), A4 and A11 (or `agent setup --redo google --redo nvidia_key --redo pair`).
+- The backup does **not** hold the phone pairing, approval keys, Google tokens, the NVIDIA key or the Tavily key. After restoring on a new laptop, redo steps A3 (sign-in only), A4 and A11 (or `agent setup --redo google --redo nvidia_key --redo tavily_key --redo pair`).
 - `restore` refuses to replace an existing database, or a different `db_key` in the keyring, unless you add `--force`. With `--force` the old database is renamed to `agent.db.pre-restore-<timestamp>` and the old key is kept in the keyring as `db_key.pre-restore-<timestamp>`; nothing is deleted.
 - Stop the scheduled task before restoring (`Stop-ScheduledTask -TaskName "PersonalAi agent"`) and start it again afterwards.
 - Suggested habit: a backup each week to an external drive or a cloud folder; the file is safe to store there because it is encrypted.
@@ -306,6 +307,9 @@ uv run python -m agent restore --in D:\backups\personalai-2026-10-05.paibak     
 | `PERSONALAI_BRIEFING_TIME` | Default morning briefing time (`HH:MM`, local); the app's Settings override it | `07:30` |
 | `PERSONALAI_ACCOUNT_LABELS` | Comma-separated `address=Label` pairs naming your Google accounts in the app, e.g. `college@example.edu=College,me@example.com=Personal`. Without one, consumer addresses (Gmail, Outlook, ...) show in full and others show their domain name (`someone@cs.example.edu` shows as `Example`) | none |
 | `PERSONALAI_NEWS_FEEDS` | Comma-separated https RSS/Atom feed URLs for `news_headlines` (check them with `agent news-check`) | none |
+| `PERSONALAI_NEWS_TOPICS` | Re-weights or adds news topics that rank `news_headlines` (see "News feeds" below). Invalid values stop startup | AI 5, AI infrastructure 5, tech 3, markets 3, general 1 |
+| `PERSONALAI_WEB_TOOLS` | `off` removes `web_search`, `web_read` and `hf_models` (see [Web search](#web-search)) | on |
+| `PERSONALAI_WEB_SEARCHES_PER_HOUR` | Rolling hourly limit on `web_search` calls | `20` |
 | `PERSONALAI_FILE_ROOTS` | Absolute folders the agent may read, separated by `;` on Windows (`:` elsewhere) | none |
 | `PERSONALAI_FILE_INDEX_MINUTES` | Local file index refresh interval | `30` |
 | `PERSONALAI_FINANCE_UTC_OFFSET_MINUTES` | Local time offset for finance periods (India is +330) | `330` |
@@ -346,6 +350,17 @@ Attachments come from the folders in `PERSONALAI_FILE_ROOTS` (any file type, hid
 ## Alerts, deadlines and news
 
 - **Deadlines.** Mail (not promo or spam) is scanned for fees, exams, submissions, bills and events; Classroom due dates are collected too. Each one is added to your own primary calendar without asking, with no guests and nobody notified, and the phone shows "Added to calendar" with an **Undo** button. Turn this off with `PERSONALAI_CALENDAR_AUTO_ADD=off`.
+- **Newsletters are skipped.** Mail from senders you do not trust is not searched for deadlines when it has a `List-Unsubscribe` header, is labelled Promotions, Social or Forums by Gmail, reads like a newsletter ("unsubscribe", "view in browser", "weekly digest", "market update" and similar) or comes from an address such as `newsletter@`, `news@`, `digest@`, `marketing@`, `offers@` or `deals@`. Your `PERSONALAI_VIP_SENDERS` and `PERSONALAI_COLLEGE_DOMAINS` are always trusted and never filtered. A date also counts only when it is within 60 characters of a deadline word in the same sentence.
+
+  To clean up deadlines an older version added from newsletters, run this once after updating (it changes nothing without `--apply`):
+
+  ```powershell
+  cd server
+  uv run python -m agent deadlines-recheck
+  uv run python -m agent deadlines-recheck --apply
+  ```
+
+  The first command lists each rejected mail deadline with its id, kind, date, account, title, whether it is on your calendar and why it was rejected. With `--apply`, the calendar event of each one is deleted (only if the agent created it, as with the app's Undo button) and the others are dismissed so they are never added. Classroom deadlines are never touched. Every change is written to the audit log as `cli:recheck`.
 - **Alerts on the phone.** In Settings > Alerts, turn on Important mail, Deadlines (a day and two hours before) and the Morning briefing, and set its time. Android 13+ asks for notification permission the first time. The app checks for alerts about every 15 minutes in the background and whenever you open it; alerts come over Tailscale, never through Google push.
 - **News feeds.** No feed is on by default, because the build environment could not reach any news site to confirm a URL. Check candidates on the laptop, then set the ones that pass:
 
@@ -357,6 +372,25 @@ Attachments come from the folders in `PERSONALAI_FILE_ROOTS` (any file type, hid
   ```
 
   `news-check` with no URLs checks the configured list.
+
+- **News ranking.** Headlines are ranked by how much weight you give their topic, then by freshness, instead of newest first. Each topic has a weight from 0 to 10 and a list of keywords (matched as whole words, ignoring case). A match in the title counts in full, a match only in the summary counts 60 %, and an item that matches nothing gets the `general` weight. The score is the weight halved for every 24 hours of age (an item without a date counts as 48 hours old), so a fresh general item can still beat a three-day-old AI item. The defaults are `ai` 5, `ai_infra` 5 (GPUs, data centres, NVIDIA, chips), `tech` 3, `markets` 3 and `general` 1. `PERSONALAI_NEWS_TOPICS` changes them with comma-separated entries: `name=weight` re-weights a topic, `name=weight:keyword|keyword` adds a topic or replaces a topic's keywords (up to 20 keywords of 40 characters, plain words rather than patterns, at most 20 topics). Weight `0` hides matching items. For example:
+
+  ```powershell
+  setx PERSONALAI_NEWS_TOPICS "general=0,markets=4,cricket=2:cricket|ipl|test match"
+  uv run python -m agent restart
+  ```
+
+  Ask the assistant for headlines "about markets" and it can filter by topic.
+
+## Web search
+
+The agent can look things up on the internet with three read-only tools. They are on by default; set `PERSONALAI_WEB_TOOLS=off` to remove them.
+
+- `web_search` uses [Tavily](https://tavily.com/). Create an API key at tavily.com (it starts with `tvly-`; the free plan is enough for personal use) and store it with the wizard, `uv run python -m agent setup --redo tavily_key` (hidden input, Credential Manager only), or with `uv run python -m keyring set PersonalAi tavily_api_key`. Without the key the tool tells the model that web search is not set up and `agent doctor` shows a warning; nothing else is affected. It is limited to `PERSONALAI_WEB_SEARCHES_PER_HOUR` calls per rolling hour (default 20).
+- `web_read` reads one page of text, and only a URL that `web_search` returned in the same question (at most 3 pages per question). Pages must be https on port 443 on a public host; redirects are followed only within the same host, and nothing is sent but a plain GET with no cookies or credentials.
+- `hf_models` lists models on Hugging Face (newest, trending, most downloaded or most liked, optionally by task or author). It uses the public API and needs no key; it is limited to 30 calls per hour.
+
+Search queries leave your laptop, so they are checked first: a query containing your email addresses, account, card or phone numbers, codes or anything else the redactor would mask is refused and the model is told to rephrase it without personal data. Results are untrusted internet text, shown to the model as data and never acted on.
 
 ## Finance (M4, finish with the phone app in M5 and on the laptop in M7)
 

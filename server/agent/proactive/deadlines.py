@@ -17,6 +17,7 @@ from agent.core.redact import RedactionMap, Redactor
 from agent.core.textutil import one_line
 from agent.mail.store import MailStore
 from agent.proactive.extract import ExtractionFailed, Found, extract_with_llm_strict, scan_rules
+from agent.proactive.mailfilter import is_bulk_mail, is_trusted_sender
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.sync_status import CLASSROOM, record_scan
@@ -228,6 +229,8 @@ class DeadlineCollector:
         clock: Clock,
         horizon_days: int,
         offset_minutes: int,
+        vip_senders: frozenset[str],
+        college_domains: frozenset[str],
     ) -> None:
         self.store = store
         self._mail = mail_store
@@ -239,6 +242,8 @@ class DeadlineCollector:
         self._horizon = timedelta(days=horizon_days)
         self._offset = offset_minutes
         self._db = db
+        self._vip = vip_senders
+        self._college = college_domains
 
     def list_upcoming(self, days: int) -> list[Deadline]:
         return self.store.upcoming(days, self._offset)
@@ -256,9 +261,11 @@ class DeadlineCollector:
             added = self._scan_mail(
                 msg.account,
                 msg.id,
+                msg.from_addr,
                 msg.subject,
                 msg.body,
                 msg.label_ids,
+                msg.list_unsubscribe,
                 stored.category,
                 msg.internal_date,
                 self._horizon,
@@ -287,9 +294,11 @@ class DeadlineCollector:
                 new = self._scan_mail(
                     stored.account,
                     stored.id,
+                    stored.from_addr,
                     stored.subject,
                     stored.body,
                     stored.label_ids,
+                    stored.list_unsubscribe,
                     stored.category,
                     stored.internal_date,
                     timedelta(days=days),
@@ -312,9 +321,11 @@ class DeadlineCollector:
         self,
         account: str,
         message_id: str,
+        from_addr: str,
         subject: str,
         body: str,
         label_ids: Sequence[str],
+        list_unsubscribe: bool,
         category: str | None,
         internal_date: int,
         max_age: timedelta,
@@ -322,11 +333,17 @@ class DeadlineCollector:
         """Extract and store the deadlines of one mail.
 
         Returns the number of new deadlines, or ``None`` when the mail was not looked at because
-        it is older than ``max_age``. Mail the rules skip (spam, promo, sent) counts as looked at.
+        it is older than ``max_age``. Mail the rules skip (spam, promo, sent, and newsletters from
+        senders that are not trusted) counts as looked at.
         Raises ``ExtractionFailed`` when the local model was needed but could not be used.
         """
         if SKIPPED_LABELS & set(label_ids) or category in SKIPPED_CATEGORIES:
             return 0
+        if not is_trusted_sender(from_addr, self._vip, self._college):
+            reason = is_bulk_mail(from_addr, subject, body, label_ids, list_unsubscribe)
+            if reason is not None:
+                log.info("deadline scan skipped bulk mail: %s", reason)
+                return 0
         received = datetime.fromtimestamp(internal_date / 1000, UTC)
         if self._clock() - received > max_age:
             return None

@@ -194,7 +194,7 @@ def undo(
     request: Request,
     device: Annotated[Device, Depends(require_device)],
 ) -> dict[str, str]:
-    outcome = _services(request).autocal.undo(deadline_id, device.id)
+    outcome = _services(request).autocal.undo(deadline_id, f"device:{device.id}")
     if outcome == "not_found":
         raise HTTPException(status_code=404, detail="not_found")
     if outcome == "refused":

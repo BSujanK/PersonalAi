@@ -4,6 +4,7 @@ Only URLs from ``Settings.news_feeds`` are ever fetched; the model's tool takes 
 stay on the same https host, bodies are size-capped while streaming, XML goes through
 ``defusedxml``, and the text that comes out is flattened (no markup, no links). Feed text is data
 for the model only: no alert, deadline or background job reads it. Logs carry exception names.
+Headlines are ranked by the owner's topic weights and then by freshness (see ``agent.news.topics``).
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin, urlsplit
@@ -23,7 +24,9 @@ import httpx
 
 from agent.config import validate_feed_url
 from agent.connectors.gmail import html_to_text
+from agent.core.clock import utcnow
 from agent.core.textutil import one_line
+from agent.news.topics import GENERAL, Topic, default_topics
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +38,9 @@ TIMEOUT_SECONDS = 10
 TITLE_CHARS = 200
 SUMMARY_CHARS = 300
 SOURCE_CHARS = 100
+SUMMARY_MATCH_FACTOR = 0.6
+UNKNOWN_AGE_HOURS = 48.0
+HALF_LIFE_HOURS = 24.0
 _REDIRECTS = frozenset({301, 302, 307, 308})
 _ATOM = "{http://www.w3.org/2005/Atom}"
 
@@ -61,6 +67,7 @@ class FeedItem:
     title: str
     published: str | None
     summary: str
+    topic: str = ""  # set when the item is ranked: the topic that gave it its weight
 
 
 @dataclass(frozen=True)
@@ -145,10 +152,14 @@ class NewsFeeds:
         self,
         urls: Sequence[str],
         *,
+        topics: Sequence[Topic] | None = None,
         transport: httpx.BaseTransport | None = None,
         monotonic: Callable[[], float] = time.monotonic,
+        now: Callable[[], datetime] = utcnow,
     ) -> None:
         self._urls = tuple(urls)
+        self._topics = tuple(topics) if topics is not None else default_topics()
+        self._now = now
         self._transport = transport
         self._monotonic = monotonic
         self._cache: dict[str, tuple[float, Feed]] = {}
@@ -208,9 +219,16 @@ class NewsFeeds:
 
     # --- reading ----------------------------------------------------------------------------
 
-    def headlines(self, limit: int, source: str | None) -> tuple[list[FeedItem], list[str]]:
-        """Newest items across the feeds (or the ones matching ``source``), and the hosts that
-        could not be read."""
+    @property
+    def topic_names(self) -> tuple[str, ...]:
+        return tuple(topic.name for topic in self._topics)
+
+    def headlines(
+        self, limit: int, source: str | None, topic: str | None = None
+    ) -> tuple[list[FeedItem], list[str]]:
+        """The best items across the feeds (or the ones matching ``source``), ranked by topic
+        weight and freshness, and the hosts that could not be read. ``topic`` keeps only the items
+        whose best-matching topic has that name."""
         items: list[FeedItem] = []
         unavailable: list[str] = []
         for url in self._urls:
@@ -224,8 +242,49 @@ class NewsFeeds:
                 continue
             if source is None or _matches(source, feed.title, host):
                 items.extend(feed.items)
-        items.sort(key=lambda i: i.published or "", reverse=True)
-        return items[:limit], unavailable
+        now = self._now()
+        scored: list[tuple[float, FeedItem]] = []
+        for item in items:
+            weight, name = self._weigh(item)
+            if weight <= 0 or (topic is not None and name != topic):
+                continue
+            score = weight * 0.5 ** (_age_hours(item.published, now) / HALF_LIFE_HOURS)
+            scored.append((score, replace(item, topic=name)))
+        scored.sort(key=lambda pair: pair[1].published or "", reverse=True)
+        scored.sort(key=lambda pair: pair[0], reverse=True)  # stable: ties stay newest first
+        return [item for _, item in scored[:limit]], unavailable
+
+    def _weigh(self, item: FeedItem) -> tuple[float, str]:
+        """The weight of the best topic for the item: a title match counts in full, a match only in
+        the summary at ``SUMMARY_MATCH_FACTOR``. With no match the ``general`` weight applies."""
+        best: tuple[float, str] | None = None
+        general = 0
+        for topic in self._topics:
+            if topic.name == GENERAL:
+                general = topic.weight
+            if topic.pattern is None:
+                continue
+            if topic.pattern.search(item.title):
+                weight = float(topic.weight)
+            elif topic.pattern.search(item.summary):
+                weight = topic.weight * SUMMARY_MATCH_FACTOR
+            else:
+                continue
+            if best is None or weight > best[0]:
+                best = (weight, topic.name)
+        return best if best is not None else (float(general), GENERAL)
+
+
+def _age_hours(published: str | None, now: datetime) -> float:
+    if published is None:
+        return UNKNOWN_AGE_HOURS
+    try:
+        moment = datetime.fromisoformat(published)
+    except ValueError:
+        return UNKNOWN_AGE_HOURS
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return max(0.0, (now - moment).total_seconds() / 3600)
 
 
 def _matches(source: str, title: str, host: str) -> bool:
