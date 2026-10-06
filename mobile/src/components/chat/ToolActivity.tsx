@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import {
   summariseTools,
@@ -15,6 +15,7 @@ import {
   useThemedStyles,
   type Palette,
 } from '../../theme';
+import { Spark } from '../brand/Spark';
 import { Icon } from '../Icon';
 
 const makeStyles = (p: Palette) => ({
@@ -26,10 +27,12 @@ const makeStyles = (p: Palette) => ({
     gap: space.sm,
     paddingHorizontal: space.md - space.xs,
     borderRadius: radius.pill,
-    backgroundColor: p.muted,
+    backgroundColor: p.glass,
+    borderWidth: 1,
+    borderColor: p.glassBorder,
     maxWidth: '100%' as const,
   },
-  summaryText: { ...type.subhead, flexShrink: 1, color: p.textMuted },
+  summaryText: { ...type.subheadline, flexShrink: 1, color: p.textMuted },
   list: { gap: space.xs + 2, paddingLeft: space.xs },
   chip: {
     flexDirection: 'row' as const,
@@ -37,17 +40,17 @@ const makeStyles = (p: Palette) => ({
     gap: space.sm,
     paddingVertical: space.xs,
     paddingHorizontal: space.md - space.xs,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: p.separator,
+    borderRadius: radius.pill,
+    backgroundColor: p.accentSoft,
     alignSelf: 'flex-start' as const,
   },
-  chipText: { ...type.footnote, color: p.text },
+  chipText: { ...type.footnote, color: p.accentText },
 });
 
 function StatusIcon({ status }: { status: Activity['status'] }) {
   const { palette } = useTheme();
-  if (status === 'started') return <ActivityIndicator size="small" color={palette.accentText} />;
+  // The reply avatar carries the thinking motion; a running step is a still, dimmed mark.
+  if (status === 'started') return <Spark size={16} style={{ opacity: 0.6 }} />;
   if (status === 'failed') return <Icon name="alert-circle" size={16} color={palette.danger} />;
   return <Icon name="check" size={16} color={palette.ok} />;
 }

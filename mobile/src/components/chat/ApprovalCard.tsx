@@ -35,9 +35,9 @@ const SOON_MS = 3 * 60_000;
 const makeStyles = (p: Palette) => ({
   card: {
     backgroundColor: p.surface,
-    borderRadius: radius.lg,
+    borderRadius: radius.card,
     borderWidth: 1,
-    borderColor: p.separator,
+    borderColor: p.border,
     overflow: 'hidden' as const,
   },
   header: {
@@ -48,9 +48,9 @@ const makeStyles = (p: Palette) => ({
     paddingBottom: space.sm + space.xs,
   },
   tile: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.md - 2,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     backgroundColor: p.accentSoft,

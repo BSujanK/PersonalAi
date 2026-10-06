@@ -6,9 +6,9 @@ configured come back as null; a source that fails is listed in ``unavailable``."
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from agent.core.tools import ToolKind, ToolRegistry
 from agent.mail.digest import build_digest
@@ -19,6 +19,7 @@ router = APIRouter()
 
 EVENT_DAYS = 2
 DEADLINE_DAYS = 7
+SECTIONS = ("mail", "events", "deadlines")
 
 
 def _read(registry: ToolRegistry, name: str, args: dict[str, Any], failed: list[str]) -> Any:
@@ -33,17 +34,36 @@ def _read(registry: ToolRegistry, name: str, args: dict[str, Any], failed: list[
         return None
 
 
+def _requested(sections: str | None) -> frozenset[str]:
+    """The sections asked for: every one without the parameter, else the named subset."""
+    if sections is None:
+        return frozenset(SECTIONS)
+    names = sections.split(",")
+    if any(name not in SECTIONS for name in names):
+        raise HTTPException(status_code=422, detail="invalid_sections")
+    return frozenset(names)
+
+
 @router.get("/today")
-def today(request: Request) -> dict[str, Any]:
+def today(
+    request: Request, sections: Annotated[str | None, Query(max_length=64)] = None
+) -> dict[str, Any]:
+    """The digest. ``sections`` (comma-separated ``mail``, ``events``, ``deadlines``) limits it:
+    sections not named are left out of the response and their connector is not called."""
+    wanted = _requested(sections)
     state = request.app.state
     registry: ToolRegistry = state.registry
     now = state.clock()
     failed: list[str] = []
-    mail = getattr(state, "mail", None)
-    return {
-        "generated_at": now.isoformat(),
-        "mail": build_digest(mail.store, now, 24).to_json() if mail is not None else None,
-        "deadlines": _read(registry, "classroom_coursework", {"days": DEADLINE_DAYS}, failed),
-        "events": _read(registry, "calendar_events", {"days": EVENT_DAYS, "limit": 20}, failed),
-        "unavailable": failed,
-    }
+    out: dict[str, Any] = {"generated_at": now.isoformat()}
+    if "mail" in wanted:
+        mail = getattr(state, "mail", None)
+        out["mail"] = build_digest(mail.store, now, 24).to_json() if mail is not None else None
+    if "deadlines" in wanted:
+        out["deadlines"] = _read(registry, "classroom_coursework", {"days": DEADLINE_DAYS}, failed)
+    if "events" in wanted:
+        out["events"] = _read(
+            registry, "calendar_events", {"days": EVENT_DAYS, "limit": 20}, failed
+        )
+    out["unavailable"] = failed
+    return out

@@ -14,6 +14,8 @@ import { getJson, setJson } from '../lib/prefs';
 import { darkPalette, lightPalette, type Palette } from './palette';
 
 export {
+  familyFor,
+  FONT_FACES,
   fontFamily,
   MAX_CHROME_SCALE,
   MIN_TARGET,
@@ -22,8 +24,10 @@ export {
   size,
   space,
   type,
+  TYPE_SCALE,
 } from './typography';
-export { easeOut, motion } from './motion';
+export type { TypeName, TypeSpec } from './typography';
+export { easeInOut, easeOut, motion, timingEaseOut, timingLinear, timingSine } from './motion';
 export { brand, darkPalette, lightPalette } from './palette';
 export type { Palette } from './palette';
 
@@ -66,7 +70,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    Appearance.setColorScheme(preference === 'system' ? 'unspecified' : preference);
+    // Absent on react-native-web (the screenshot harness); there the media query decides.
+    Appearance.setColorScheme?.(preference === 'system' ? 'unspecified' : preference);
   }, [preference]);
 
   const setPreference = useCallback((next: ThemePreference) => {

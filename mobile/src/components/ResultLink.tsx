@@ -18,8 +18,8 @@ const makeStyles = (p: Palette) => ({
     color: p.textMuted,
   },
   link: {
+    ...type.footnote,
     fontFamily: fontFamily.mono,
-    fontSize: 13,
     lineHeight: 19,
     color: p.accentText,
     backgroundColor: p.muted,

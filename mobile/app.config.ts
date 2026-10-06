@@ -1,5 +1,10 @@
 import type { ExpoConfig } from 'expo/config';
 
+// Brand bitmaps (icon, adaptive layers, monochrome, splash, notification icon) are rendered from
+// the spark geometry by scripts/render-brand.mjs.
+const INK = '#07060B';
+const VIOLET = '#8B5CF6';
+
 // Firebase config is never committed. It is supplied at build time (env var or EAS file secret).
 const googleServicesFile = process.env.GOOGLE_SERVICES_JSON;
 const easProjectId = process.env.EAS_PROJECT_ID;
@@ -12,13 +17,16 @@ const config: ExpoConfig = {
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
   icon: './assets/icon.png',
-  backgroundColor: '#F7F5F0',
+  backgroundColor: INK,
   android: {
     package: 'com.bsujank.personalai',
     allowBackup: false,
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
-      backgroundColor: '#2B6A5C',
+      backgroundImage: './assets/adaptive-icon-background.png',
+      // Android 13+ themed icons.
+      monochromeImage: './assets/adaptive-icon-monochrome.png',
+      backgroundColor: INK,
     },
     permissions: [
       'android.permission.RECEIVE_SMS',
@@ -33,7 +41,18 @@ const config: ExpoConfig = {
   plugins: [
     'expo-router',
     'expo-secure-store',
-    'expo-notifications',
+    // The small icon must be a white silhouette; Android tints it with `color`.
+    ['expo-notifications', { icon: './assets/notification-icon.png', color: VIOLET }],
+    [
+      'expo-splash-screen',
+      {
+        image: './assets/splash-icon.png',
+        imageWidth: 160,
+        resizeMode: 'contain',
+        backgroundColor: INK,
+        dark: { image: './assets/splash-icon.png', backgroundColor: INK },
+      },
+    ],
     'expo-background-task',
     [
       'expo-camera',

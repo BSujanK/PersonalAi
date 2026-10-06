@@ -342,7 +342,13 @@ def test_run_adds_an_event_audits_and_alerts() -> None:
     assert (audit["actor"], audit["detail"]) == ("system:autocal", "deadline:1")
     [alert] = env.services.alerts.since(0, 10)
     assert alert.kind == "calendar_added" and alert.actions == ("undo",)
-    assert alert.target == {"type": "deadline", "deadline_id": 1}
+    assert alert.target == {
+        "type": "deadline",
+        "deadline_id": 1,
+        "source": "mail",
+        "account": ME,
+        "message_id": "m1",
+    }
     assert alert.title == "Added to your calendar" and "Tuition fee" in alert.body
 
 

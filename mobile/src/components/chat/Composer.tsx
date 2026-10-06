@@ -32,10 +32,10 @@ const makeStyles = (p: Palette) => ({
     flexDirection: 'row' as const,
     alignItems: 'flex-end' as const,
     gap: space.sm,
-    backgroundColor: p.surface,
-    borderColor: p.separator,
+    backgroundColor: p.raised,
+    borderColor: p.glassBorder,
     borderWidth: 1,
-    borderRadius: radius.xl,
+    borderRadius: radius.xxl,
     paddingLeft: space.md,
     paddingRight: space.xs + 2,
     paddingVertical: space.xs + 2,
@@ -50,13 +50,13 @@ const makeStyles = (p: Palette) => ({
     color: p.text,
   },
   send: {
-    width: 36,
-    height: 36,
-    margin: 2,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    margin: 1,
+    borderRadius: 20,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    backgroundColor: p.accent,
+    backgroundColor: p.accentStrong,
   },
   sendOff: { backgroundColor: p.muted },
 });
@@ -76,7 +76,9 @@ export function Composer({ busy, online, onSend, onStop, initialDraft = '' }: Pr
   const styles = useThemedStyles(makeStyles);
   const { palette } = useTheme();
   const [draft, setDraft] = useState(initialDraft);
-  const offline = online === false;
+  // During a turn a failed /health means the agent is busy, not gone: "still working".
+  const offline = online === false && !busy;
+  const slow = online === false && busy;
   const canSend = !offline && draft.trim().length > 0;
 
   function submit() {
@@ -91,6 +93,12 @@ export function Composer({ busy, online, onSend, onStop, initialDraft = '' }: Pr
         <View style={styles.offline} accessibilityRole="alert">
           <View style={styles.dot} />
           <Text style={styles.offlineText}>Agent offline. Check the laptop and Tailscale.</Text>
+        </View>
+      ) : null}
+      {slow ? (
+        <View style={styles.offline} accessibilityLiveRegion="polite">
+          <View style={[styles.dot, { backgroundColor: palette.warn }]} />
+          <Text style={styles.offlineText}>Still working… this reply is taking a while.</Text>
         </View>
       ) : null}
       <View style={styles.box}>

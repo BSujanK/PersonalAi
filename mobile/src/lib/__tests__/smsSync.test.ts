@@ -66,6 +66,7 @@ describe('flushQueue', () => {
     const post = jest.fn().mockResolvedValue({});
     await expect(flushQueue({ ...q, post })).resolves.toEqual({
       sent: 3,
+      fresh: 0,
       dropped: 0,
       stoppedBy: null,
     });
@@ -83,6 +84,7 @@ describe('flushQueue', () => {
     const post = jest.fn().mockRejectedValue(new OfflineError());
     await expect(flushQueue({ ...q, post })).resolves.toEqual({
       sent: 0,
+      fresh: 0,
       dropped: 0,
       stoppedBy: 'offline',
     });
@@ -94,6 +96,7 @@ describe('flushQueue', () => {
     const post = jest.fn().mockRejectedValue(new ApiError(503, 'unavailable'));
     await expect(flushQueue({ ...q, post })).resolves.toEqual({
       sent: 0,
+      fresh: 0,
       dropped: 0,
       stoppedBy: 'rejected',
     });
@@ -105,6 +108,7 @@ describe('flushQueue', () => {
     const post = jest.fn().mockResolvedValueOnce({}).mockRejectedValueOnce(new OfflineError());
     await expect(flushQueue({ ...q, post })).resolves.toEqual({
       sent: MAX_BATCH,
+      fresh: 0,
       dropped: 0,
       stoppedBy: 'offline',
     });
@@ -117,6 +121,7 @@ describe('flushQueue', () => {
     const post = jest.fn().mockResolvedValue({});
     await expect(flushQueue({ ...q, post })).resolves.toEqual({
       sent: MAX_BATCH + 20,
+      fresh: 0,
       dropped: 0,
       stoppedBy: null,
     });
@@ -127,6 +132,7 @@ describe('flushQueue', () => {
     const post = jest.fn();
     await expect(flushQueue({ ...makeQueue(0), post })).resolves.toEqual({
       sent: 0,
+      fresh: 0,
       dropped: 0,
       stoppedBy: null,
     });
@@ -143,10 +149,26 @@ describe('flushQueue', () => {
       .mockResolvedValueOnce({});
     await expect(flushQueue({ ...q, post })).resolves.toEqual({
       sent: 2,
+      fresh: 0,
       dropped: 1,
       stoppedBy: null,
     });
     expect(post.mock.calls.slice(1).map((c) => c[0].length)).toEqual([1, 1, 1]);
     expect(q.items).toHaveLength(0);
+  });
+});
+
+describe('flushQueue counts only messages new to the server', () => {
+  it('sums the server accepted count and ignores duplicates', async () => {
+    const queue = [
+      { id: 'a', sender: 'BOBTXN', body: 'one', received_at: 1 },
+      { id: 'b', sender: 'BOBTXN', body: 'two', received_at: 2 },
+    ];
+    const result = await flushQueue({
+      peek: async () => queue.splice(0, queue.length),
+      remove: async () => undefined,
+      post: async () => ({ accepted: 1, duplicates: 1 }),
+    });
+    expect(result).toEqual({ sent: 2, fresh: 1, dropped: 0, stoppedBy: null });
   });
 });

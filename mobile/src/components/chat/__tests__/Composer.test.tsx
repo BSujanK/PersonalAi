@@ -36,6 +36,13 @@ describe('Composer', () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
+  it('says "still working" instead of offline while a turn runs', async () => {
+    await render(<Composer busy online={false} onSend={jest.fn()} onStop={jest.fn()} />);
+    expect(screen.queryByText(/Agent offline/)).toBeNull();
+    expect(screen.getByText(/Still working/)).toBeTruthy();
+    expect(screen.getByLabelText('Stop generating')).toBeTruthy();
+  });
+
   it('does not flag offline before the first check finishes', async () => {
     await render(<Composer busy={false} online={null} onSend={jest.fn()} onStop={jest.fn()} />);
     expect(screen.queryByText(/Agent offline/)).toBeNull();
@@ -48,8 +55,8 @@ describe('EmptyState', () => {
     const onPick = jest.fn();
     await render(<EmptyState onPick={onPick} now={new Date(2026, 9, 6, 19, 30)} />);
     expect(screen.getByText('Good evening')).toBeTruthy();
-    for (const { label } of SUGGESTIONS) expect(screen.getByText(label)).toBeTruthy();
-    await fireEvent.press(screen.getByText("Today's digest"));
+    for (const { label } of SUGGESTIONS) expect(screen.getByLabelText(label)).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Today's digest"));
     expect(onPick).toHaveBeenCalledWith(
       "Give me today's digest: important mail, deadlines and today's events.",
     );
@@ -58,7 +65,7 @@ describe('EmptyState', () => {
   it.each(SUGGESTIONS)('the $label chip sends its full request', async ({ label, prompt }) => {
     const onPick = jest.fn();
     await render(<EmptyState onPick={onPick} now={new Date(2026, 9, 6, 8, 0)} />);
-    await fireEvent.press(screen.getByText(label));
+    await fireEvent.press(screen.getByLabelText(label));
     expect(onPick).toHaveBeenCalledTimes(1);
     expect(onPick).toHaveBeenCalledWith(prompt);
     expect(prompt.endsWith('.') || prompt.endsWith('?')).toBe(true);
@@ -68,7 +75,24 @@ describe('EmptyState', () => {
     const onPick = jest.fn();
     await render(<EmptyState onPick={onPick} disabled now={new Date(2026, 9, 6, 8, 0)} />);
     expect(screen.getByText('Good morning')).toBeTruthy();
-    await fireEvent.press(screen.getByText('Emails'));
+    await fireEvent.press(screen.getByLabelText('Emails'));
     expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it('opens Today from the digest chip; the other chips ask the agent', async () => {
+    const onPick = jest.fn();
+    const onOpen = jest.fn();
+    await render(<EmptyState onPick={onPick} onOpen={onOpen} />);
+    await fireEvent.press(screen.getByLabelText("Today's digest"));
+    expect(onOpen).toHaveBeenCalledWith('today');
+    await fireEvent.press(screen.getByLabelText('News'));
+    expect(onPick).toHaveBeenCalledWith(SUGGESTIONS.find((s) => s.label === 'News')?.prompt);
+  });
+
+  it('is a greeting and the chips only: no amount, no cards', async () => {
+    await render(<EmptyState onPick={jest.fn()} />);
+    expect(screen.queryByText(/₹/)).toBeNull();
+    expect(screen.queryByText('Spent today')).toBeNull();
+    expect(screen.queryByLabelText(/^Mail,/)).toBeNull();
   });
 });

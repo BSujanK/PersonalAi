@@ -53,6 +53,20 @@ export function dueLabel(due: string | undefined | null): string {
   return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
+/** "Friday, 9 October 2026" for a date-only due, with ", 17:00" when it has a time. */
+export function fullDateTime(iso: string | undefined | null): string {
+  if (!iso) return '';
+  const match = DATE_ONLY.exec(iso);
+  const date = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const day = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' } as const;
+  return match
+    ? date.toLocaleDateString(undefined, day)
+    : date.toLocaleString(undefined, { ...day, hour: '2-digit', minute: '2-digit' });
+}
+
 /** "1.2 MB", "340 KB" or "12 B". */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '';

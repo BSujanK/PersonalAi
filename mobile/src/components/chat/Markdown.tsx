@@ -3,32 +3,44 @@ import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'reac
 import { Alert, Linking, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { attr, cellAlign, isSafeLink, parseMarkdown, type MdNode } from '../../lib/markdown';
-import { fontFamily, MIN_TARGET, size, useThemedStyles, type Palette } from '../../theme';
+import {
+  fontFamily,
+  MIN_TARGET,
+  type,
+  useThemedStyles,
+  type Palette,
+  type TypeName,
+} from '../../theme';
 import { Icon } from '../Icon';
 
-const HEADING_SIZE: Record<string, number> = { h1: 24, h2: 21, h3: 18, h4: 16, h5: 16, h6: 16 };
+// h1-h2 in the display serif, h3 down in the UI face (see `heading`/`headingSmall`).
+const HEADING_STYLE: Record<string, TypeName> = {
+  h1: 'title1',
+  h2: 'title2',
+  h3: 'title3',
+  h4: 'headline',
+  h5: 'headline',
+  h6: 'headline',
+};
 const COPIED_MS = 1500;
 
 const makeStyles = (p: Palette) => ({
   root: { gap: 10 },
-  paragraph: { fontFamily: fontFamily.body, fontSize: size.body, lineHeight: 25, color: p.text },
-  heading: { fontFamily: fontFamily.display, color: p.text, marginTop: 6 },
-  headingSmall: { fontFamily: fontFamily.bodySemiBold },
+  paragraph: { ...type.body, color: p.text },
+  heading: { color: p.text, marginTop: 6 },
   strong: { fontFamily: fontFamily.bodySemiBold, fontWeight: 'normal' as const },
   em: { fontStyle: 'italic' as const },
   strike: { textDecorationLine: 'line-through' as const },
   link: { color: p.accentText, textDecorationLine: 'underline' as const },
   inlineCode: {
     fontFamily: fontFamily.mono,
-    fontSize: size.body - 2,
+    fontSize: type.callout.fontSize,
     backgroundColor: p.muted,
   },
   list: { gap: 6 },
   item: { flexDirection: 'row' as const, gap: 8 },
   marker: {
-    fontFamily: fontFamily.body,
-    fontSize: size.body,
-    lineHeight: 25,
+    ...type.body,
     color: p.textMuted,
     minWidth: 20,
     textAlign: 'right' as const,
@@ -45,7 +57,7 @@ const makeStyles = (p: Palette) => ({
     borderBottomWidth: 1,
     borderBottomColor: p.border,
   },
-  codeLang: { fontFamily: fontFamily.bodyMedium, fontSize: size.caption, color: p.textMuted },
+  codeLang: { ...type.caption, color: p.textMuted },
   copy: {
     minHeight: MIN_TARGET,
     paddingHorizontal: 12,
@@ -53,10 +65,10 @@ const makeStyles = (p: Palette) => ({
     alignItems: 'center' as const,
     gap: 6,
   },
-  copyText: { fontFamily: fontFamily.bodyMedium, fontSize: size.caption + 1, color: p.textMuted },
+  copyText: { ...type.caption, color: p.textMuted },
   codeText: {
     fontFamily: fontFamily.mono,
-    fontSize: size.small,
+    fontSize: type.footnote.fontSize,
     lineHeight: 20,
     color: p.text,
     padding: 12,
@@ -79,7 +91,7 @@ const makeStyles = (p: Palette) => ({
     borderBottomWidth: 1,
     borderColor: p.border,
   },
-  cellText: { fontFamily: fontFamily.body, fontSize: size.small + 1, color: p.text },
+  cellText: { ...type.subheadline, color: p.text },
   cellHead: { fontFamily: fontFamily.bodySemiBold },
 });
 
@@ -237,13 +249,12 @@ function renderBlocks(nodes: MdNode[], styles: Styles, keyPrefix = 'b'): ReactNo
       }
       case 'heading': {
         const tag = node.token.tag;
-        const small = tag === 'h4' || tag === 'h5' || tag === 'h6';
         return (
           <Text
             key={key}
             accessibilityRole="header"
             selectable
-            style={[styles.heading, small && styles.headingSmall, { fontSize: HEADING_SIZE[tag] }]}
+            style={[type[HEADING_STYLE[tag] ?? 'headline'], styles.heading]}
           >
             {renderInline(node.children[0]?.children ?? [], styles)}
           </Text>

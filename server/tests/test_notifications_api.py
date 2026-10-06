@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -12,7 +13,7 @@ from agent.api.pair import open_pairing_window
 from agent.config import Settings
 from agent.connectors.gcal import NotOwnEvent
 from agent.store.keystore import KeyStore
-from tests.proactive_support import ME, ProEnv, mail_message, make_env
+from tests.proactive_support import COLLEGE, ME, ProEnv, mail_message, make_env
 from tests.support import make_registry
 from tests.test_api import _auth
 from tests.test_loop import FakeLLM, say
@@ -309,3 +310,111 @@ def test_routes_are_absent_without_proactive_services() -> None:
     paths = {getattr(r, "path", "") for r in app.routes}
     assert not any(p.startswith(("/notifications", "/deadlines")) for p in paths)
     assert not hasattr(app.state, "proactive")
+
+
+# --- GET /deadlines/{id} -----------------------------------------------------------------------
+
+
+def _add_classroom_deadline(api: NotifyApi, key: str, due: date) -> None:
+    api.env.services.deadlines.store.insert(
+        source="classroom",
+        source_key=key,
+        source_account=COLLEGE,
+        source_id=key.split("/")[-1],
+        kind="submission",
+        title="Essay (Biology)",
+        due=due,
+        found_by="classroom",
+    )
+
+
+def test_deadline_detail_for_a_mail_deadline_with_calendar_event() -> None:
+    api = _api()
+    _add_deadline(api, "mail-9", date(2026, 10, 10), "Tuition fee")
+    assert api.env.services.autocal.run() == 1
+    assert _get(api, "/deadlines/1") == {
+        "id": 1,
+        "kind": "fee",
+        "title": "Tuition fee",
+        "due": "2026-10-10",
+        "source": "mail",
+        "source_account": ME,
+        "source_label": "Example",
+        "source_id": "mail-9",
+        "status": "active",
+        "calendar_added": True,
+        "message_id": "mail-9",
+        "calendar": {
+            "account": ME,
+            "event_id": "auto1",
+            "link": "https://www.google.com/calendar/event?eid=YXV0bzEgbWVAZXhhbXBsZS5jb20",
+        },
+    }
+
+
+def test_deadline_detail_for_a_classroom_deadline_without_calendar_event() -> None:
+    api = _api()
+    _add_classroom_deadline(api, f"{COLLEGE}/c9/w3", date(2026, 10, 12))
+    item = _get(api, "/deadlines/1")
+    assert item == {
+        "id": 1,
+        "kind": "submission",
+        "title": "Essay (Biology)",
+        "due": "2026-10-12",
+        "source": "classroom",
+        "source_account": COLLEGE,
+        "source_label": "Example",
+        "source_id": "w3",
+        "status": "active",
+        "calendar_added": False,
+        "course_id": "c9",
+        "calendar": None,
+    }
+    assert "message_id" not in item
+
+
+def test_deadline_detail_classroom_key_without_three_parts_has_no_course() -> None:
+    api = _api()
+    _add_classroom_deadline(api, "odd-key", date(2026, 10, 12))
+    item = _get(api, "/deadlines/1")
+    assert "course_id" not in item and "message_id" not in item
+
+
+def test_deadline_detail_after_undo_has_no_calendar() -> None:
+    api = _api()
+    _add_deadline(api, "a", date(2026, 10, 10))
+    assert api.env.services.autocal.run() == 1
+    assert api.client.post("/deadlines/1/undo", headers=api.headers).status_code == 200
+    item = _get(api, "/deadlines/1")
+    assert (item["calendar"], item["calendar_added"], item["status"]) == (None, False, "undone")
+
+
+def test_deadline_detail_event_link_decodes_to_event_and_account() -> None:
+    api = _api()
+    _add_deadline(api, "a", date(2026, 10, 10))
+    assert api.env.services.autocal.run() == 1
+    link = _get(api, "/deadlines/1")["calendar"]["link"]
+    prefix = "https://www.google.com/calendar/event?eid="
+    assert link.startswith(prefix)
+    eid = link.removeprefix(prefix)
+    assert "=" not in eid
+    assert base64.urlsafe_b64decode(eid + "=" * (-len(eid) % 4)).decode() == f"auto1 {ME}"
+
+
+def test_deadline_detail_missing_is_404() -> None:
+    api = _api()
+    response = api.client.get("/deadlines/5", headers=api.headers)
+    assert (response.status_code, response.json()) == (404, {"detail": "not_found"})
+
+
+@pytest.mark.parametrize("path", ["/deadlines/0", "/deadlines/-1", "/deadlines/x"])
+def test_deadline_detail_validates_the_id(path: str) -> None:
+    api = _api()
+    assert api.client.get(path, headers=api.headers).status_code == 422
+
+
+def test_deadline_detail_needs_the_device_token() -> None:
+    api = _api()
+    _add_deadline(api, "a", date(2026, 10, 10))
+    for headers in ({}, {"Authorization": "Bearer nope"}):
+        assert api.client.get("/deadlines/1", headers=headers).status_code in (401, 403)

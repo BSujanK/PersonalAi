@@ -1,7 +1,9 @@
-import { Inter_400Regular } from '@expo-google-fonts/inter/400Regular';
-import { Inter_500Medium } from '@expo-google-fonts/inter/500Medium';
-import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
-import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
+import { HankenGrotesk_400Regular } from '@expo-google-fonts/hanken-grotesk/400Regular';
+import { HankenGrotesk_500Medium } from '@expo-google-fonts/hanken-grotesk/500Medium';
+import { HankenGrotesk_600SemiBold } from '@expo-google-fonts/hanken-grotesk/600SemiBold';
+import { HankenGrotesk_700Bold } from '@expo-google-fonts/hanken-grotesk/700Bold';
+import { Newsreader_500Medium } from '@expo-google-fonts/newsreader/500Medium';
+import { Newsreader_600SemiBold } from '@expo-google-fonts/newsreader/600SemiBold';
 import { useFonts } from 'expo-font';
 import * as Notifications from 'expo-notifications';
 import { router, Stack } from 'expo-router';
@@ -12,13 +14,16 @@ import { useReducedMotion } from 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
-import { PairForm } from '../src/components/PairForm';
+import { IntroProvider } from '../src/components/brand/LaunchIntro';
+import { PairScreen } from '../src/components/PairScreen';
+import { ToastHost } from '../src/components/Toast';
 import { Loading } from '../src/components/ui';
-import { Screen } from '../src/components/Screen';
 import { AgentStatusProvider } from '../src/lib/AgentStatus';
 import { checkAlerts, handleAlertResponse, requestAlertPermission } from '../src/lib/alerts';
 import { registerBackgroundSync } from '../src/lib/backgroundTasks';
-import { flushSmsQueue, refreshDefaultSenders } from '../src/lib/bankSms';
+import { refreshDefaultSenders } from '../src/lib/bankSms';
+import { autoImportBankSms } from '../src/lib/smsAutoImport';
+import { showToast } from '../src/lib/toast';
 import { getJson, setJson } from '../src/lib/prefs';
 import { ConversationsProvider } from '../src/lib/Conversations';
 import { processDeviceCommands } from '../src/lib/deviceCommands';
@@ -28,9 +33,17 @@ import { emitRefresh } from '../src/lib/refreshBus';
 import { ThemeProvider, useTheme } from '../src/theme';
 
 /** Work done whenever the app is in the foreground and paired. Failures are retried next time. */
+/** Import new bank SMS in the background and say so only when the server got new ones. */
+async function syncBankSms(): Promise<void> {
+  const result = await autoImportBankSms();
+  if (result.status === 'synced' && result.fresh > 0) {
+    showToast(`Synced ${result.fresh} bank message${result.fresh === 1 ? '' : 's'}`);
+  }
+}
+
 async function foregroundSync(): Promise<void> {
   await refreshDefaultSenders();
-  await Promise.allSettled([flushSmsQueue(), processDeviceCommands(), checkAlerts()]);
+  await Promise.allSettled([syncBankSms(), processDeviceCommands(), checkAlerts()]);
   emitRefresh();
 }
 
@@ -85,13 +98,7 @@ function Gate() {
       </SafeAreaView>
     );
   }
-  if (pairing === null) {
-    return (
-      <Screen title="Pair" subtitle="Connect this phone to the agent on your laptop.">
-        <PairForm />
-      </Screen>
-    );
-  }
+  if (pairing === null) return <PairScreen />;
   return (
     <AgentStatusProvider>
       <ConversationsProvider>
@@ -103,8 +110,14 @@ function Gate() {
             animation: reduced ? 'fade' : 'default',
           }}
         >
-          <Stack.Screen name="(drawer)" />
+          <Stack.Screen name="(tabs)" />
           <Stack.Screen name="mail/[account]/[id]" />
+          <Stack.Screen name="files" />
+          <Stack.Screen name="settings" />
+          <Stack.Screen name="alerts" />
+          <Stack.Screen name="history" />
+          <Stack.Screen name="inbox" />
+          <Stack.Screen name="deadline/[id]" />
         </Stack>
       </ConversationsProvider>
     </AgentStatusProvider>
@@ -115,18 +128,23 @@ function Themed() {
   const { palette, scheme } = useTheme();
   // Fonts are bundled, so this resolves almost at once. On a load error the system fonts are used.
   const [fontsLoaded, fontError] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
+    Newsreader_500Medium,
+    Newsreader_600SemiBold,
+    HankenGrotesk_400Regular,
+    HankenGrotesk_500Medium,
+    HankenGrotesk_600SemiBold,
+    HankenGrotesk_700Bold,
   });
   return (
     <View style={{ flex: 1, backgroundColor: palette.bg }}>
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
       {fontsLoaded || fontError ? (
-        <PairingProvider>
-          <Gate />
-        </PairingProvider>
+        <IntroProvider>
+          <PairingProvider>
+            <Gate />
+          </PairingProvider>
+          <ToastHost />
+        </IntroProvider>
       ) : null}
     </View>
   );

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import ipaddress
+import logging
 import os
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
+
+log = logging.getLogger(__name__)
 
 
 def _split(value: str) -> tuple[str, ...]:
@@ -78,6 +81,54 @@ def _news_feeds(value: str) -> tuple[str, ...]:
         raise ValueError(f"PERSONALAI_NEWS_FEEDS: {exc}") from None
 
 
+MAX_ACCOUNT_LABEL_CHARS = 40
+
+
+def _account_labels(value: str) -> dict[str, str]:
+    """``address=Label`` pairs, comma-separated, into ``{lower-cased address: label}``. Invalid
+    pairs are skipped with a warning that counts them: addresses never reach the log."""
+    labels: dict[str, str] = {}
+    invalid = 0
+    for pair in _split(value):
+        address, _, label = pair.partition("=")
+        address, label = address.strip().lower(), label.strip()
+        if "@" not in address or not label or len(label) > MAX_ACCOUNT_LABEL_CHARS:
+            invalid += 1
+            continue
+        labels[address] = label
+    if invalid:
+        log.warning("PERSONALAI_ACCOUNT_LABELS: ignored %d invalid entries", invalid)
+    return labels
+
+
+CONSUMER_DOMAINS = frozenset(
+    {"gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "yahoo.com", "icloud.com"}
+)
+_SECOND_LEVEL_SUFFIXES = frozenset({"ac", "co", "com", "edu", "gov", "org"})
+
+
+def _default_label(account: str) -> str:
+    local, at, domain = account.rpartition("@")
+    if not at or not local or not domain or domain in CONSUMER_DOMAINS:
+        return account
+    parts = domain.split(".")
+    # ``cs.example.edu`` -> ``example``; ``uni.ac.uk`` -> ``uni`` (a two-letter country code
+    # after a generic second level).
+    if len(parts) >= 3 and len(parts[-1]) == 2 and parts[-2] in _SECOND_LEVEL_SUFFIXES:
+        name = parts[-3]
+    else:
+        name = parts[-2] if len(parts) >= 2 else parts[0]
+    return name.capitalize()
+
+
+def account_label(settings: Settings, account: str) -> str:
+    """The name the app shows for a Google account: the owner's ``PERSONALAI_ACCOUNT_LABELS``
+    entry, else the full address for consumer mail domains, else the capitalised second-level
+    domain (``someone@cs.example.edu`` -> ``Example``)."""
+    key = account.strip().lower()
+    return settings.account_labels.get(key) or _default_label(key)
+
+
 def _flag(value: str, default: bool) -> bool:
     text = value.strip().lower()
     if not text:
@@ -135,6 +186,7 @@ class Settings:
     tool_router: bool = True  # offer the model only the tools a request needs; off = all tools
     alert_poll_minutes: int = 5
     briefing_time: str = "07:30"
+    account_labels: Mapping[str, str] = field(default_factory=dict)
 
     @property
     def google_accounts(self) -> tuple[str, ...]:
@@ -239,4 +291,5 @@ class Settings:
                 e.get("PERSONALAI_ALERT_POLL_MINUTES", str(defaults.alert_poll_minutes)),
             ),
             briefing_time=_clock_time(e.get("PERSONALAI_BRIEFING_TIME", defaults.briefing_time)),
+            account_labels=_account_labels(e.get("PERSONALAI_ACCOUNT_LABELS", "")),
         )

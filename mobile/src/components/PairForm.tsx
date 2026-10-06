@@ -89,6 +89,7 @@ export function PairForm() {
       ) : null}
       <Button
         label={scanning ? 'Cancel scan' : 'Scan pairing QR'}
+        icon={scanning ? 'x' : 'maximize'}
         onPress={scanning ? () => setScanning(false) : () => void startScan()}
         disabled={busy}
       />
@@ -115,6 +116,7 @@ export function PairForm() {
         onPress={() => void submit(url.trim(), code.trim())}
         disabled={busy || !url || !code}
         tone="plain"
+        icon="link"
       />
       <ErrorText message={error} />
     </View>
@@ -123,5 +125,5 @@ export function PairForm() {
 
 const styles = StyleSheet.create({
   wrap: { gap: 12 },
-  camera: { height: 280, borderRadius: 10, overflow: 'hidden' },
+  camera: { height: 280, borderRadius: 20, overflow: 'hidden' },
 });

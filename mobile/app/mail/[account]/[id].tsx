@@ -1,22 +1,25 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { Text, View } from 'react-native';
 
 import { Icon, type IconName } from '../../../src/components/Icon';
 import { Screen } from '../../../src/components/Screen';
+import { SkeletonBlock, SkeletonGroup, SkeletonText } from '../../../src/components/Skeleton';
 import {
   Badge,
   Button,
-  ErrorText,
+  Card,
   ListRow,
   ListSection,
-  Loading,
+  LoadFailed,
   Notice,
+  StaleNote,
 } from '../../../src/components/ui';
 import { askAboutMail, mailRef, replyToMail } from '../../../src/lib/agentPrompts';
-import { getMailMessage, type MailAddress, type MailMessage } from '../../../src/lib/api';
+import { getMailMessage, type MailAddress } from '../../../src/lib/api';
 import { openNewChat } from '../../../src/lib/chatRoutes';
 import { errorMessage, formatBytes, initials, shortDateTime } from '../../../src/lib/format';
+import { useLoader, usePullToRefresh } from '../../../src/lib/usePolling';
 import {
   fontFamily,
   radius,
@@ -28,7 +31,7 @@ import {
 } from '../../../src/theme';
 
 const makeStyles = (p: Palette) => ({
-  header: { gap: space.md },
+  header: { gap: space.md, padding: space.md },
   subject: { ...type.title2, color: p.text },
   sender: {
     flexDirection: 'row' as const,
@@ -46,16 +49,22 @@ const makeStyles = (p: Palette) => ({
   avatarText: { ...type.headline, color: p.accentText },
   senderMain: { flex: 1, gap: 2 },
   senderName: { ...type.headline, color: p.text },
-  senderAddr: { ...type.subhead, color: p.textMuted },
+  senderAddr: { ...type.subheadline, color: p.textMuted },
   date: { ...type.footnote, color: p.textMuted },
   people: { gap: space.xs },
-  peopleLine: { ...type.subhead, color: p.textMuted },
+  peopleLine: { ...type.subheadline, color: p.textMuted },
   peopleLabel: { fontFamily: fontFamily.bodySemiBold, color: p.text },
   tags: { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: space.sm },
   // Side by side when they fit, stacked at large text sizes or on narrow phones.
   actions: { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: space.sm },
   action: { flexGrow: 1, flexBasis: 140 },
-  bodyCard: { backgroundColor: p.surface, borderRadius: radius.lg, padding: space.md },
+  bodyCard: {
+    backgroundColor: p.surface,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: p.glassBorder,
+    padding: space.md,
+  },
   // Plain text only: the body is never rendered as HTML or markdown, links are not detected, and
   // nothing remote (images, trackers) is ever loaded.
   bodyText: { ...type.body, color: p.text },
@@ -74,43 +83,52 @@ function attachmentIcon(mime: string): IconName {
   return 'file';
 }
 
+/** The header card and the first lines of the body, while the message loads. */
+function MailSkeleton() {
+  const styles = useThemedStyles(makeStyles);
+  return (
+    <>
+      <SkeletonGroup>
+        <Card style={styles.header}>
+          <SkeletonBlock width="80%" height={22} />
+          <View style={styles.sender}>
+            <SkeletonBlock width={44} height={44} radius={22} />
+            <View style={styles.senderMain}>
+              <SkeletonBlock width="40%" height={14} />
+              <SkeletonBlock width="60%" height={12} />
+            </View>
+          </View>
+        </Card>
+      </SkeletonGroup>
+      <View style={styles.bodyCard}>
+        <SkeletonText lines={6} />
+      </View>
+    </>
+  );
+}
+
 /** One mail, read-only: headers, attachment metadata and the plain-text body. */
 export default function MailDetail() {
   const styles = useThemedStyles(makeStyles);
   const { palette } = useTheme();
   const router = useRouter();
   const { account, id } = useLocalSearchParams<{ account: string; id: string }>();
-  const [mail, setMail] = useState<MailMessage | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
-
-  useEffect(() => {
-    if (!account || !id) return;
-    let cancelled = false;
-    getMailMessage(account, id).then(
-      (item) => {
-        if (cancelled) return;
-        setMail(item);
-        setError(null);
-      },
-      (e: unknown) => {
-        if (!cancelled) setError(errorMessage(e));
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [account, id, reloadKey]);
+  const fetchMail = useCallback(() => getMailMessage(account, id), [account, id]);
+  const { data, error, failing, retrying, reload } = useLoader(fetchMail);
+  const pull = usePullToRefresh(reload);
+  // Keep to this route's message: a screen reused for another mail never shows the old one.
+  const mail = data && data.id === id ? data : null;
 
   const senderName = mail ? mail.from.name || mail.from.addr : '';
 
   return (
-    <Screen back refreshing={false} onRefresh={() => setReloadKey((k) => k + 1)}>
-      <ErrorText message={error} />
-      {!mail && !error ? <Loading /> : null}
+    <Screen back {...pull}>
+      {failing && mail ? <StaleNote /> : null}
+      {failing && !mail ? <LoadFailed what="this mail" reason={errorMessage(error)} retrying={retrying} /> : null}
+      {!mail && !failing ? <MailSkeleton /> : null}
       {mail ? (
         <>
-          <View style={styles.header}>
+          <Card style={styles.header}>
             <Text selectable accessibilityRole="header" style={styles.subject}>
               {mail.subject || '(no subject)'}
             </Text>
@@ -166,7 +184,7 @@ export default function MailDetail() {
                 <Button
                   label="Reply"
                   icon="corner-up-left"
-                  tone="tinted"
+                  tone="primary"
                   compact
                   accessibilityHint="Starts a chat asking the agent to draft a reply. Nothing is sent without your approval."
                   onPress={() => openNewChat(router, replyToMail(mailRef(mail)))}
@@ -183,7 +201,7 @@ export default function MailDetail() {
                 />
               </View>
             </View>
-          </View>
+          </Card>
 
           {mail.source === 'stored' ? (
             <Notice tone="warn">Showing the saved copy; Gmail could not be reached.</Notice>
@@ -192,7 +210,6 @@ export default function MailDetail() {
           {mail.attachments.length > 0 ? (
             <ListSection
               title={`${mail.attachments.length} attachment${mail.attachments.length === 1 ? '' : 's'}`}
-              inset="icon"
             >
               {mail.attachments.map((a, i) => (
                 <ListRow

@@ -5,6 +5,10 @@ import { normaliseServerUrl } from './serverUrl';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const HEALTH_TIMEOUT_MS = 5_000;
+/** The plain (non-streaming) chat fallback waits for the whole reply, tool calls included. */
+export const CHAT_TIMEOUT_MS = 120_000;
+/** /today asks Gmail, Calendar and Classroom in turn, so a section can take a while. */
+export const TODAY_TIMEOUT_MS = 30_000;
 const STREAM_INACTIVITY_MS = 60_000;
 
 export class ApiError extends Error {
@@ -120,11 +124,18 @@ export interface Deadline {
   due?: string;
 }
 
+export type TodaySection = 'mail' | 'events' | 'deadlines';
+
+/**
+ * The agent's digest. A section is `null` when its tool is not configured, and missing when it
+ * was not asked for; `unavailable` names tools that are configured but failed just now.
+ */
 export interface Today {
   generated_at: string;
-  mail: MailDigest | null;
-  events: CalendarEvent[] | null;
-  deadlines: Deadline[] | null;
+  mail?: MailDigest | null;
+  events?: CalendarEvent[] | null;
+  deadlines?: Deadline[] | null;
+  unavailable?: string[];
 }
 
 export const PERIODS = [
@@ -286,7 +297,10 @@ export const health = () =>
   call<{ status: string }>('GET', '/health', { timeoutMs: HEALTH_TIMEOUT_MS });
 
 export const chat = (message: string, conversationId: string | null) =>
-  call<ChatReply>('POST', '/chat', { body: { conversation_id: conversationId, message } });
+  call<ChatReply>('POST', '/chat', {
+    body: { conversation_id: conversationId, message },
+    timeoutMs: CHAT_TIMEOUT_MS,
+  });
 
 export interface ChatStreamHandlers {
   onStart?: (conversationId: string) => void;
@@ -505,7 +519,11 @@ export interface MailMessage {
 export const getMailMessage = (account: string, id: string) =>
   call<MailMessage>('GET', `/mail/${encodeURIComponent(account)}/${encodeURIComponent(id)}`);
 
-export const getToday = () => call<Today>('GET', '/today');
+/** Only the named sections; an older agent ignores `sections` and answers with all of them. */
+export const getToday = (sections?: TodaySection[]) =>
+  call<Today>('GET', sections?.length ? `/today?sections=${sections.join(',')}` : '/today', {
+    timeoutMs: TODAY_TIMEOUT_MS,
+  });
 
 export const getSummary = (period: Period) =>
   call<SpendSummary>('GET', `/finance/summary?period=${period}`);
@@ -609,8 +627,23 @@ export const getInbox = ({
 export type AlertKind = 'important_mail' | 'deadline' | 'briefing' | 'calendar_added';
 
 export type AlertTarget =
-  | { type: 'mail'; account: string; message_id: string }
-  | { type: 'deadline'; deadline_id: number }
+  | {
+      type: 'mail';
+      account: string;
+      /** The mail's id; older agents only send `message_id`. */
+      id?: string;
+      message_id?: string;
+    }
+  | {
+      type: 'deadline';
+      deadline_id: number;
+      /** Where the deadline was found; the agent adds these, older alerts may lack them. */
+      source?: 'mail' | 'classroom';
+      account?: string;
+      message_id?: string;
+      course_id?: string;
+    }
+  | { type: 'inbox'; account?: string }
   | { type: 'today' };
 
 export interface AlertItem {
@@ -621,6 +654,9 @@ export interface AlertItem {
   created_at: string;
   target: AlertTarget;
   actions?: string[];
+  /** The mail account the alert came from, and its friendly label, when known. */
+  source_account?: string;
+  source_label?: string;
 }
 
 export interface AlertFeed {
@@ -660,3 +696,32 @@ export interface UpcomingDeadline {
 
 export const getDeadlines = (days = 14) =>
   call<{ items: UpcomingDeadline[] }>('GET', `/deadlines?days=${days}`);
+
+/** One tracked deadline, with the calendar event the agent added for it, if any. */
+export interface DeadlineDetail {
+  id: number;
+  kind: string;
+  title: string;
+  due: string;
+  source: 'mail' | 'classroom' | string;
+  source_account: string;
+  source_label?: string;
+  source_id: string;
+  status: string;
+  calendar_added: boolean;
+  /** The mail it was found in, for `source: 'mail'`. */
+  message_id?: string;
+  course_id?: string;
+  calendar: null | { account: string; event_id: string; link: string };
+}
+
+export const getDeadline = (id: number) => call<DeadlineDetail>('GET', `/deadlines/${id}`);
+
+/** A configured Google account and the owner's friendly label for it ("College"). */
+export interface AccountInfo {
+  account: string;
+  label: string;
+  kinds: string[];
+}
+
+export const getAccounts = () => call<{ accounts: AccountInfo[] }>('GET', '/accounts');

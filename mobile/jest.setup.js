@@ -9,3 +9,8 @@ jest.mock('react-native-reanimated', () => {
   const cubicBezier = (x1, y1, x2, y2) => ({ x1, y1, x2, y2 });
   return { ...mock, cubicBezier, useReducedMotion: () => false };
 });
+// Screen reads safe-area insets (floating tab bar space); tests render without a provider.
+jest.mock(
+  'react-native-safe-area-context',
+  () => require('react-native-safe-area-context/jest/mock').default,
+);
