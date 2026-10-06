@@ -80,6 +80,7 @@ def setup_proactive(
         offset_minutes=offset,
         vip_senders=frozenset(addr.lower() for addr in settings.vip_senders),
         college_domains=frozenset(domain.lower() for domain in settings.college_domains),
+        ignored_senders=frozenset(s.lower() for s in settings.deadline_ignore_senders),
     )
     calendar = settings.deadline_calendar
     autocal = AutoCalendar(

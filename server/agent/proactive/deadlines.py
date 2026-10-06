@@ -17,7 +17,7 @@ from agent.core.redact import RedactionMap, Redactor
 from agent.core.textutil import one_line
 from agent.mail.store import MailStore
 from agent.proactive.extract import ExtractionFailed, Found, extract_with_llm_strict, scan_rules
-from agent.proactive.mailfilter import is_bulk_mail, is_trusted_sender
+from agent.proactive.mailfilter import is_bulk_mail, is_ignored_sender, is_trusted_sender
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.sync_status import CLASSROOM, record_scan
@@ -231,6 +231,7 @@ class DeadlineCollector:
         offset_minutes: int,
         vip_senders: frozenset[str],
         college_domains: frozenset[str],
+        ignored_senders: frozenset[str] = frozenset(),
     ) -> None:
         self.store = store
         self._mail = mail_store
@@ -244,6 +245,7 @@ class DeadlineCollector:
         self._db = db
         self._vip = vip_senders
         self._college = college_domains
+        self._ignored = ignored_senders
 
     def list_upcoming(self, days: int) -> list[Deadline]:
         return self.store.upcoming(days, self._offset)
@@ -338,6 +340,9 @@ class DeadlineCollector:
         Raises ``ExtractionFailed`` when the local model was needed but could not be used.
         """
         if SKIPPED_LABELS & set(label_ids) or category in SKIPPED_CATEGORIES:
+            return 0
+        if is_ignored_sender(from_addr, self._ignored):
+            log.info("deadline scan skipped an ignored sender")
             return 0
         if not is_trusted_sender(from_addr, self._vip, self._college):
             reason = is_bulk_mail(from_addr, subject, body, label_ids, list_unsubscribe)

@@ -217,3 +217,22 @@ def test_scan_without_a_mail_store_does_nothing() -> None:
     collector._mail = None
     result = collector.scan_stored_mail()
     assert (result.scanned, result.failed, result.added) == (0, 0, 0)
+
+
+def test_ignored_senders_never_produce_deadlines() -> None:
+    env = make_env(deadline_ignore_senders=("example.net", "alerts@example.com"))
+    env.deliver(mail_message("domain", from_addr="noreply@example.net"))
+    env.deliver(mail_message("subdomain", from_addr="news@mail.example.net"))
+    env.deliver(mail_message("address", from_addr="alerts@example.com"))
+    env.deliver(mail_message("kept", from_addr="registrar@example.org"))
+    keys = sorted(r["source_id"] for r in env.db.query("SELECT source_id FROM deadlines"))
+    assert keys == ["kept"]
+
+
+def test_ignore_senders_setting_is_parsed() -> None:
+    from agent.config import Settings
+
+    settings = Settings.from_env(
+        {"PERSONALAI_DEADLINE_IGNORE_SENDERS": "example.net, a@b.example.com"}
+    )
+    assert settings.deadline_ignore_senders == ("example.net", "a@b.example.com")
