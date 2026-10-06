@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -50,3 +51,18 @@ def test_started_scheduler_runs_immediately_and_shuts_down() -> None:
     finally:
         scheduler.shutdown(wait=False)
     assert not scheduler.running
+
+
+def test_start_delay_postpones_only_the_first_run() -> None:
+    before = datetime.now(UTC)
+    scheduler = create_scheduler(
+        [
+            Job("soon", lambda: None, 1440, start_delay_seconds=60),
+            Job("now", lambda: None, 5),
+        ]
+    )
+    delayed, immediate = scheduler.get_job("soon"), scheduler.get_job("now")
+    assert delayed is not None and immediate is not None
+    assert delayed.trigger.interval.total_seconds() == 1440 * 60  # then daily
+    assert before + timedelta(seconds=59) <= delayed.next_run_time <= before + timedelta(seconds=70)
+    assert immediate.next_run_time <= before + timedelta(seconds=5)

@@ -15,7 +15,7 @@ from agent.core.llm import LLMClient
 from agent.core.redact import RedactionMap, Redactor
 from agent.core.textutil import one_line
 from agent.mail.store import MailStore
-from agent.proactive.extract import Found, extract_with_llm, scan_rules
+from agent.proactive.extract import ExtractionFailed, Found, extract_with_llm_strict, scan_rules
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.sync_status import CLASSROOM, record_scan
@@ -25,6 +25,9 @@ log = logging.getLogger(__name__)
 TITLE_CHARS = 150
 SKIPPED_LABELS = frozenset({"SPAM", "TRASH", "SENT", "DRAFT"})
 SKIPPED_CATEGORIES = frozenset({"promo", "spam"})
+MAIL_SCAN_DAYS = 30  # how far back the catch-up scan looks at stored mail
+MAIL_SCAN_LIMIT = 200  # messages one catch-up run looks at, so a run stays short
+MAIL_SCAN_MAX_FAILURES = 3  # consecutive model failures after which a run stops (model is down)
 
 
 def local_tz(offset_minutes: int) -> timezone:
@@ -171,6 +174,15 @@ class DeadlineStore:
         return {row["deadline_id"] for row in rows}
 
 
+@dataclass(frozen=True)
+class MailScanResult:
+    """Counts only; a catch-up run never reports what a message said."""
+
+    scanned: int  # messages handled and recorded as scanned
+    failed: int  # messages left for the next run because the model could not be used
+    added: int  # new deadlines stored
+
+
 class DeadlineCollector:
     """Finds deadlines in new mail (rules, then the local model) and in Classroom."""
 
@@ -206,36 +218,113 @@ class DeadlineCollector:
 
     def on_new_mail(self, msg: MailMessage) -> None:
         """The MailSync hook: runs after classification, so the stored category is known."""
-        if self._mail is None or SKIPPED_LABELS & set(msg.label_ids):
+        if self._mail is None:
             return
         stored = self._mail.get(msg.account, msg.id)
-        if stored is None or stored.category in SKIPPED_CATEGORIES:
+        if stored is None:
             return
-        now = self._clock()
-        received = datetime.fromtimestamp(msg.internal_date / 1000, UTC)
-        if now - received > self._horizon:
-            return
-        redacted = self._redactor.redact(f"{msg.subject}\n{msg.body}", RedactionMap()).text
+        try:
+            added = self._scan_mail(
+                msg.account,
+                msg.id,
+                msg.subject,
+                msg.body,
+                msg.label_ids,
+                stored.category,
+                msg.internal_date,
+                self._horizon,
+            )
+        except ExtractionFailed:
+            return  # left unscanned: the catch-up scan tries it again
+        if added is not None:
+            self._mail.mark_deadline_scanned(msg.account, msg.id)
+
+    def scan_stored_mail(
+        self, *, days: int = MAIL_SCAN_DAYS, limit: int = MAIL_SCAN_LIMIT
+    ) -> MailScanResult:
+        """Catch up on stored mail of the last ``days`` days the deadline scan has not seen.
+
+        Uses the same extraction as ``on_new_mail`` (rules, then the local model on redacted
+        text). A message is recorded as scanned only once extraction worked for it, so a model
+        failure leaves it for the next run; the run stops after a few failures in a row.
+        """
+        mail = self._mail
+        if mail is None:
+            return MailScanResult(0, 0, 0)
+        since = self._clock() - timedelta(days=days)
+        scanned = failed = added = streak = 0
+        for stored in mail.unscanned_for_deadlines(int(since.timestamp() * 1000), limit):
+            try:
+                new = self._scan_mail(
+                    stored.account,
+                    stored.id,
+                    stored.subject,
+                    stored.body,
+                    stored.label_ids,
+                    stored.category,
+                    stored.internal_date,
+                    timedelta(days=days),
+                )
+            except ExtractionFailed:
+                failed += 1
+                streak += 1
+                if streak >= MAIL_SCAN_MAX_FAILURES:
+                    break
+                continue
+            streak = 0
+            if new is not None:
+                mail.mark_deadline_scanned(stored.account, stored.id)
+                scanned += 1
+                added += new
+        log.info("mail deadline scan: scanned=%d failed=%d added=%d", scanned, failed, added)
+        return MailScanResult(scanned, failed, added)
+
+    def _scan_mail(
+        self,
+        account: str,
+        message_id: str,
+        subject: str,
+        body: str,
+        label_ids: Sequence[str],
+        category: str | None,
+        internal_date: int,
+        max_age: timedelta,
+    ) -> int | None:
+        """Extract and store the deadlines of one mail.
+
+        Returns the number of new deadlines, or ``None`` when the mail was not looked at because
+        it is older than ``max_age``. Mail the rules skip (spam, promo, sent) counts as looked at.
+        Raises ``ExtractionFailed`` when the local model was needed but could not be used.
+        """
+        if SKIPPED_LABELS & set(label_ids) or category in SKIPPED_CATEGORIES:
+            return 0
+        received = datetime.fromtimestamp(internal_date / 1000, UTC)
+        if self._clock() - received > max_age:
+            return None
+        redacted = self._redactor.redact(f"{subject}\n{body}", RedactionMap()).text
         scan = scan_rules(redacted, received, self._offset)
         found: Sequence[Found] = scan.found
         if not found and scan.trigger and not scan.dated and self._llm is not None:
-            found = extract_with_llm(
-                self._llm, self._redactor, msg.subject, msg.body, received, self._offset
+            found = extract_with_llm_strict(
+                self._llm, self._redactor, subject, body, received, self._offset
             )
-        title = one_line(msg.subject, TITLE_CHARS, "(no subject)")
+        title = one_line(subject, TITLE_CHARS, "(no subject)")
+        added = 0
         for item in found:
-            self.store.insert(
+            if self.store.insert(
                 source="mail",
-                source_key=f"{msg.account}/{msg.id}/{item.due.isoformat()[:10]}",
-                source_account=msg.account,
-                source_id=msg.id,
+                source_key=f"{account}/{message_id}/{item.due.isoformat()[:10]}",
+                source_account=account,
+                source_id=message_id,
                 kind=item.kind,
                 title=title,
                 due=item.due,
                 found_by=item.found_by,
-            )
+            ):
+                added += 1
         if found:
-            log.info("deadlines found in one new mail: %d", len(found))
+            log.info("deadlines found in one mail: %d", len(found))
+        return added
 
     # --- Classroom --------------------------------------------------------------------------
 

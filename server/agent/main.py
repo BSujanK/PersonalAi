@@ -54,6 +54,9 @@ from agent.scheduler import (
     CLASSROOM_DEADLINE_JOB_ID,
     FILE_INDEX_JOB_ID,
     FINANCE_CATEGORIZE_JOB_ID,
+    MAIL_DEADLINE_JOB_ID,
+    MAIL_DEADLINE_SCAN_DELAY_SECONDS,
+    MAIL_DEADLINE_SCAN_MINUTES,
     MAIL_JOB_ID,
     Job,
     start_jobs,
@@ -173,6 +176,17 @@ def _background_jobs(
                 CLASSROOM_DEADLINE_JOB_ID,
                 proactive.deadlines.scan_classroom,
                 settings.deadline_poll_minutes,
+            )
+        )
+    if mail is not None:
+        # A catch-up over stored mail (see DeadlineCollector.scan_stored_mail): once shortly after
+        # startup, so it never delays the first mail sync, then daily.
+        jobs.append(
+            Job(
+                MAIL_DEADLINE_JOB_ID,
+                proactive.deadlines.scan_stored_mail,
+                MAIL_DEADLINE_SCAN_MINUTES,
+                start_delay_seconds=MAIL_DEADLINE_SCAN_DELAY_SECONDS,
             )
         )
     if workspace.file_index is not None:

@@ -198,6 +198,25 @@ class MailStore:
         params.append(limit)
         return [self._hydrate(r) for r in self._db.query(sql, params)]
 
+    def unscanned_for_deadlines(self, since_ms: int, limit: int) -> list[StoredMail]:
+        """Newest-first stored mail since ``since_ms`` the deadline scan has not looked at yet."""
+        rows = self._db.query(
+            "SELECT m.* FROM mail_messages m WHERE m.deleted = 0 AND m.internal_date >= ? "
+            "AND NOT EXISTS (SELECT 1 FROM mail_deadline_scans s "
+            "WHERE s.account = m.account AND s.message_id = m.id) "
+            "ORDER BY m.internal_date DESC, m.id LIMIT ?",
+            (since_ms, limit),
+        )
+        return [self._hydrate(r) for r in rows]
+
+    def mark_deadline_scanned(self, account: str, message_id: str) -> None:
+        """Record (ids only) that the deadline scan has handled this message."""
+        self._db.execute(
+            "INSERT INTO mail_deadline_scans (account, message_id, scanned_at) VALUES (?, ?, ?) "
+            "ON CONFLICT (account, message_id) DO NOTHING",
+            (account, message_id, self._clock().isoformat()),
+        )
+
     def page(
         self,
         *,
