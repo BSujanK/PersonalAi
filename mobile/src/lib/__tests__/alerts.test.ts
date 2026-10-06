@@ -153,7 +153,10 @@ describe('helpers', () => {
       pathname: '/mail/[account]/[id]',
       params: { account: 'main', id: 'm1' },
     });
-    expect(routeForTarget({ type: 'deadline', deadline_id: 4 })).toEqual({ pathname: '/today' });
+    expect(routeForTarget({ type: 'deadline', deadline_id: 4 })).toEqual({
+      pathname: '/deadline/[id]',
+      params: { id: '4' },
+    });
     expect(routeForTarget({ type: 'today' })).toEqual({ pathname: '/today' });
     expect(routeForTarget(undefined)).toEqual({ pathname: '/today' });
   });
@@ -230,22 +233,71 @@ describe('every alert opens its source', () => {
     );
   });
 
-  it('opens the mail a deadline was found in; Classroom deadlines open Today', () => {
-    expect(
-      routeForTarget({
-        type: 'deadline',
-        deadline_id: 3,
-        source: 'mail',
-        account: 'college@example.edu',
-        message_id: 'm9',
-      }),
-    ).toEqual({
+  it('opens the mail a deadline alert was found in', () => {
+    const target = {
+      type: 'deadline' as const,
+      deadline_id: 3,
+      source: 'mail' as const,
+      account: 'college@example.edu',
+      message_id: 'm9',
+    };
+    const route = {
       pathname: '/mail/[account]/[id]',
       params: { account: 'college@example.edu', id: 'm9' },
-    });
+    };
+    expect(routeForTarget(target, 'deadline')).toEqual(route);
+    // A notification shown by an older build carries no kind.
+    expect(routeForTarget(target)).toEqual(route);
+  });
+
+  it('opens the deadline for Classroom deadlines and for deadlines without a source', () => {
+    const deadline = { pathname: '/deadline/[id]', params: { id: '4' } };
     expect(
-      routeForTarget({ type: 'deadline', deadline_id: 4, source: 'classroom', course_id: 'c1' }),
-    ).toEqual({ pathname: '/today' });
+      routeForTarget(
+        { type: 'deadline', deadline_id: 4, source: 'classroom', course_id: 'c1' },
+        'deadline',
+      ),
+    ).toEqual(deadline);
+    expect(routeForTarget({ type: 'deadline', deadline_id: 4 }, 'deadline')).toEqual(deadline);
+    // Mail source but nothing to open it by.
+    expect(routeForTarget({ type: 'deadline', deadline_id: 4, source: 'mail' })).toEqual(deadline);
+  });
+
+  it('opens the deadline, with its calendar event, for a calendar_added alert of any source', () => {
+    const deadline = { pathname: '/deadline/[id]', params: { id: '7' } };
+    expect(
+      routeForTarget(
+        {
+          type: 'deadline',
+          deadline_id: 7,
+          source: 'mail',
+          account: 'college@example.edu',
+          message_id: 'm9',
+        },
+        'calendar_added',
+      ),
+    ).toEqual(deadline);
+    expect(
+      routeForTarget({ type: 'deadline', deadline_id: 7, source: 'classroom' }, 'calendar_added'),
+    ).toEqual(deadline);
+  });
+
+  it('routes a tapped notification by the kind it was shown with', () => {
+    const data = { deadlineId: 7, target: { type: 'deadline', deadline_id: 7, source: 'mail' } };
+    expect(
+      outcomeForResponse('expo.modules.notifications.actions.DEFAULT', {
+        ...data,
+        kind: 'calendar_added',
+      }),
+    ).toEqual({ type: 'route', route: { pathname: '/deadline/[id]', params: { id: '7' } } });
+    expect(
+      toContent(alert(9, 'calendar_added', { type: 'deadline', deadline_id: 7 })).data.kind,
+    ).toBe('calendar_added');
+  });
+
+  it('opens Today for a briefing and for an unknown target', () => {
+    expect(routeForTarget({ type: 'today' }, 'briefing')).toEqual({ pathname: '/today' });
+    expect(routeForTarget(null, 'important_mail')).toEqual({ pathname: '/today' });
   });
 
   it('opens the inbox for "more important mail"', () => {

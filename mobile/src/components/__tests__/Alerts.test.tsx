@@ -4,9 +4,10 @@ import Alerts from '../../../app/alerts';
 import { getAlertSettings, getNotifications, undoAutoEvent, type AlertItem } from '../../lib/api';
 
 const mockPush = jest.fn();
+const mockNavigation = { addListener: () => () => undefined };
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush, back: jest.fn(), canGoBack: () => true }),
-  useNavigation: () => ({}),
+  useNavigation: () => mockNavigation,
   useFocusEffect: (effect: () => void | (() => void)) => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     require('react').useEffect(effect, []);

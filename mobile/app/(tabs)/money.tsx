@@ -18,6 +18,8 @@ import {
   ErrorText,
   ListRow,
   ListSection,
+  LoadFailed,
+  StaleNote,
   Stagger,
 } from '../../src/components/ui';
 import {
@@ -27,13 +29,11 @@ import {
   getSummary,
   getTransactions,
   setCategory,
-  type Balance,
   type Period,
-  type SpendSummary,
   type Txn,
 } from '../../src/lib/api';
 import { errorMessage, formatInr, periodLabel, shortDateTime } from '../../src/lib/format';
-import { usePolling } from '../../src/lib/usePolling';
+import { useLoader, usePullToRefresh } from '../../src/lib/usePolling';
 import {
   fontFamily,
   motion,
@@ -144,42 +144,37 @@ export default function Money() {
   const [period, setPeriod] = useState<Period>('this_month');
   const pills = useRef<ScrollView>(null);
   const pillsPlaced = useRef(false);
-  const [balances, setBalances] = useState<Balance[]>([]);
-  const [summary, setSummary] = useState<SpendSummary | null>(null);
-  const [txns, setTxns] = useState<Txn[]>([]);
   const [editing, setEditing] = useState<number | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const [b, s, t] = await Promise.all([
-        getBalances(),
-        getSummary(period),
-        getTransactions(period),
-      ]);
-      setBalances(b.accounts);
-      setSummary(s);
-      setTxns(t.transactions);
-      setError(null);
-    } catch (e) {
-      setError(errorMessage(e));
-    }
+  // A new period reloads; the previous figures stay up until the new ones land.
+  const fetchMoney = useCallback(async () => {
+    const [b, summary, t] = await Promise.all([
+      getBalances(),
+      getSummary(period),
+      getTransactions(period),
+    ]);
+    return { balances: b.accounts, summary, txns: t.transactions };
   }, [period]);
-
-  usePolling(load, MONEY_POLL_MS);
-
-  async function refresh() {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  }
+  const {
+    data,
+    error: loadError,
+    failing,
+    reload,
+  } = useLoader(fetchMoney, {
+    intervalMs: MONEY_POLL_MS,
+  });
+  const pull = usePullToRefresh(reload);
+  const balances = data?.balances ?? [];
+  const summary = data?.summary ?? null;
+  const txns: Txn[] = data?.txns ?? [];
 
   async function choose(txn: Txn, category: (typeof CATEGORIES)[number]) {
     try {
       await setCategory(txn.id, category);
       setEditing(null);
-      await load();
+      setError(null);
+      await reload();
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -197,8 +192,10 @@ export default function Money() {
     : null;
 
   return (
-    <Screen tabs title="Money" refreshing={refreshing} onRefresh={() => void refresh()}>
+    <Screen tabs title="Money" {...pull}>
       <ErrorText message={error} />
+      {failing && data ? <StaleNote /> : null}
+      {failing && !data ? <LoadFailed what="your money" reason={errorMessage(loadError)} /> : null}
 
       <Hero
         label={balances.length > 0 ? 'Total balance' : 'Spent'}

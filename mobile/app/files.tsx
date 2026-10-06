@@ -5,13 +5,13 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { Icon } from '../src/components/Icon';
 import { Screen } from '../src/components/Screen';
+import { SkeletonRows } from '../src/components/Skeleton';
 import {
   Button,
   EmptyRow,
   ErrorText,
   ListRow,
   ListSection,
-  Loading,
   SearchField,
 } from '../src/components/ui';
 import { sendFileByMail, shareFileLink } from '../src/lib/agentPrompts';
@@ -177,7 +177,7 @@ export default function Files() {
         onSubmitEditing={() => void run(query)}
       />
       <ErrorText message={error} />
-      {busy && !result ? <Loading /> : null}
+      {busy && !result ? <SkeletonRows count={3} /> : null}
       {result ? (
         <>
           {section('On this laptop', result.local, result.errors.includes('local'))}

@@ -4,10 +4,16 @@ import MailDetail from '../../../app/mail/[account]/[id]';
 import { getMailMessage, type MailMessage } from '../../lib/api';
 
 const mockNavigate = jest.fn();
+const mockNavigation = { addListener: () => () => undefined };
+const mockParams = { account: 'student@example.com', id: 'm1' };
 jest.mock('expo-router', () => ({
-  useLocalSearchParams: () => ({ account: 'student@example.com', id: 'm1' }),
+  useLocalSearchParams: () => mockParams,
   useRouter: () => ({ back: jest.fn(), navigate: mockNavigate }),
-  useNavigation: () => ({}),
+  useNavigation: () => mockNavigation,
+  useFocusEffect: (effect: () => void | (() => void)) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('react').useEffect(effect, []);
+  },
 }));
 jest.mock('../../lib/api', () => ({
   ...jest.requireActual('../../lib/api'),

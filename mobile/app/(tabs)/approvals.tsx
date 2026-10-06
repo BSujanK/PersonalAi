@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { Spark } from '../../src/components/brand/Spark';
@@ -6,12 +6,13 @@ import { ApprovalCard } from '../../src/components/chat/ApprovalCard';
 import { Icon } from '../../src/components/Icon';
 import { ResultLink } from '../../src/components/ResultLink';
 import { Screen } from '../../src/components/Screen';
-import { ErrorText, Loading, Stagger } from '../../src/components/ui';
-import { listApprovals, type Approval } from '../../src/lib/api';
+import { SkeletonRows } from '../../src/components/Skeleton';
+import { LoadFailed, StaleNote, Stagger } from '../../src/components/ui';
+import { listApprovals } from '../../src/lib/api';
 import { resultLink } from '../../src/lib/approvalFlow';
 import { errorMessage } from '../../src/lib/format';
 import { actionTitle } from '../../src/lib/toolLabels';
-import { usePolling } from '../../src/lib/usePolling';
+import { useLoader, usePullToRefresh } from '../../src/lib/usePolling';
 import { radius, space, type, useTheme, useThemedStyles, type Palette } from '../../src/theme';
 
 const makeStyles = (p: Palette) => ({
@@ -33,27 +34,9 @@ const makeStyles = (p: Palette) => ({
 export default function Approvals() {
   const styles = useThemedStyles(makeStyles);
   const { palette } = useTheme();
-  const [items, setItems] = useState<Approval[] | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { data: items, error, loading, failing, reload } = useLoader(listApprovals);
+  const pull = usePullToRefresh(reload);
   const [links, setLinks] = useState<{ id: string; tool: string; link: string }[]>([]);
-
-  const load = useCallback(async () => {
-    try {
-      setItems(await listApprovals());
-      setError(null);
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  }, []);
-
-  usePolling(load);
-
-  async function refresh() {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  }
 
   const subtitle =
     items === null
@@ -63,15 +46,10 @@ export default function Approvals() {
         : `${items.length} waiting for you`;
 
   return (
-    <Screen
-      title="Approvals"
-      subtitle={subtitle}
-      tabs
-      refreshing={refreshing}
-      onRefresh={() => void refresh()}
-    >
-      <ErrorText message={error} />
-      {items === null && !error ? <Loading /> : null}
+    <Screen title="Approvals" subtitle={subtitle} tabs {...pull}>
+      {failing && items ? <StaleNote /> : null}
+      {failing && !items ? <LoadFailed what="approvals" reason={errorMessage(error)} /> : null}
+      {loading ? <SkeletonRows count={2} /> : null}
       {links.map(({ id, tool, link }) => (
         <View key={`done:${id}`} style={styles.done}>
           <View style={styles.doneHead}>
@@ -101,7 +79,7 @@ export default function Approvals() {
               if (link) {
                 setLinks((prev) => [{ id: approval.id, tool: approval.tool_name, link }, ...prev]);
               }
-              void load();
+              void reload();
             }}
           />
         </Stagger>

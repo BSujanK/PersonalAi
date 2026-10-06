@@ -12,6 +12,7 @@ import type {
   ChatStreamHandlers,
   ConversationDetail,
   ConversationPage,
+  DeadlineDetail,
   DecisionResult,
   FileSearch,
   InboxPage,
@@ -19,6 +20,7 @@ import type {
   Period,
   SpendSummary,
   Today,
+  TodaySection,
   Txn,
   UpcomingDeadline,
 } from '../src/lib/api';
@@ -53,8 +55,13 @@ export const getAccounts = (): Promise<{ accounts: AccountInfo[] }> =>
 
 // --- Home ---------------------------------------------------------------------------------------
 
-export const getToday = (): Promise<Today> =>
-  resolve({
+export const getToday = (sections?: TodaySection[]): Promise<Today> => {
+  // `?slow`: mail is still on its way (skeleton) and events failed (the retrying card).
+  if (params().has('slow') && sections?.includes('mail')) return new Promise(() => undefined);
+  if (params().has('slow') && sections?.includes('events')) {
+    return new Promise((_, reject) => setTimeout(() => reject(new Error('timed out')), 30));
+  }
+  const full: Today = {
     generated_at: ago(1),
     mail: {
       important: [
@@ -87,7 +94,17 @@ export const getToday = (): Promise<Today> =>
       { id: 'e2', summary: 'Project sync with Ravi', start: later(17), location: 'Library' },
     ],
     deadlines: [],
-  });
+  };
+  // Like the agent: only the sections asked for.
+  return resolve(
+    sections
+      ? {
+          generated_at: full.generated_at,
+          ...Object.fromEntries(sections.map((k) => [k, full[k]])),
+        }
+      : full,
+  );
+};
 
 export const getDeadlines = (): Promise<{ items: UpcomingDeadline[] }> =>
   resolve({
@@ -116,6 +133,30 @@ export const getDeadlines = (): Promise<{ items: UpcomingDeadline[] }> =>
       },
     ],
   });
+
+export const getDeadline = (id: number): Promise<DeadlineDetail> => {
+  const fromMail = id === 2;
+  return resolve({
+    id,
+    kind: fromMail ? 'fee' : 'assignment',
+    title: fromMail ? 'Semester fee payment' : 'Lab report 4',
+    due: ahead(60 * (fromMail ? 24 * 5 : 50)),
+    source: fromMail ? 'mail' : 'classroom',
+    source_account: fromMail ? PERSONAL : COLLEGE,
+    source_label: fromMail ? PERSONAL : 'College',
+    source_id: fromMail ? 'm9' : 'c1',
+    status: 'active',
+    calendar_added: !fromMail,
+    ...(fromMail ? { message_id: 'm9' } : { course_id: 'c1' }),
+    calendar: fromMail
+      ? null
+      : {
+          account: COLLEGE,
+          event_id: 'ev1',
+          link: 'https://www.google.com/calendar/event?eid=ZXhhbXBsZQ',
+        },
+  });
+};
 
 export const getInbox = (): Promise<InboxPage> =>
   resolve({

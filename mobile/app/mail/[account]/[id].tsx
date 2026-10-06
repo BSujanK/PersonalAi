@@ -1,23 +1,25 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { Text, View } from 'react-native';
 
 import { Icon, type IconName } from '../../../src/components/Icon';
 import { Screen } from '../../../src/components/Screen';
+import { SkeletonBlock, SkeletonGroup, SkeletonText } from '../../../src/components/Skeleton';
 import {
   Badge,
   Button,
   Card,
-  ErrorText,
   ListRow,
   ListSection,
-  Loading,
+  LoadFailed,
   Notice,
+  StaleNote,
 } from '../../../src/components/ui';
 import { askAboutMail, mailRef, replyToMail } from '../../../src/lib/agentPrompts';
-import { getMailMessage, type MailAddress, type MailMessage } from '../../../src/lib/api';
+import { getMailMessage, type MailAddress } from '../../../src/lib/api';
 import { openNewChat } from '../../../src/lib/chatRoutes';
 import { errorMessage, formatBytes, initials, shortDateTime } from '../../../src/lib/format';
+import { useLoader, usePullToRefresh } from '../../../src/lib/usePolling';
 import {
   fontFamily,
   radius,
@@ -81,40 +83,49 @@ function attachmentIcon(mime: string): IconName {
   return 'file';
 }
 
+/** The header card and the first lines of the body, while the message loads. */
+function MailSkeleton() {
+  const styles = useThemedStyles(makeStyles);
+  return (
+    <>
+      <SkeletonGroup>
+        <Card style={styles.header}>
+          <SkeletonBlock width="80%" height={22} />
+          <View style={styles.sender}>
+            <SkeletonBlock width={44} height={44} radius={22} />
+            <View style={styles.senderMain}>
+              <SkeletonBlock width="40%" height={14} />
+              <SkeletonBlock width="60%" height={12} />
+            </View>
+          </View>
+        </Card>
+      </SkeletonGroup>
+      <View style={styles.bodyCard}>
+        <SkeletonText lines={6} />
+      </View>
+    </>
+  );
+}
+
 /** One mail, read-only: headers, attachment metadata and the plain-text body. */
 export default function MailDetail() {
   const styles = useThemedStyles(makeStyles);
   const { palette } = useTheme();
   const router = useRouter();
   const { account, id } = useLocalSearchParams<{ account: string; id: string }>();
-  const [mail, setMail] = useState<MailMessage | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
-
-  useEffect(() => {
-    if (!account || !id) return;
-    let cancelled = false;
-    getMailMessage(account, id).then(
-      (item) => {
-        if (cancelled) return;
-        setMail(item);
-        setError(null);
-      },
-      (e: unknown) => {
-        if (!cancelled) setError(errorMessage(e));
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [account, id, reloadKey]);
+  const fetchMail = useCallback(() => getMailMessage(account, id), [account, id]);
+  const { data, error, failing, retrying, reload } = useLoader(fetchMail);
+  const pull = usePullToRefresh(reload);
+  // Keep to this route's message: a screen reused for another mail never shows the old one.
+  const mail = data && data.id === id ? data : null;
 
   const senderName = mail ? mail.from.name || mail.from.addr : '';
 
   return (
-    <Screen back refreshing={false} onRefresh={() => setReloadKey((k) => k + 1)}>
-      <ErrorText message={error} />
-      {!mail && !error ? <Loading /> : null}
+    <Screen back {...pull}>
+      {failing && mail ? <StaleNote /> : null}
+      {failing && !mail ? <LoadFailed what="this mail" reason={errorMessage(error)} retrying={retrying} /> : null}
+      {!mail && !failing ? <MailSkeleton /> : null}
       {mail ? (
         <>
           <Card style={styles.header}>

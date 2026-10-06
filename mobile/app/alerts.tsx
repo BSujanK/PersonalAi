@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import { Switch, Text, View } from 'react-native';
 
 import { Screen } from '../src/components/Screen';
+import { SkeletonRows } from '../src/components/Skeleton';
 import {
   Badge,
   Button,
@@ -10,8 +11,9 @@ import {
   ErrorText,
   ListRow,
   ListSection,
-  Loading,
+  LoadFailed,
   Notice,
+  StaleNote,
   TextField,
   switchColors,
 } from '../src/components/ui';
@@ -35,7 +37,7 @@ import {
 } from '../src/lib/api';
 import { isValidBriefingTime } from '../src/lib/briefingTime';
 import { errorMessage, rowTime } from '../src/lib/format';
-import { usePolling } from '../src/lib/usePolling';
+import { useLoader, usePolling, usePullToRefresh } from '../src/lib/usePolling';
 import { space, type, useTheme, useThemedStyles, type Palette } from '../src/theme';
 import type { IconName } from '../src/components/Icon';
 
@@ -57,8 +59,20 @@ const KIND_ICON: Record<AlertKind, IconName> = {
 const DESTINATION: Record<AlertRoute['pathname'], string> = {
   '/mail/[account]/[id]': 'Opens the mail',
   '/inbox': 'Opens all mail',
+  '/deadline/[id]': 'Opens the deadline',
   '/today': 'Opens Today',
 };
+
+/** The feed, newest first. An older agent has no feed: that reads as an empty one, flagged. */
+async function fetchFeed(): Promise<{ items: AlertItem[]; missing: boolean }> {
+  try {
+    const feed = await getNotifications(0);
+    return { items: [...feed.items].sort((a, b) => b.id - a.id), missing: false };
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return { items: [], missing: true };
+    throw e;
+  }
+}
 
 /** The deadline an auto-added calendar event came from, the only thing Undo needs. */
 const undoableDeadline = (item: AlertItem): number | null =>
@@ -71,10 +85,10 @@ export default function Alerts() {
   const { palette } = useTheme();
   const router = useRouter();
   const labelFor = useAccountLabels();
-  const [items, setItems] = useState<AlertItem[] | null>(null);
-  const [feedMissing, setFeedMissing] = useState(false);
-  const [feedError, setFeedError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const feed = useLoader(fetchFeed);
+  const { reload: reloadFeed } = feed;
+  const items = feed.data?.items ?? null;
+  const feedMissing = feed.data?.missing ?? false;
   const [undoing, setUndoing] = useState<number | null>(null);
   const [alerts, setAlerts] = useState<AlertSettings | null>(null);
   const [alertsMissing, setAlertsMissing] = useState(false);
@@ -82,24 +96,6 @@ export default function Alerts() {
   const [permitted, setPermitted] = useState<boolean | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const loadFeed = useCallback(async () => {
-    try {
-      const feed = await getNotifications(0);
-      setItems([...feed.items].sort((a, b) => b.id - a.id));
-      setFeedMissing(false);
-      setFeedError(null);
-    } catch (e) {
-      // An older agent has no feed; anything else shows on the next poll.
-      if (e instanceof ApiError && e.status === 404) {
-        setItems([]);
-        setFeedMissing(true);
-        setFeedError(null);
-      } else {
-        setFeedError(errorMessage(e));
-      }
-    }
-  }, []);
 
   const loadAlerts = useCallback(async () => {
     setPermitted(await alertsPermitted().catch(() => null));
@@ -114,17 +110,12 @@ export default function Alerts() {
     }
   }, []);
 
-  const load = useCallback(async () => {
-    await Promise.all([loadFeed(), loadAlerts()]);
-  }, [loadFeed, loadAlerts]);
-
-  usePolling(load);
-
-  async function refresh() {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  }
+  usePolling(loadAlerts);
+  const pull = usePullToRefresh(
+    useCallback(async () => {
+      await Promise.all([reloadFeed(), loadAlerts()]);
+    }, [reloadFeed, loadAlerts]),
+  );
 
   async function run(task: () => Promise<void>) {
     setError(null);
@@ -142,7 +133,7 @@ export default function Alerts() {
       try {
         await undoAutoEvent(deadlineId);
         setStatus('Removed from your calendar');
-        await loadFeed();
+        await reloadFeed();
       } finally {
         setUndoing(null);
       }
@@ -174,15 +165,17 @@ export default function Alerts() {
       title="Alerts"
       subtitle="What the agent found, and what to tell you about"
       back
-      refreshing={refreshing}
-      onRefresh={() => void refresh()}
+      {...pull}
     >
       <ErrorText message={error} />
-      <ErrorText message={feedError} />
       {status ? <Notice tone="ok">{status}</Notice> : null}
 
       <ListSection title="Recent" stagger>
-        {items === null && !feedError ? <Loading /> : null}
+        {feed.failing && items ? <StaleNote /> : null}
+        {feed.failing && !items ? (
+          <LoadFailed what="alerts" reason={errorMessage(feed.error)} />
+        ) : null}
+        {feed.loading ? <SkeletonRows count={3} /> : null}
         {items?.length === 0 ? (
           <EmptyRow>
             {feedMissing
@@ -194,7 +187,7 @@ export default function Alerts() {
           const deadlineId = undoableDeadline(item);
           const account = alertAccount(item);
           const accountLabel = item.source_label ?? (account ? labelFor(account) : null);
-          const route = routeForTarget(item.target);
+          const route = routeForTarget(item.target, item.kind);
           return (
             <ListRow
               key={item.id}

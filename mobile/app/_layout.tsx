@@ -117,6 +117,7 @@ function Gate() {
           <Stack.Screen name="alerts" />
           <Stack.Screen name="history" />
           <Stack.Screen name="inbox" />
+          <Stack.Screen name="deadline/[id]" />
         </Stack>
       </ConversationsProvider>
     </AgentStatusProvider>

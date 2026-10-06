@@ -41,31 +41,42 @@ export function isKindEnabled(kind: AlertKind, settings: AlertSettings): boolean
   return key === null ? true : settings[key];
 }
 
-export interface AlertRoute {
-  pathname: '/mail/[account]/[id]' | '/today' | '/inbox';
-  params?: { account: string; id: string };
-}
+export type AlertRoute =
+  | { pathname: '/mail/[account]/[id]'; params: { account: string; id: string } }
+  | { pathname: '/deadline/[id]'; params: { id: string } }
+  | { pathname: '/today' | '/inbox' };
 
 const mailRoute = (account: string, id: string): AlertRoute => ({
   pathname: '/mail/[account]/[id]',
   params: { account, id },
 });
 
+const deadlineRoute = (id: number): AlertRoute => ({
+  pathname: '/deadline/[id]',
+  params: { id: String(id) },
+});
+
 /**
  * Where tapping an alert goes: a mail opens that message; a deadline found in mail opens the mail
- * it came from; "more important mail" opens the inbox; everything else (a briefing, a Classroom
- * deadline, an alert from an older agent without a source) opens Today.
+ * it came from; an auto-added calendar event, and any other deadline, opens the deadline (which
+ * shows the event and its source); "more important mail" opens the inbox; everything else (a
+ * briefing, an alert from an older agent without a target) opens Today. `kind` is the alert's
+ * kind, when known.
  */
-export function routeForTarget(target: AlertTarget | null | undefined): AlertRoute {
+export function routeForTarget(
+  target: AlertTarget | null | undefined,
+  kind?: AlertKind,
+): AlertRoute {
   switch (target?.type) {
     case 'mail': {
       const id = target.id ?? target.message_id;
       return id ? mailRoute(target.account, id) : { pathname: '/today' };
     }
     case 'deadline':
+      if (kind === 'calendar_added') return deadlineRoute(target.deadline_id);
       return target.source === 'mail' && target.account && target.message_id
         ? mailRoute(target.account, target.message_id)
-        : { pathname: '/today' };
+        : deadlineRoute(target.deadline_id);
     case 'inbox':
       return { pathname: '/inbox' };
     default:
@@ -84,6 +95,8 @@ export function alertAccount(item: AlertItem): string | null {
 
 export interface AlertData extends Record<string, unknown> {
   alertId: number;
+  /** Absent in notifications shown by an older build. */
+  kind?: AlertKind;
   target: AlertTarget;
   deadlineId?: number;
 }
@@ -96,7 +109,7 @@ export interface AlertContent {
 }
 
 export function toContent(item: AlertItem): AlertContent {
-  const data: AlertData = { alertId: item.id, target: item.target };
+  const data: AlertData = { alertId: item.id, kind: item.kind, target: item.target };
   if (item.target.type === 'deadline') data.deadlineId = item.target.deadline_id;
   const undoable = item.kind === 'calendar_added' && (item.actions ?? []).includes(UNDO_ACTION);
   return {
@@ -118,7 +131,7 @@ export function outcomeForResponse(actionIdentifier: string, data: unknown): Res
     const id = record.deadlineId;
     if (typeof id === 'number' && Number.isInteger(id)) return { type: 'undo', deadlineId: id };
   }
-  return { type: 'route', route: routeForTarget(record.target) };
+  return { type: 'route', route: routeForTarget(record.target, record.kind) };
 }
 
 export async function alertsPermitted(): Promise<boolean> {

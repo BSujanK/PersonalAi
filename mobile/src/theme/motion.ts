@@ -41,6 +41,9 @@ export const motion = {
   introGlideMs: 480,
   /** Under Reduce Motion the intro is the still mark and a short fade. */
   introFadeMs: 240,
+  /** Loading skeletons breathe between full and this opacity, one way per `skeletonPulseMs`. */
+  skeletonPulseMs: 900,
+  skeletonLow: 0.55,
   /** Distance the large title scrolls before the compact title takes over. */
   titleCollapse: 44,
 } as const;

@@ -127,6 +127,19 @@ const makeStyles = (p: Palette) => ({
   searchInput: { paddingLeft: space.xl + space.sm, borderRadius: radius.pill },
   searchIcon: { position: 'absolute' as const, left: space.md },
   loading: { marginVertical: space.lg },
+  failed: {
+    alignItems: 'center' as const,
+    gap: space.xs,
+    padding: space.lg,
+    backgroundColor: p.surface,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: p.glassBorder,
+  },
+  failedTitle: { ...type.headline, color: p.text, textAlign: 'center' as const },
+  failedLine: { ...type.subheadline, color: p.textMuted, textAlign: 'center' as const },
+  failedReason: { ...type.footnote, color: p.textMuted, textAlign: 'center' as const },
+  stale: { ...type.footnote, color: p.textMuted, paddingHorizontal: space.xs },
   // Card lists
   sectionHead: {
     flexDirection: 'row' as const,
@@ -553,6 +566,38 @@ export function Loading() {
   const styles = useThemedStyles(makeStyles);
   const { palette } = useTheme();
   return <ActivityIndicator style={styles.loading} color={palette.accentText} />;
+}
+
+/**
+ * A quiet stand-in for a section or screen that has no data and could not load it. Not an error:
+ * the app retries by itself, so there is nothing to press. `reason` is the agent's message, if any.
+ */
+export function LoadFailed({
+  what,
+  reason,
+  retrying = true,
+}: {
+  what: string;
+  reason?: string | null;
+  /** False when asking again will not help; the card then only gives the reason. */
+  retrying?: boolean;
+}) {
+  const styles = useThemedStyles(makeStyles);
+  const { palette } = useTheme();
+  return (
+    <View accessible accessibilityLiveRegion="polite" style={styles.failed}>
+      <Icon name="cloud-off" size={24} color={palette.textMuted} />
+      <Text style={styles.failedTitle}>{`Couldn't load ${what}`}</Text>
+      {retrying ? <Text style={styles.failedLine}>Retrying automatically…</Text> : null}
+      {reason ? <Text style={styles.failedReason}>{reason}</Text> : null}
+    </View>
+  );
+}
+
+/** Shown above data that is a refresh behind: the last load failed and a retry is under way. */
+export function StaleNote() {
+  const styles = useThemedStyles(makeStyles);
+  return <Text style={styles.stale}>Showing earlier data · retrying</Text>;
 }
 
 // --- Card lists -------------------------------------------------------------------------------
