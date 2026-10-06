@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Text, TextInput, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Keyboard, Text, TextInput, View } from 'react-native';
 
 import {
   MIN_TARGET,
@@ -76,6 +76,7 @@ export function Composer({ busy, online, onSend, onStop, initialDraft = '' }: Pr
   const styles = useThemedStyles(makeStyles);
   const { palette } = useTheme();
   const [draft, setDraft] = useState(initialDraft);
+  const input = useRef<TextInput>(null);
   // During a turn a failed /health means the agent is busy, not gone: "still working".
   const offline = online === false && !busy;
   const slow = online === false && busy;
@@ -85,6 +86,9 @@ export function Composer({ busy, online, onSend, onStop, initialDraft = '' }: Pr
     if (!canSend || busy) return;
     onSend(draft);
     setDraft('');
+    // The reply is what the owner reads next: put the keyboard away.
+    input.current?.blur();
+    Keyboard.dismiss();
   }
 
   return (
@@ -103,6 +107,7 @@ export function Composer({ busy, online, onSend, onStop, initialDraft = '' }: Pr
       ) : null}
       <View style={styles.box}>
         <TextInput
+          ref={input}
           accessibilityLabel="Message"
           style={styles.input}
           value={draft}
@@ -112,6 +117,7 @@ export function Composer({ busy, online, onSend, onStop, initialDraft = '' }: Pr
           selectionColor={palette.accentText}
           cursorColor={palette.accentText}
           multiline
+          // Enter adds a new line (multi-line prompts); the send button sends and closes the keyboard.
           autoFocus={initialDraft.length > 0}
           editable={!offline}
           textAlignVertical="center"

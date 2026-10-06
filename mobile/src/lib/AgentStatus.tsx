@@ -11,6 +11,7 @@ import {
 import { AppState } from 'react-native';
 
 import { health, listApprovals } from './api';
+import { rememberApprovals } from './approvalSeen';
 import { onRefresh } from './refreshBus';
 
 const POLL_MS = 20_000;
@@ -41,7 +42,14 @@ export function AgentStatusProvider({ children }: { children: ReactNode }) {
         if (!mounted.current) return;
         setOnline(true);
         listApprovals().then(
-          (items) => mounted.current && setPendingCount(items.length),
+          (items) => {
+            if (!mounted.current) return;
+            setPendingCount(items.length);
+            // Seen in the app, so the background check will not announce them again.
+            if (AppState.currentState === 'active') {
+              void rememberApprovals(items.map((item) => item.id)).catch(() => undefined);
+            }
+          },
           () => undefined,
         );
       },

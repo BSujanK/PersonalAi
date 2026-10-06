@@ -127,7 +127,7 @@ export function useChatSession({ initialId, onConversation, onTurnEnd }: Options
         conversationId.current = result.conversation_id;
         callbacks.current.onConversation(result.conversation_id);
         apply((current) =>
-          finishTurn(current, assistantId, result.reply, result.pending_action_ids),
+          finishTurn(current, assistantId, result.reply, result.pending_action_ids, result.sources),
         );
       };
       try {

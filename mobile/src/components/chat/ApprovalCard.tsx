@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
@@ -72,6 +72,7 @@ const makeStyles = (p: Palette) => ({
   result: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: space.sm },
   resultText: { ...type.callout, fontFamily: fontFamily.bodyMedium, color: p.text, flex: 1 },
   hint: { ...type.footnote, color: p.textMuted, textAlign: 'center' as const },
+  withHint: { gap: space.sm },
 });
 
 const RESULT: Record<Exclude<ApprovalOutcome, 'pending'>, { icon: IconName; text: string }> = {
@@ -79,6 +80,13 @@ const RESULT: Record<Exclude<ApprovalOutcome, 'pending'>, { icon: IconName; text
   rejected: { icon: 'x-circle', text: 'Rejected. Nothing was sent.' },
   failed: { icon: 'alert-circle', text: 'Approved, but the action failed to run' },
   expired: { icon: 'clock', text: 'Expired. Ask again to get a fresh proposal.' },
+};
+
+/** Phone actions get their own mark in the card; everything else is the shield. */
+const ACTION_ICONS: Record<string, IconName> = {
+  phone_set_alarm: 'clock',
+  phone_set_timer: 'watch',
+  phone_reminder: 'bell',
 };
 
 // Built once: the outcome row is content the owner is waiting on, so it eases in (220 ms).
@@ -93,11 +101,14 @@ export function ApprovalCard({
   actionId,
   initial,
   onDecided,
+  hint,
 }: {
   actionId: string;
   /** Already-fetched approval (the Approvals screen); skips the first fetch. */
   initial?: Approval;
   onDecided?: (approval: Approval, result: DecisionResult) => void;
+  /** Shown under the card while it still waits for a decision (the chat's "also in Approvals"). */
+  hint?: ReactNode;
 }) {
   const styles = useThemedStyles(makeStyles);
   const { palette } = useTheme();
@@ -202,14 +213,18 @@ export function ApprovalCard({
   const outcome = outcomeOf(decidedStatus ?? approval.status, approval.expires_at);
   const final = outcome !== 'pending';
   const soon = !final && expiresWithin(approval.expires_at, SOON_MS);
-  return (
+  const card = (
     <View
       style={styles.card}
       accessibilityLabel={`Approval request: ${actionTitle(approval.tool_name)}`}
     >
       <View style={styles.header}>
         <View style={styles.tile}>
-          <Icon name="shield" size={18} color={palette.accentText} />
+          <Icon
+            name={ACTION_ICONS[approval.tool_name] ?? 'shield'}
+            size={18}
+            color={palette.accentText}
+          />
         </View>
         <View style={styles.headerText}>
           <Text style={[styles.kicker, soon && { color: palette.warn }]}>
@@ -289,6 +304,13 @@ export function ApprovalCard({
           </View>
         </>
       )}
+    </View>
+  );
+  if (hint === undefined) return card;
+  return (
+    <View style={styles.withHint}>
+      {card}
+      {final ? null : hint}
     </View>
   );
 }

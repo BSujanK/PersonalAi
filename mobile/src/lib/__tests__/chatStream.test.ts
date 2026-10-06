@@ -265,3 +265,32 @@ describe('chatStream', () => {
     expect(calls).toEqual(['token:Hi']);
   });
 });
+
+describe('chatStream sources', () => {
+  it('passes validated sources from the done event, capped at five', async () => {
+    const { promise } = setup();
+    const xhr = await started();
+    xhr.respond(200, 'text/event-stream');
+    const sources = [
+      { title: 'Bad', url: 'javascript:alert(1)' },
+      ...Array.from({ length: 7 }, (_, i) => ({
+        title: `Page ${i}`,
+        url: `https://example.com/${i}`,
+      })),
+    ];
+    xhr.chunk(ev('done', { ...DONE, sources }));
+    const reply = await promise;
+    expect(reply.sources).toHaveLength(5);
+    expect(reply.sources?.[0]).toEqual({ title: 'Page 0', url: 'https://example.com/0' });
+  });
+
+  it('leaves the reply as it was when sources are missing, empty or not a list', async () => {
+    for (const sources of [undefined, [], 'https://example.com', [{ url: 'intent://x' }]]) {
+      const { promise } = setup();
+      const xhr = await started();
+      xhr.respond(200, 'text/event-stream');
+      xhr.chunk(ev('done', { ...DONE, sources }));
+      await expect(promise).resolves.toEqual(DONE);
+    }
+  });
+});

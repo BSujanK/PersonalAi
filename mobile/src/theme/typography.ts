@@ -58,11 +58,13 @@ export interface TypeSpec {
 }
 
 export type TypeName =
+  | 'displayLarge'
   | 'display'
   | 'title1'
   | 'title2'
   | 'title3'
   | 'headline'
+  | 'lead'
   | 'body'
   | 'callout'
   | 'subheadline'
@@ -75,11 +77,13 @@ export type TypeName =
 
 /** The type scale. Weight is the face's weight; React Native picks it by family name. */
 export const TYPE_SCALE: Record<TypeName, TypeSpec> = {
+  displayLarge: { face: 'serif', weight: 500, size: 38, lineHeight: 44, tracking: -0.8 },
   display: { face: 'serif', weight: 500, size: 34, lineHeight: 40, tracking: -0.7 },
   title1: { face: 'serif', weight: 500, size: 28, lineHeight: 34, tracking: -0.5 },
   title2: { face: 'serif', weight: 500, size: 23, lineHeight: 29, tracking: -0.3 },
   title3: { face: 'sans', weight: 600, size: 19, lineHeight: 25, tracking: -0.25 },
   headline: { face: 'sans', weight: 600, size: 16, lineHeight: 22, tracking: -0.1 },
+  lead: { face: 'sans', weight: 400, size: 18, lineHeight: 26, tracking: -0.15 },
   body: { face: 'sans', weight: 400, size: 16, lineHeight: 24, tracking: -0.05 },
   callout: { face: 'sans', weight: 400, size: 15, lineHeight: 21, tracking: 0 },
   subheadline: { face: 'sans', weight: 400, size: 14, lineHeight: 20, tracking: 0.05 },

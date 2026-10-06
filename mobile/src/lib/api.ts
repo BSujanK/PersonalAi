@@ -1,6 +1,7 @@
 // Typed client for the laptop agent. Every route except /pair sends the device bearer token.
 import { loadPairing } from './secureKeys';
 import { createSseParser } from './sse';
+import { parseSources, type Source } from './sources';
 import { normaliseServerUrl } from './serverUrl';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -76,6 +77,8 @@ export interface DisplayMessage {
   created_at: string;
   tools: ToolRun[];
   pending_action_ids: string[];
+  /** Web pages the answer used; absent from older agents. Validated by `parseSources`. */
+  sources?: Source[];
 }
 
 export interface ConversationDetail {
@@ -89,6 +92,8 @@ export interface ChatReply {
   conversation_id: string;
   reply: string;
   pending_action_ids: string[];
+  /** Web pages the answer used; absent from older agents. Validated by `parseSources`. */
+  sources?: Source[];
 }
 
 export interface DigestItem {
@@ -296,11 +301,23 @@ export async function pair(
 export const health = () =>
   call<{ status: string }>('GET', '/health', { timeoutMs: HEALTH_TIMEOUT_MS });
 
+/**
+ * Replace an untrusted `sources` field with its validated form, keeping the key only when some
+ * source survived (an older agent never sends it, and neither does an answer without web use).
+ */
+function withValidSources<T extends { sources?: unknown }>(
+  raw: T,
+): Omit<T, 'sources'> & { sources?: Source[] } {
+  const { sources: untrusted, ...rest } = raw;
+  const sources = parseSources(untrusted);
+  return sources.length > 0 ? { ...rest, sources } : rest;
+}
+
 export const chat = (message: string, conversationId: string | null) =>
   call<ChatReply>('POST', '/chat', {
     body: { conversation_id: conversationId, message },
     timeoutMs: CHAT_TIMEOUT_MS,
-  });
+  }).then(withValidSources);
 
 export interface ChatStreamHandlers {
   onStart?: (conversationId: string) => void;
@@ -383,7 +400,7 @@ export async function chatStream(
           handlers.onTool?.(payload.name, status);
         }
       } else if (event === 'done' && typeof payload.reply === 'string') {
-        finish(() => resolve(payload as unknown as ChatReply));
+        finish(() => resolve(withValidSources(payload as unknown as ChatReply)));
       } else if (event === 'error') {
         const detail = typeof payload.detail === 'string' ? payload.detail : 'error';
         fail(new ApiError(503, detail));
@@ -462,7 +479,10 @@ export const listConversations = (
 };
 
 export const getConversation = (id: string) =>
-  call<ConversationDetail>('GET', `/conversations/${encodeURIComponent(id)}`);
+  call<ConversationDetail>('GET', `/conversations/${encodeURIComponent(id)}`).then((detail) => ({
+    ...detail,
+    messages: detail.messages.map(withValidSources),
+  }));
 
 export const renameConversation = (id: string, title: string) =>
   call<ConversationSummary>('PATCH', `/conversations/${encodeURIComponent(id)}`, {
@@ -644,7 +664,9 @@ export type AlertTarget =
       course_id?: string;
     }
   | { type: 'inbox'; account?: string }
-  | { type: 'today' };
+  | { type: 'today' }
+  /** Made on the phone for the "action waiting" notice; the agent never sends it. */
+  | { type: 'approvals' };
 
 export interface AlertItem {
   id: number;

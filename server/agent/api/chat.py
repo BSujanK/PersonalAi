@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from agent.core.llm import ChatMessage, LLMNotConfigured, LLMUnavailable, ToolCall
 from agent.core.redact import RedactionMap, from_model
+from agent.core.sources import Source
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 
@@ -32,9 +33,11 @@ class ChatResponse(BaseModel):
     conversation_id: str
     reply: str
     pending_action_ids: list[str]
+    sources: list[Source] = Field(default_factory=list)
 
 
-def _encode(msg: ChatMessage) -> str:
+def _encode(msg: ChatMessage, sources: list[Source] | None = None) -> str:
+    """One stored message. ``sources`` (the web sources of a turn) ride on its final reply."""
     return json.dumps(
         {
             "content": msg.content.text,
@@ -44,6 +47,7 @@ def _encode(msg: ChatMessage) -> str:
             ]
             if msg.tool_calls
             else None,
+            **({"sources": [s.model_dump() for s in sources]} if sources else {}),
         },
         ensure_ascii=False,
     )
@@ -136,8 +140,10 @@ def _execute_turn(
             ),
         )
         seq = len(history)
+        last = result.new_messages[-1]
         for msg in result.new_messages:
             seq += 1
+            final = msg is last and msg.role == "assistant" and not msg.tool_calls
             message_id = uuid.uuid4().hex
             db.execute(
                 "INSERT INTO messages (id, conversation_id, seq, created_at, role, content_enc) "
@@ -148,13 +154,17 @@ def _execute_turn(
                     seq,
                     now,
                     msg.role,
-                    cipher.encrypt(_encode(msg), f"messages.content:{message_id}"),
+                    cipher.encrypt(
+                        _encode(msg, result.sources if final else None),
+                        f"messages.content:{message_id}",
+                    ),
                 ),
             )
     return ChatResponse(
         conversation_id=conversation_id,
         reply=result.reply,
         pending_action_ids=result.pending_action_ids,
+        sources=result.sources,
     )
 
 

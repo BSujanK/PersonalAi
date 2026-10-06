@@ -35,6 +35,9 @@ describe('chat transcript state', () => {
     expect(m[1].text).toBe('');
     m = finishTurn(m, 'a1', 'Two things.', ['x1']);
     expect(m[1]).toMatchObject({ text: 'Two things.', actionIds: ['x1'], state: 'done' });
+    expect(m[1].sources).toEqual([]);
+    const source = { title: 'Docs', url: 'https://example.com/docs' };
+    expect(finishTurn(m, 'a1', 'Two things.', [], [source])[1].sources).toEqual([source]);
   });
 
   it('tracks a tool from started to finished and closes any left running', () => {
@@ -73,7 +76,7 @@ describe('chat transcript state', () => {
       tools: [{ name: 'mail_read', status: 'finished' }],
       pending_action_ids: ['p1'],
     });
-    expect(assistant).toMatchObject({ state: 'done', actionIds: ['p1'] });
+    expect(assistant).toMatchObject({ state: 'done', actionIds: ['p1'], sources: [] });
     expect(promptFor([user, assistant], 'a')).toBe('hi');
     expect(promptFor([assistant], 'a')).toBeNull();
   });

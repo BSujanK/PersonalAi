@@ -2,6 +2,8 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Alert, Linking } from 'react-native';
 
+import { lightPalette } from '../../../theme';
+
 import { isSafeLink, parseMarkdown, plainText } from '../../../lib/markdown';
 import { Markdown } from '../Markdown';
 
@@ -70,6 +72,79 @@ describe('Markdown', () => {
     await render(<Markdown text={'![tracker](https://evil.example.com/p.png) <b>hi</b>'} />);
     expect(screen.getByText(/\[image: tracker\]/)).toBeTruthy();
     expect(screen.getByText(/<b>hi<\/b>/)).toBeTruthy();
+  });
+
+  it('hangs list text beside real bullets and numbers, with nested levels', async () => {
+    const nested = [
+      '- Fruit',
+      '  - Apples',
+      '    - Gala',
+      '- Veg',
+      '',
+      '3. Third',
+      '4. Fourth',
+    ].join('\n');
+    await render(<Markdown text={nested} />);
+    // Solid, hollow and square bullets by depth.
+    expect(screen.getAllByText('•')).toHaveLength(2);
+    expect(screen.getAllByText('◦')).toHaveLength(1);
+    expect(screen.getAllByText('▪')).toHaveLength(1);
+    expect(screen.getByText('Gala')).toBeTruthy();
+    // An ordered list keeps its start number.
+    expect(screen.getByText('3.')).toBeTruthy();
+    expect(screen.getByText('4.')).toBeTruthy();
+  });
+
+  it('puts a table in a horizontal scroller with a header row and padded cells', async () => {
+    await render(<Markdown text={DOC} />);
+    const scroller = screen.getByTestId('md-table');
+    expect(scroller.props.horizontal).toBe(true);
+    expect(screen.getByText('Item')).toHaveStyle({ fontFamily: 'HankenGrotesk_600SemiBold' });
+    expect(screen.getByText('Books')).not.toHaveStyle({ fontFamily: 'HankenGrotesk_600SemiBold' });
+    expect(screen.getByText('1200')).toHaveStyle({ textAlign: 'right' });
+  });
+
+  it('labels a fenced block with its language and falls back to "code"', async () => {
+    await render(<Markdown text={'```ts\nconst a = 1;\n```\n\n```\nplain\n```'} />);
+    expect(screen.getByText('ts')).toBeTruthy();
+    expect(screen.getByText('code')).toBeTruthy();
+    expect(screen.getAllByLabelText('Copy code')).toHaveLength(2);
+  });
+
+  it('sets a block quote off with a violet rule', async () => {
+    await render(<Markdown text={'> Quoted words\n> second line'} />);
+    expect(screen.getByTestId('md-quote')).toHaveStyle({
+      borderLeftWidth: 3,
+      borderLeftColor: lightPalette.accent,
+    });
+    expect(screen.getByText(/Quoted words/)).toBeTruthy();
+  });
+
+  it('sets headings in the display serif at modest sizes, and figures in tabular numerals', async () => {
+    await render(
+      <Markdown text={'# One\n\n## Two\n\n### Three\n\nTotal ₹12,450 due 14 Oct 2026'} />,
+    );
+    for (const [name, size] of [
+      ['One', 23],
+      ['Two', 20],
+      ['Three', 18],
+    ] as const) {
+      expect(screen.getByRole('header', { name })).toHaveStyle({
+        fontFamily: 'Newsreader_500Medium',
+        fontSize: size,
+      });
+    }
+    expect(screen.getByText(/₹12,450/)).toHaveStyle({ fontVariant: ['tabular-nums'] });
+  });
+
+  it('draws a rule between sections', async () => {
+    await render(<Markdown text={'Above\n\n---\n\nBelow'} />);
+    expect(screen.getByText('Above')).toBeTruthy();
+    expect(screen.getByText('Below')).toBeTruthy();
+    expect(screen.getByTestId('md-rule')).toHaveStyle({
+      height: 1,
+      backgroundColor: lightPalette.separator,
+    });
   });
 
   it('handles an unfinished code fence while streaming', async () => {

@@ -304,5 +304,6 @@ def test_json_path_has_no_tool_events_and_is_unchanged() -> None:
     api = _api(FakeLLM(call("read_mail", {}), say("ok")))
     resp = api.client.post("/chat", headers=_auth(_pair(api)), json={"message": "go"})
     assert resp.status_code == 200
-    assert set(resp.json()) == {"conversation_id", "reply", "pending_action_ids"}
+    assert set(resp.json()) == {"conversation_id", "reply", "pending_action_ids", "sources"}
+    assert resp.json()["sources"] == []
     assert "event:" not in resp.text

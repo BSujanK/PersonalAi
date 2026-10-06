@@ -61,7 +61,8 @@ def test_stream_rehydrates_placeholder_split_across_chunks() -> None:
     assert events[0][1] == {"conversation_id": done["conversation_id"]}
     assert "".join(_tokens(events)) == done["reply"] == "Sent to me@example.com now."
     assert all("⟨" not in t for t in _tokens(events))
-    assert set(done) == {"conversation_id", "reply", "pending_action_ids"}
+    assert set(done) == {"conversation_id", "reply", "pending_action_ids", "sources"}
+    assert done["sources"] == []
     assert done["pending_action_ids"] == []
 
 

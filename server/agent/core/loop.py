@@ -7,7 +7,7 @@ import logging
 import re
 import unicodedata
 from collections.abc import Callable, Collection
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta, timezone
 from typing import Any
 
@@ -28,6 +28,7 @@ from agent.core.llm import (
 from agent.core.policy import Decision
 from agent.core.redact import Redacted, RedactionMap, Redactor, StreamRehydrator, from_model
 from agent.core.router import select_tools
+from agent.core.sources import Source, SourceCollector
 from agent.core.tools import ActionRejected, ToolRegistry
 from agent.core.turn import turn_scope
 
@@ -121,6 +122,7 @@ class LoopResult:
     reply: str
     new_messages: list[ChatMessage]
     pending_action_ids: list[str]
+    sources: list[Source] = field(default_factory=list)
 
 
 class AgentLoop:
@@ -186,6 +188,7 @@ class AgentLoop:
         system = ChatMessage("system", from_model(self._system_prompt()))
         new: list[ChatMessage] = [ChatMessage("user", self._redactor.redact(user_text, rmap))]
         pending_ids: list[str] = []
+        collector = SourceCollector()
         offered = self._offered_tools(history, user_text)
         tools = self._registry.schemas(offered)
         called_tools = False
@@ -211,7 +214,7 @@ class AgentLoop:
             new.append(ChatMessage("assistant", content, tool_calls=response.tool_calls or None))
             if not response.tool_calls:
                 reply = Redactor.rehydrate(content.text, rmap)
-                return LoopResult(reply, new, pending_ids)
+                return LoopResult(reply, new, pending_ids, collector.top())
             called_tools = True
             if emitted and on_reset is not None:
                 on_reset()  # text shown before a tool call is not part of the final answer
@@ -226,12 +229,12 @@ class AgentLoop:
                     tools = self._registry.schemas()
                     message = self._tool_message(call, "error: unknown tool")
                 else:
-                    message = self._handle_call(call, conversation_id, rmap, pending_ids)
+                    message = self._handle_call(call, conversation_id, rmap, pending_ids, collector)
                 if on_tool is not None:
                     failed = message.content.text.startswith("error:")
                     on_tool(label, "failed" if failed else "finished")
                 new.append(message)
-        return LoopResult(STEP_LIMIT_REPLY, new, pending_ids)
+        return LoopResult(STEP_LIMIT_REPLY, new, pending_ids, collector.top())
 
     def _offered_tools(self, history: list[ChatMessage], user_text: str) -> set[str] | None:
         """Names of the tools to show the model, or ``None`` for all of them (router off).
@@ -358,6 +361,7 @@ class AgentLoop:
         conversation_id: str,
         rmap: RedactionMap,
         pending_ids: list[str],
+        collector: SourceCollector,
     ) -> ChatMessage:
         try:
             raw_args = json.loads(call.arguments.text)
@@ -390,6 +394,7 @@ class AgentLoop:
         except Exception as exc:  # the model gets no exception text; type is enough to debug
             log.warning("tool %s failed: %s", call.name, type(exc).__name__)
             return self._tool_message(call, "error: tool failed")
+        collector.add(call.name, result)  # raw result: sources never come from model text
 
         def wrap(text: str) -> str:
             return wrap_untrusted(call.name, text) if tool.untrusted_output else text

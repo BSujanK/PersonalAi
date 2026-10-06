@@ -61,6 +61,7 @@ const DESTINATION: Record<AlertRoute['pathname'], string> = {
   '/inbox': 'Opens all mail',
   '/deadline/[id]': 'Opens the deadline',
   '/today': 'Opens Today',
+  '/approvals': 'Opens Approvals',
 };
 
 /** The feed, newest first. An older agent has no feed: that reads as an empty one, flagged. */

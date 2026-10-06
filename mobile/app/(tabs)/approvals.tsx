@@ -64,8 +64,8 @@ export default function Approvals() {
           <Spark size={56} />
           <Text style={styles.emptyTitle}>All clear</Text>
           <Text style={styles.emptyText}>
-            When the agent wants to send, share or change something, it waits here for your
-            fingerprint.
+            When the agent wants to send, share or change something, or set a reminder, alarm or
+            timer, it waits here for your fingerprint.
           </Text>
         </View>
       ) : null}

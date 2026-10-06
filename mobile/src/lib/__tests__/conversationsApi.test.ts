@@ -1,4 +1,5 @@
 import {
+  chat,
   deleteConversation,
   getApproval,
   getMailMessage,
@@ -131,6 +132,32 @@ describe('getMailMessage', () => {
     expect(url).toBe(`${BASE}/mail/student%40example.com/m%2F1%20x`);
     expect(init.method).toBe('GET');
     expect(headers.Authorization).toBe('Bearer tok');
+  });
+
+  it('validates the sources of a plain /chat reply and of stored turns', async () => {
+    const good = { title: 'Docs', url: 'https://example.com/docs' };
+    const bad = { title: 'Bad', url: 'javascript:alert(1)' };
+    reply(200, { conversation_id: 'c', reply: 'ok', pending_action_ids: [], sources: [bad, good] });
+    await expect(chat('hi', null)).resolves.toMatchObject({ sources: [good] });
+
+    const message = (sources: unknown) => ({
+      id: 'm',
+      role: 'assistant',
+      text: 't',
+      created_at: 'x',
+      tools: [],
+      pending_action_ids: [],
+      sources,
+    });
+    reply(200, {
+      id: 'c',
+      title: 't',
+      updated_at: 'x',
+      messages: [message([bad, good]), message(7)],
+    });
+    const detail = await getConversation('c');
+    expect(detail.messages[0].sources).toEqual([good]);
+    expect(detail.messages[1]).not.toHaveProperty('sources');
   });
 
   it('surfaces a 404 as an ApiError', async () => {

@@ -44,7 +44,7 @@ export function isKindEnabled(kind: AlertKind, settings: AlertSettings): boolean
 export type AlertRoute =
   | { pathname: '/mail/[account]/[id]'; params: { account: string; id: string } }
   | { pathname: '/deadline/[id]'; params: { id: string } }
-  | { pathname: '/today' | '/inbox' };
+  | { pathname: '/today' | '/inbox' | '/approvals' };
 
 const mailRoute = (account: string, id: string): AlertRoute => ({
   pathname: '/mail/[account]/[id]',
@@ -79,6 +79,8 @@ export function routeForTarget(
         : deadlineRoute(target.deadline_id);
     case 'inbox':
       return { pathname: '/inbox' };
+    case 'approvals':
+      return { pathname: '/approvals' };
     default:
       return { pathname: '/today' };
   }
@@ -146,7 +148,7 @@ export async function requestAlertPermission(): Promise<boolean> {
   return status === 'granted';
 }
 
-async function prepareChannel(): Promise<void> {
+export async function prepareChannel(): Promise<void> {
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync(ALERT_CHANNEL, {
       name: 'Alerts',
