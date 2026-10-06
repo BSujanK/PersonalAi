@@ -12,6 +12,7 @@ import { useReducedMotion } from 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
+import { IntroProvider } from '../src/components/brand/LaunchIntro';
 import { PairScreen } from '../src/components/PairScreen';
 import { Loading } from '../src/components/ui';
 import { AgentStatusProvider } from '../src/lib/AgentStatus';
@@ -121,9 +122,11 @@ function Themed() {
     <View style={{ flex: 1, backgroundColor: palette.bg }}>
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
       {fontsLoaded || fontError ? (
-        <PairingProvider>
-          <Gate />
-        </PairingProvider>
+        <IntroProvider>
+          <PairingProvider>
+            <Gate />
+          </PairingProvider>
+        </IntroProvider>
       ) : null}
     </View>
   );

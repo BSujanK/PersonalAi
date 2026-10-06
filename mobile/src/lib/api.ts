@@ -5,6 +5,8 @@ import { normaliseServerUrl } from './serverUrl';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const HEALTH_TIMEOUT_MS = 5_000;
+/** The plain (non-streaming) chat fallback waits for the whole reply, tool calls included. */
+export const CHAT_TIMEOUT_MS = 120_000;
 const STREAM_INACTIVITY_MS = 60_000;
 
 export class ApiError extends Error {
@@ -286,7 +288,10 @@ export const health = () =>
   call<{ status: string }>('GET', '/health', { timeoutMs: HEALTH_TIMEOUT_MS });
 
 export const chat = (message: string, conversationId: string | null) =>
-  call<ChatReply>('POST', '/chat', { body: { conversation_id: conversationId, message } });
+  call<ChatReply>('POST', '/chat', {
+    body: { conversation_id: conversationId, message },
+    timeoutMs: CHAT_TIMEOUT_MS,
+  });
 
 export interface ChatStreamHandlers {
   onStart?: (conversationId: string) => void;

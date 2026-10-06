@@ -1,12 +1,12 @@
 import { useRouter } from 'expo-router';
 import { Text, View } from 'react-native';
 
-import { SparkAvatar } from '../../src/components/brand/Spark';
-import { Screen } from '../../src/components/Screen';
-import { Card, ListRow, ListSection, StatusDot } from '../../src/components/ui';
-import { useAgentStatus } from '../../src/lib/AgentStatus';
-import { usePairing } from '../../src/lib/PairingContext';
-import { space, type, useTheme, useThemedStyles, type Palette } from '../../src/theme';
+import { Spark } from '../src/components/brand/Spark';
+import { Screen } from '../src/components/Screen';
+import { Card, ListRow, ListSection, StatusDot } from '../src/components/ui';
+import { useAgentStatus } from '../src/lib/AgentStatus';
+import { usePairing } from '../src/lib/PairingContext';
+import { space, type, useTheme, useThemedStyles, type Palette } from '../src/theme';
 
 const makeStyles = (p: Palette) => ({
   profile: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: space.md },
@@ -22,7 +22,10 @@ const makeStyles = (p: Palette) => ({
   },
 });
 
-/** The More tab: who the agent is, whether it is reachable, and the screens that are not tabs. */
+/**
+ * More, opened from the spark in the Chat header: who the agent is, whether it is reachable, and
+ * every screen that is not a tab.
+ */
 export default function More() {
   const styles = useThemedStyles(makeStyles);
   const { palette } = useTheme();
@@ -34,9 +37,9 @@ export default function More() {
   const statusColor = online === null ? palette.textMuted : online ? palette.ok : palette.danger;
 
   return (
-    <Screen title="More" tabs>
+    <Screen title="More" back>
       <Card style={styles.profile}>
-        <SparkAvatar size={56} />
+        <Spark size={52} />
         <View style={styles.profileMain}>
           <Text style={styles.name}>PersonalAi</Text>
           {pairing ? (
@@ -50,6 +53,13 @@ export default function More() {
       </Card>
 
       <ListSection title="Tools" stagger>
+        <ListRow
+          icon="sun"
+          title="Today"
+          subtitle="Important mail, deadlines and events"
+          chevron
+          onPress={() => router.push('/today')}
+        />
         <ListRow
           icon="folder"
           title="Files"

@@ -30,8 +30,18 @@ export const motion = {
   tabSpringDamping: 0.82,
   /** One turn of the spark while the agent is thinking. Slow: it is ambient, not urgent. */
   sparkTurnMs: 2800,
-  /** The spark's breathing pulse (also the Reduce Motion fallback, opacity only). */
+  /** One run of the wave round the spark's rays while thinking. */
   sparkPulseMs: 1400,
+  /** Half a breath of the idle spark on Chat's empty state. Slow enough to read as calm. */
+  breatheMs: 2200,
+  /** The quick settle back to rest when a reply finishes. */
+  settleMs: 420,
+  /** Cold-launch intro: rays light up, then the mark glides into the Chat header. */
+  introRevealMs: 650,
+  introGlowMs: 520,
+  introGlideMs: 480,
+  /** Under Reduce Motion the intro is the still mark and a short fade. */
+  introFadeMs: 240,
   /** Distance the large title scrolls before the compact title takes over. */
   titleCollapse: 44,
 } as const;
@@ -55,3 +65,9 @@ export const easeInOut = cubicBezier(0.77, 0, 0.175, 1);
  * thread if a timing animation carries it (guarded in __tests__/motion.test.ts).
  */
 export const timingEaseOut = Easing.bezier(0.23, 1, 0.32, 1);
+
+/** Constant motion (a loop): the spark's turn and its ray wave. withTiming only. */
+export const timingLinear = Easing.linear;
+
+/** Breathing and the ray reveal: soft at both ends. withTiming only. */
+export const timingSine = Easing.inOut(Easing.sin);

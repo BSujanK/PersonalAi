@@ -231,7 +231,7 @@ export function Screen({
         >
           {refreshing ? (
             <View style={styles.refreshing} accessibilityLabel="Refreshing" accessible>
-              <Spark size={28} thinking />
+              <Spark size={28} state="thinking" />
             </View>
           ) : null}
           {title && !header ? (

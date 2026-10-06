@@ -35,11 +35,9 @@ export function useTabBarSpace(): number {
 }
 
 const ICONS: Record<string, IconName> = {
-  index: 'home',
-  chat: 'message-circle',
+  index: 'message-circle',
   money: 'credit-card',
   approvals: 'shield',
-  more: 'grid',
 };
 
 const makeStyles = (p: Palette) => ({
@@ -171,7 +169,13 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
           const focused = state.index === index;
           const label = descriptors[route.key]?.options.title ?? route.name;
           const badge = route.name === 'approvals' && pendingCount > 0 ? pendingCount : 0;
-          const color = focused ? palette.accentOn : palette.textMuted;
+          // Chat is home: the centre tab keeps a violet tint and a larger glyph even when idle.
+          const centre = route.name === 'index';
+          const color = focused
+            ? palette.accentOn
+            : centre
+              ? palette.accentText
+              : palette.textMuted;
           return (
             <Pressable
               key={route.key}
@@ -192,7 +196,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
               style={styles.item}
             >
               <View>
-                <Icon name={ICONS[route.name] ?? 'circle'} size={21} color={color} />
+                <Icon name={ICONS[route.name] ?? 'circle'} size={centre ? 25 : 21} color={color} />
                 {badge ? (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText} maxFontSizeMultiplier={1.2}>
@@ -207,7 +211,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
                 style={[
                   styles.label,
                   { color },
-                  focused && { fontFamily: fontFamily.bodySemiBold },
+                  (focused || centre) && { fontFamily: fontFamily.bodySemiBold },
                 ]}
               >
                 {label}

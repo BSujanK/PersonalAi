@@ -78,3 +78,22 @@ it('finds the worklets it guards (the scan is not vacuous)', () => {
   );
   expect(count).toBeGreaterThan(5);
 });
+
+it('keeps worklet easings out of CSS transitions and animations', () => {
+  // The reverse mistake: an Easing.bezier/Easing.linear factory where a CSS transition or
+  // animation expects a keyword or cubicBezier() object.
+  const offenders = sources().filter(([, text]) =>
+    /(transition|animation)TimingFunction:\s*(timing\w+|Easing\.)/.test(text),
+  );
+  expect(offenders.map(([path]) => path)).toEqual([]);
+});
+
+it('exports only worklet-safe easing objects for timing animations', () => {
+  const m = jest.requireActual<typeof import('../motion')>('../motion');
+  // Easing.* returns a function or a { factory } object, never the CSS class instance.
+  for (const easing of [m.timingEaseOut, m.timingLinear, m.timingSine]) {
+    expect(['function', 'object']).toContain(typeof easing);
+    expect(easing).not.toBe(m.easeOut);
+    expect(easing).not.toBe(m.easeInOut);
+  }
+});

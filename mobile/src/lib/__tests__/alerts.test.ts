@@ -152,9 +152,9 @@ describe('helpers', () => {
       pathname: '/mail/[account]/[id]',
       params: { account: 'main', id: 'm1' },
     });
-    expect(routeForTarget({ type: 'deadline', deadline_id: 4 })).toEqual({ pathname: '/' });
-    expect(routeForTarget({ type: 'today' })).toEqual({ pathname: '/' });
-    expect(routeForTarget(undefined)).toEqual({ pathname: '/' });
+    expect(routeForTarget({ type: 'deadline', deadline_id: 4 })).toEqual({ pathname: '/today' });
+    expect(routeForTarget({ type: 'today' })).toEqual({ pathname: '/today' });
+    expect(routeForTarget(undefined)).toEqual({ pathname: '/today' });
   });
 
   it('gives only calendar_added alerts with an undo action the Undo category', () => {
@@ -212,7 +212,7 @@ describe('responses', () => {
       response('expo.modules.notifications.actions.DEFAULT', { target: { type: 'today' } }),
       navigate,
     );
-    expect(navigate).toHaveBeenCalledWith({ pathname: '/' });
+    expect(navigate).toHaveBeenCalledWith({ pathname: '/today' });
     expect(undoAutoEvent).not.toHaveBeenCalled();
   });
 });

@@ -42,11 +42,11 @@ export function isKindEnabled(kind: AlertKind, settings: AlertSettings): boolean
 }
 
 export interface AlertRoute {
-  pathname: '/mail/[account]/[id]' | '/';
+  pathname: '/mail/[account]/[id]' | '/today';
   params?: { account: string; id: string };
 }
 
-/** Where tapping an alert goes: a mail opens its message, everything else opens Home. */
+/** Where tapping an alert goes: a mail opens its message, everything else opens Today. */
 export function routeForTarget(target: AlertTarget | null | undefined): AlertRoute {
   if (target?.type === 'mail') {
     return {
@@ -54,7 +54,7 @@ export function routeForTarget(target: AlertTarget | null | undefined): AlertRou
       params: { account: target.account, id: target.message_id },
     };
   }
-  return { pathname: '/' };
+  return { pathname: '/today' };
 }
 
 export interface AlertData extends Record<string, unknown> {

@@ -8,6 +8,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { formatInr } from '../lib/format';
+import type { Delta } from '../lib/spend';
 import {
   fontFamily,
   MAX_CHROME_SCALE,
@@ -95,8 +96,7 @@ const makeStyles = (p: Palette) => ({
   deltaText: { ...type.footnote, fontFamily: fontFamily.bodyMedium },
 });
 
-/** The small line under the figure. `good` picks green over red; flat lines stay muted. */
-export type Delta = { text: string; direction: 'up' | 'down' | 'flat'; good?: boolean };
+export type { Delta } from '../lib/spend';
 
 /**
  * The hero block: a small label over one very large figure, with a small delta line under it.

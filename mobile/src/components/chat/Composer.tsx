@@ -76,7 +76,9 @@ export function Composer({ busy, online, onSend, onStop, initialDraft = '' }: Pr
   const styles = useThemedStyles(makeStyles);
   const { palette } = useTheme();
   const [draft, setDraft] = useState(initialDraft);
-  const offline = online === false;
+  // During a turn a failed /health means the agent is busy, not gone: "still working".
+  const offline = online === false && !busy;
+  const slow = online === false && busy;
   const canSend = !offline && draft.trim().length > 0;
 
   function submit() {
@@ -91,6 +93,12 @@ export function Composer({ busy, online, onSend, onStop, initialDraft = '' }: Pr
         <View style={styles.offline} accessibilityRole="alert">
           <View style={styles.dot} />
           <Text style={styles.offlineText}>Agent offline. Check the laptop and Tailscale.</Text>
+        </View>
+      ) : null}
+      {slow ? (
+        <View style={styles.offline} accessibilityLiveRegion="polite">
+          <View style={[styles.dot, { backgroundColor: palette.warn }]} />
+          <Text style={styles.offlineText}>Still working… this reply is taking a while.</Text>
         </View>
       ) : null}
       <View style={styles.box}>

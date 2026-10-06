@@ -55,7 +55,7 @@ describe('ConversationList', () => {
     await renderList();
     await fireEvent.press(screen.getByLabelText('Spending in September'));
     expect(mockNavigate).toHaveBeenLastCalledWith({
-      pathname: '/chat',
+      pathname: '/',
       params: { c: 'c2', k: '', d: '' },
     });
 
@@ -64,7 +64,7 @@ describe('ConversationList', () => {
       pathname: string;
       params: { c: string; k: string };
     };
-    expect(call.pathname).toBe('/chat');
+    expect(call.pathname).toBe('/');
     expect(call.params.c).toBe('');
     expect(call.params.k).not.toBe('');
   });

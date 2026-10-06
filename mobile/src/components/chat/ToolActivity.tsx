@@ -49,7 +49,7 @@ const makeStyles = (p: Palette) => ({
 
 function StatusIcon({ status }: { status: Activity['status'] }) {
   const { palette } = useTheme();
-  if (status === 'started') return <Spark size={16} thinking />;
+  if (status === 'started') return <Spark size={16} state="thinking" />;
   if (status === 'failed') return <Icon name="alert-circle" size={16} color={palette.danger} />;
   return <Icon name="check" size={16} color={palette.ok} />;
 }

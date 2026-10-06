@@ -30,18 +30,22 @@ const base = `http://127.0.0.1:${server.address().port}`;
 
 // [file, path, schemes, action?]
 const SHOTS = [
-  ['home', '/', ['dark', 'light']],
-  ['home-lists', '/', ['dark'], 'scroll'],
-  ['chat-empty', '/chat', ['dark', 'light']],
-  ['chat-conversation', '/chat?c=c1', ['dark']],
-  ['chat-thinking', '/chat', ['dark'], 'send'],
+  ['intro-1-rays', '/', ['dark'], 'intro:420'],
+  ['intro-2-glow', '/', ['dark'], 'intro:900'],
+  ['intro-3-glide', '/', ['dark'], 'intro:1180'],
+  ['chat-home', '/', ['dark', 'light']],
+  ['chat-home-scrolled', '/', ['dark'], 'scroll'],
+  ['chat-conversation', '/?c=c1', ['dark']],
+  ['chat-thinking', '/', ['dark'], 'send'],
+  ['more', '/more', ['dark', 'light']],
+  ['today', '/today', ['dark', 'light']],
+  ['today-lists', '/today', ['dark'], 'scroll'],
   ['history', '/history', ['dark']],
   ['money', '/money', ['dark', 'light']],
   ['money-transactions', '/money', ['dark'], 'scroll'],
   ['approvals', '/approvals', ['dark', 'light']],
   ['approvals-share', '/approvals', ['dark'], 'scroll'],
   ['approvals-empty', '/approvals?noapprovals', ['dark']],
-  ['more', '/more', ['dark']],
   ['mail', '/mail/college/m1', ['dark', 'light']],
   ['files', '/files', ['dark'], 'search'],
   ['alerts', '/alerts', ['dark']],
@@ -61,7 +65,13 @@ for (const [name, path, schemes, action] of SHOTS) {
     });
     page.on('pageerror', (e) => failures.push(`${name}: ${e.message}`));
     await page.goto(base + path);
-    await page.waitForTimeout(2200);
+    if (action?.startsWith('intro:')) {
+      // Frames of the cold-launch intro, timed from first paint.
+      await page.waitForSelector('[data-testid="launch-intro"]');
+      await page.waitForTimeout(Number(action.slice(6)));
+    } else {
+      await page.waitForTimeout(2400);
+    }
     if (action === 'scroll') {
       await page.mouse.move(206, 500);
       await page.mouse.wheel(0, 900);

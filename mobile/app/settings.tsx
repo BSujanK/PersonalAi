@@ -14,6 +14,7 @@ import {
   switchColors,
   TextField,
 } from '../src/components/ui';
+import { Spark } from '../src/components/brand/Spark';
 import { Screen } from '../src/components/Screen';
 import { health } from '../src/lib/api';
 import {
@@ -298,7 +299,11 @@ export default function Settings() {
         title="About"
         footer="A private assistant that runs on your laptop. Nothing leaves it without your approval, and the language model only ever sees redacted text."
       >
-        <ListRow title="PersonalAi" value={Constants.expoConfig?.version ?? ''} />
+        <ListRow
+          leading={<Spark size={32} />}
+          title="PersonalAi"
+          value={Constants.expoConfig?.version ?? ''}
+        />
       </ListSection>
     </Screen>
   );

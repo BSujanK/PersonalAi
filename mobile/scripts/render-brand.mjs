@@ -23,10 +23,10 @@ const GLOW = '#2A1260';
 const stops = SPARK_STOPS.map(([o, c]) => `<stop offset="${o}" stop-color="${c}"/>`).join('');
 
 /** The mark at `scale` of the canvas, centred. `fill` overrides the gradient (e.g. white). */
-function mark(scale, fill) {
+function mark(scale, fill, opacity = 1) {
   const paint = fill ?? 'url(#spark)';
   const offset = (100 - 100 * scale) / 2;
-  return `<g transform="translate(${offset} ${offset}) scale(${scale})">${SPARK_RAYS.map(
+  return `<g opacity="${opacity}" transform="translate(${offset} ${offset}) scale(${scale})">${SPARK_RAYS.map(
     (d) => `<path d="${d}" fill="${paint}"/>`,
   ).join('')}<circle cx="50" cy="50" r="${SPARK_CORE_R}" fill="${paint}"/></g>`;
 }
@@ -49,7 +49,9 @@ const OUTPUTS = [
   ['adaptive-icon.png', 1024, mark(0.5)],
   ['adaptive-icon-background.png', 1024, background],
   ['adaptive-icon-monochrome.png', 1024, mark(0.5, '#FFFFFF')],
-  ['splash-icon.png', 1024, mark(0.9)],
+  // Faint on purpose: the in-app intro starts from exactly this and lights the rays one by one
+  // (src/components/brand/LaunchIntro.tsx, FAINT in Spark.tsx).
+  ['splash-icon.png', 1024, mark(0.9, undefined, 0.3)],
   // Android tints the small icon itself; it must be white on transparent.
   ['notification-icon.png', 96, mark(0.92, '#FFFFFF')],
 ];

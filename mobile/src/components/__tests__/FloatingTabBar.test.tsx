@@ -8,8 +8,8 @@ jest.mock('../../lib/AgentStatus', () => ({
 }));
 jest.mock('../../lib/haptics', () => ({ haptics: { selection: jest.fn() } }));
 
-const NAMES = ['index', 'chat', 'money', 'approvals', 'more'];
-const TITLES = ['Home', 'Chat', 'Money', 'Approvals', 'More'];
+const NAMES = ['money', 'index', 'approvals'];
+const TITLES = ['Money', 'Chat', 'Approvals'];
 
 function props(index: number) {
   const navigate = jest.fn();
@@ -31,21 +31,20 @@ function props(index: number) {
 }
 
 describe('FloatingTabBar', () => {
-  it('labels every tab, marks the active one and badges pending approvals', async () => {
-    await render(<FloatingTabBar {...props(0).props} />);
-    expect(screen.getByLabelText('Home').props.accessibilityState).toEqual({ selected: true });
-    for (const label of ['Chat', 'Money', 'More'])
-      expect(screen.getByLabelText(label)).toBeTruthy();
-    expect(screen.getByLabelText('Approvals, 2 pending')).toBeTruthy();
+  it('has exactly Money | Chat | Approvals, Chat active by default, with the badge', async () => {
+    await render(<FloatingTabBar {...props(1).props} />);
+    const tabs = screen.getAllByRole('tab').map((t) => t.props.accessibilityLabel as string);
+    expect(tabs).toEqual(['Money', 'Chat', 'Approvals, 2 pending']);
+    expect(screen.getByLabelText('Chat').props.accessibilityState).toEqual({ selected: true });
   });
 
   it('navigates to another tab and ignores a press on the current one', async () => {
-    const { props: p, navigate } = props(0);
+    const { props: p, navigate } = props(1);
     await render(<FloatingTabBar {...p} />);
     await fireEvent.press(screen.getByLabelText('Money'));
     expect(navigate).toHaveBeenCalledWith('money', undefined);
     navigate.mockClear();
-    await fireEvent.press(screen.getByLabelText('Home'));
+    await fireEvent.press(screen.getByLabelText('Chat'));
     expect(navigate).not.toHaveBeenCalled();
   });
 });
