@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -152,6 +152,8 @@ export default function Money() {
   const styles = useThemedStyles(makeStyles);
   const { palette } = useTheme();
   const [period, setPeriod] = useState<Period>('this_month');
+  const pills = useRef<ScrollView>(null);
+  const pillsPlaced = useRef(false);
   const [balances, setBalances] = useState<Balance[]>([]);
   const [summary, setSummary] = useState<SpendSummary | null>(null);
   const [txns, setTxns] = useState<Txn[]>([]);
@@ -217,18 +219,24 @@ export default function Money() {
 
       <View style={styles.periodsBleed}>
         <ScrollView
+          ref={pills}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.periods}
           accessibilityLabel="Period"
         >
           {PERIODS.map((p) => (
-            <Chip
+            <View
               key={p}
-              label={periodLabel(p)}
-              selected={p === period}
-              onPress={() => setPeriod(p)}
-            />
+              onLayout={(e) => {
+                // Bring the starting period into view once; later choices are where the finger is.
+                if (p !== period || pillsPlaced.current) return;
+                pillsPlaced.current = true;
+                pills.current?.scrollTo({ x: e.nativeEvent.layout.x - space.md, animated: false });
+              }}
+            >
+              <Chip label={periodLabel(p)} selected={p === period} onPress={() => setPeriod(p)} />
+            </View>
           ))}
         </ScrollView>
       </View>

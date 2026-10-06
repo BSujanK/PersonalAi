@@ -12,6 +12,7 @@ import {
   Loading,
   Notice,
   TextField,
+  switchColors,
 } from '../src/components/ui';
 import { alertsPermitted, requestAlertPermission, routeForTarget } from '../src/lib/alerts';
 import {
@@ -150,10 +151,7 @@ export default function Alerts() {
     if (alerts && timeValid) void saveAlerts({ ...alerts, briefing_time: briefingTime }, false);
   };
 
-  const switchColors = {
-    trackColor: { true: palette.accentStrong, false: palette.border },
-    thumbColor: palette.accentOn,
-  };
+  const switches = switchColors(palette);
 
   return (
     <Screen
@@ -234,7 +232,7 @@ export default function Alerts() {
               value={alerts?.important_mail ?? false}
               onValueChange={(v) => toggleAlert('important_mail', v)}
               disabled={!alerts}
-              {...switchColors}
+              {...switches}
             />
           }
         />
@@ -247,7 +245,7 @@ export default function Alerts() {
               value={alerts?.deadlines ?? false}
               onValueChange={(v) => toggleAlert('deadlines', v)}
               disabled={!alerts}
-              {...switchColors}
+              {...switches}
             />
           }
         />
@@ -260,7 +258,7 @@ export default function Alerts() {
               value={alerts?.briefing ?? false}
               onValueChange={(v) => toggleAlert('briefing', v)}
               disabled={!alerts}
-              {...switchColors}
+              {...switches}
             />
           }
         />

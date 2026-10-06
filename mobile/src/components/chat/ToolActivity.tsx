@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import {
   summariseTools,
@@ -15,6 +15,7 @@ import {
   useThemedStyles,
   type Palette,
 } from '../../theme';
+import { Spark } from '../brand/Spark';
 import { Icon } from '../Icon';
 
 const makeStyles = (p: Palette) => ({
@@ -48,7 +49,7 @@ const makeStyles = (p: Palette) => ({
 
 function StatusIcon({ status }: { status: Activity['status'] }) {
   const { palette } = useTheme();
-  if (status === 'started') return <ActivityIndicator size="small" color={palette.accentText} />;
+  if (status === 'started') return <Spark size={16} thinking />;
   if (status === 'failed') return <Icon name="alert-circle" size={16} color={palette.danger} />;
   return <Icon name="check" size={16} color={palette.ok} />;
 }

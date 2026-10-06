@@ -174,6 +174,7 @@ const makeStyles = (p: Palette) => ({
     color: p.text,
     fontVariant: ['tabular-nums' as const],
   },
+  rowValueMuted: { ...type.footnote, color: p.textMuted },
   rowMeta: { alignItems: 'flex-end' as const, gap: space.xs, flexShrink: 0 },
   iconTile: {
     width: TILE,
@@ -669,6 +670,7 @@ export function ListRow({
   subtitle,
   value,
   dot,
+  valueMuted,
   meta,
   icon,
   iconTint,
@@ -695,6 +697,8 @@ export function ListRow({
   value?: string | null;
   /** A status dot beside the value: green/red for money in/out. */
   dot?: string;
+  /** A quiet value (a time) instead of a strong one (an amount). */
+  valueMuted?: boolean;
   /** Trailing small content, e.g. a badge. */
   meta?: ReactNode;
   icon?: IconName;
@@ -747,7 +751,7 @@ export function ListRow({
       {value ? (
         <View style={styles.rowTrail}>
           <View style={styles.rowValueLine}>
-            <Text numberOfLines={1} style={styles.rowValue}>
+            <Text numberOfLines={1} style={[styles.rowValue, valueMuted && styles.rowValueMuted]}>
               {value}
             </Text>
             {dot ? <StatusDot color={dot} /> : null}
@@ -873,6 +877,18 @@ export function Notice({
       </View>
     </View>
   );
+}
+
+/**
+ * Switch colours for the violet theme. `activeThumbColor` is read by react-native-web only (the
+ * screenshot harness); Android uses `thumbColor`.
+ */
+export function switchColors(p: Palette) {
+  return {
+    trackColor: { true: p.accentStrong, false: p.border },
+    thumbColor: p.accentOn,
+    activeThumbColor: p.accentOn,
+  };
 }
 
 // --- Segmented control ------------------------------------------------------------------------

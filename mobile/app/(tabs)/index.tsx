@@ -170,6 +170,7 @@ function MailRow({
       subtitle={mail.subject || '(no subject)'}
       subtitleLines={1}
       value={time || null}
+      valueMuted
       dot={unread ? palette.accent : undefined}
       onPress={onPress}
       accessibilityLabel={`${unread ? 'Unread mail' : 'Mail'} from ${sender}: ${mail.subject}. ${time}`}
@@ -462,7 +463,8 @@ export default function HomeScreen() {
                   icon="calendar"
                   title={String(e.summary ?? '')}
                   subtitle={e.location || null}
-                  value={shortDateTime(e.start) || null}
+                  value={rowTime(e.start) || null}
+                  valueMuted
                   accessibilityHint="Asks the agent about this event"
                   onPress={() => openNewChat(router, askAboutEvent(e))}
                 />

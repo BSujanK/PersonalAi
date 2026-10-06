@@ -11,6 +11,7 @@ import {
   ListSection,
   Notice,
   SegmentedControl,
+  switchColors,
   TextField,
 } from '../src/components/ui';
 import { Screen } from '../src/components/Screen';
@@ -287,8 +288,7 @@ export default function Settings() {
               value={push}
               onValueChange={(v) => void togglePush(v)}
               disabled={!pushAvailable()}
-              trackColor={{ true: palette.accentStrong, false: palette.border }}
-              thumbColor={palette.accentOn}
+              {...switchColors(palette)}
             />
           }
         />

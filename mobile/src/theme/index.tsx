@@ -66,7 +66,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    Appearance.setColorScheme(preference === 'system' ? 'unspecified' : preference);
+    // Absent on react-native-web (the screenshot harness); there the media query decides.
+    Appearance.setColorScheme?.(preference === 'system' ? 'unspecified' : preference);
   }, [preference]);
 
   const setPreference = useCallback((next: ThemePreference) => {
