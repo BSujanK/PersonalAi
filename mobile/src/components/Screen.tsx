@@ -21,7 +21,6 @@ import {
   useThemedStyles,
   type Palette,
 } from '../theme';
-import { Spark } from './brand/Spark';
 import { GlowBackground } from './GlowBackground';
 import { useTabBarSpace } from './nav/FloatingTabBar';
 import { COLUMN_MAX, IconButton } from './ui';
@@ -58,9 +57,8 @@ const makeStyles = (p: Palette) => ({
     backgroundColor: p.separator,
   },
   largeTitleWrap: { paddingTop: space.xs, gap: space.xs },
-  largeTitle: { ...type.largeTitle, color: p.text },
-  subtitle: { ...type.subhead, color: p.textMuted },
-  refreshing: { alignItems: 'center' as const, paddingTop: space.xs },
+  largeTitle: { ...type.display, color: p.text },
+  subtitle: { ...type.subheadline, color: p.textMuted },
 });
 
 /** Pops back to where the screen was opened from. */
@@ -229,11 +227,6 @@ export function Screen({
             ) : undefined
           }
         >
-          {refreshing ? (
-            <View style={styles.refreshing} accessibilityLabel="Refreshing" accessible>
-              <Spark size={28} state="thinking" />
-            </View>
-          ) : null}
           {title && !header ? (
             <Animated.View
               style={[styles.largeTitleWrap, largeStyle, { transformOrigin: 'left center' }]}

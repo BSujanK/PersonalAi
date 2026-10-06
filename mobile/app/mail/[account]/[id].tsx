@@ -47,10 +47,10 @@ const makeStyles = (p: Palette) => ({
   avatarText: { ...type.headline, color: p.accentText },
   senderMain: { flex: 1, gap: 2 },
   senderName: { ...type.headline, color: p.text },
-  senderAddr: { ...type.subhead, color: p.textMuted },
+  senderAddr: { ...type.subheadline, color: p.textMuted },
   date: { ...type.footnote, color: p.textMuted },
   people: { gap: space.xs },
-  peopleLine: { ...type.subhead, color: p.textMuted },
+  peopleLine: { ...type.subheadline, color: p.textMuted },
   peopleLabel: { fontFamily: fontFamily.bodySemiBold, color: p.text },
   tags: { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: space.sm },
   // Side by side when they fit, stacked at large text sizes or on narrow phones.

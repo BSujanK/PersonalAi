@@ -32,12 +32,11 @@ export const motion = {
   sparkTurnMs: 2800,
   /** One run of the wave round the spark's rays while thinking. */
   sparkPulseMs: 1400,
-  /** Half a breath of the idle spark on Chat's empty state. Slow enough to read as calm. */
-  breatheMs: 2200,
   /** The quick settle back to rest when a reply finishes. */
   settleMs: 420,
-  /** Cold-launch intro: rays light up, then the mark glides into the Chat header. */
-  introRevealMs: 650,
+  /** Cold-launch intro: the mark spins in and settles, glows, then glides into the header. */
+  introSpinMs: 900,
+  introFadeInMs: 420,
   introGlowMs: 520,
   introGlideMs: 480,
   /** Under Reduce Motion the intro is the still mark and a short fade. */

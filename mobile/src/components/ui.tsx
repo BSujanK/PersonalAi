@@ -73,7 +73,7 @@ const makeStyles = (p: Palette) => ({
     backgroundColor: p.accent,
   },
   title: { ...type.title1, color: p.text },
-  section: { ...type.title3, fontSize: 18, lineHeight: 24, color: p.text },
+  section: { ...type.title3, color: p.text },
   card: {
     backgroundColor: p.surface,
     borderRadius: radius.card,
@@ -85,7 +85,7 @@ const makeStyles = (p: Palette) => ({
   body: { ...type.body, color: p.text },
   caption: { ...type.footnote, color: p.textMuted },
   muted: { color: p.textMuted },
-  error: { ...type.subhead, color: p.danger },
+  error: { ...type.subheadline, color: p.danger },
   button: {
     borderRadius: radius.pill,
     minHeight: 52,
@@ -99,7 +99,7 @@ const makeStyles = (p: Palette) => ({
     borderColor: 'transparent',
   },
   buttonCompact: { minHeight: MIN_TARGET, paddingVertical: space.sm, paddingHorizontal: space.md },
-  buttonText: { ...type.headline, fontSize: 16 },
+  buttonText: { ...type.headline },
   chip: {
     minHeight: 38,
     justifyContent: 'center' as const,
@@ -110,7 +110,7 @@ const makeStyles = (p: Palette) => ({
     borderColor: p.glassBorder,
   },
   chipOn: { backgroundColor: p.accentStrong, borderColor: p.accent },
-  chipText: { ...type.subhead, fontFamily: fontFamily.bodyMedium, color: p.text },
+  chipText: { ...type.subheadline, fontFamily: fontFamily.bodyMedium, color: p.text },
   chipTextOn: { color: p.accentOn, fontFamily: fontFamily.bodySemiBold },
   input: {
     ...type.body,
@@ -136,7 +136,7 @@ const makeStyles = (p: Palette) => ({
     paddingHorizontal: space.xs,
     paddingBottom: space.sm + space.xs,
   },
-  sectionAction: { ...type.subhead, fontFamily: fontFamily.bodyMedium, color: p.accentText },
+  sectionAction: { ...type.subheadline, fontFamily: fontFamily.bodyMedium, color: p.accentText },
   sectionFooter: {
     ...type.footnote,
     color: p.textMuted,
@@ -168,12 +168,7 @@ const makeStyles = (p: Palette) => ({
     maxWidth: '50%' as const,
   },
   rowValueLine: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6 },
-  rowValue: {
-    ...type.callout,
-    fontFamily: fontFamily.bodySemiBold,
-    color: p.text,
-    fontVariant: ['tabular-nums' as const],
-  },
+  rowValue: { ...type.number, color: p.text },
   rowValueMuted: { ...type.footnote, color: p.textMuted },
   rowMeta: { alignItems: 'flex-end' as const, gap: space.xs, flexShrink: 0 },
   iconTile: {
@@ -186,7 +181,7 @@ const makeStyles = (p: Palette) => ({
   },
   dot: { width: 8, height: 8, borderRadius: 4 },
   emptyRow: {
-    ...type.subhead,
+    ...type.subheadline,
     color: p.textMuted,
     padding: space.md,
     backgroundColor: p.surface,
@@ -218,8 +213,8 @@ const makeStyles = (p: Palette) => ({
     borderRadius: radius.lg,
   },
   noticeMain: { flex: 1, gap: 2 },
-  noticeTitle: { ...type.subhead, fontFamily: fontFamily.bodySemiBold },
-  noticeBody: { ...type.subhead },
+  noticeTitle: { ...type.subheadline, fontFamily: fontFamily.bodySemiBold },
+  noticeBody: { ...type.subheadline },
   // Segmented control
   segmented: {
     flexDirection: 'row' as const,
@@ -242,7 +237,7 @@ const makeStyles = (p: Palette) => ({
     transitionTimingFunction: easeOut,
   },
   segmentOn: { backgroundColor: p.accentStrong },
-  segmentText: { ...type.subhead, fontFamily: fontFamily.bodyMedium, color: p.textMuted },
+  segmentText: { ...type.subheadline, fontFamily: fontFamily.bodyMedium, color: p.textMuted },
   segmentTextOn: { fontFamily: fontFamily.bodySemiBold, color: p.accentOn },
 });
 

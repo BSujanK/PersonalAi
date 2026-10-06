@@ -16,8 +16,6 @@ import { openNewChat } from '../../lib/chatRoutes';
 import { haptics } from '../../lib/haptics';
 import type { ChatMessage } from '../../lib/chatState';
 import { useConversations } from '../../lib/Conversations';
-import { loadSpendHero, type SpendHero } from '../../lib/spend';
-import { usePolling } from '../../lib/usePolling';
 import { useChatSession } from '../../lib/useChatSession';
 import {
   MAX_CHROME_SCALE,
@@ -30,8 +28,8 @@ import {
 } from '../../theme';
 import { useIntro } from '../brand/LaunchIntro';
 import { Spark } from '../brand/Spark';
+import { Wordmark } from '../brand/Wordmark';
 import { GlowBackground } from '../GlowBackground';
-import { useTabBarSpace } from '../nav/FloatingTabBar';
 import {
   Body,
   Button,
@@ -48,11 +46,10 @@ import { EmptyState, type EmptyTarget } from './EmptyState';
 import { AssistantMessage, UserMessage } from './Message';
 
 const NEAR_BOTTOM_PX = 160;
-const SPEND_POLL_MS = 120_000;
 
 const makeStyles = (p: Palette) => ({
   screen: { flex: 1 },
-  who: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: space.sm + space.xs },
+  who: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: space.xs },
   whoText: { flex: 1, gap: 1 },
   name: { ...type.headline, color: p.text },
   statusLine: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6 },
@@ -86,13 +83,14 @@ function useKeyboardOpen(): boolean {
   return open;
 }
 
-const HEADER_SPARK = 34;
+const HEADER_SPARK = 30;
 
 /**
- * The agent's mark at the top right of Chat: opens More. It is also where the cold-launch intro
- * lands, so it reports its on-screen position and stays hidden until the intro arrives.
+ * The agent's mark at the left of the Chat header, beside the wordmark: opens More. It is also
+ * where the cold-launch intro lands, so it reports its on-screen position and stays hidden until
+ * the intro arrives. It never animates here; only the reply avatar shows thinking.
  */
-function HeaderSpark({ thinking, onPress }: { thinking: boolean; onPress: () => void }) {
+function HeaderSpark({ onPress }: { onPress: () => void }) {
   const intro = useIntro();
   const ref = useRef<View>(null);
   const { setTarget } = intro;
@@ -120,7 +118,7 @@ function HeaderSpark({ thinking, onPress }: { thinking: boolean; onPress: () => 
         collapsable={false}
         style={{ opacity: intro.active ? 0 : 1 }}
       >
-        <Spark size={HEADER_SPARK} state={thinking ? 'thinking' : 'still'} />
+        <Spark size={HEADER_SPARK} />
       </View>
     </PressableScale>
   );
@@ -140,24 +138,13 @@ export function ChatView({
   const status = useAgentStatus();
   const conversations = useConversations();
   const { setActiveId, refresh, items } = conversations;
-  const tabSpace = useTabBarSpace();
   const keyboardOpen = useKeyboardOpen();
   const list = useRef<FlatList<ChatMessage>>(null);
   const stick = useRef(true);
 
-  // The empty chat shows today's spend; aggregates only, refreshed every couple of minutes.
-  const [spend, setSpend] = useState<SpendHero | null | undefined>(undefined);
-  const loadSpend = useCallback(() => loadSpendHero().then(setSpend), []);
-  usePolling(loadSpend, SPEND_POLL_MS);
   const openFromEmpty = useCallback(
     (target: EmptyTarget) => {
-      if (target === 'files') router.push('/files');
-      else if (target === 'today') router.push('/today');
-      else
-        router.push({
-          pathname: '/today',
-          params: { focus: target === 'mail' ? 'mail' : 'events' },
-        });
+      if (target === 'today') router.push('/today');
     },
     [router],
   );
@@ -191,7 +178,8 @@ export function ChatView({
     [sendTurn],
   );
 
-  const title = items.find((c) => c.id === conversationId)?.title ?? 'PersonalAi';
+  const conversationTitle = items.find((c) => c.id === conversationId)?.title ?? null;
+  const title = conversationTitle ?? 'PersonalAi';
   // A long turn can make /health time out too; while a turn runs that is "still working", not
   // offline. Offline is shown only when /health fails with nothing in flight.
   const statusText = session.busy
@@ -220,24 +208,24 @@ export function ChatView({
           <ScreenHeader
             title={title}
             left={
-              <View
-                style={styles.whoText}
-                accessible
-                accessibilityLabel={`${title}. ${statusText}`}
-              >
-                <Text
-                  accessibilityRole="header"
-                  numberOfLines={1}
-                  maxFontSizeMultiplier={MAX_CHROME_SCALE}
-                  style={styles.name}
+              <View style={styles.who}>
+                <HeaderSpark onPress={() => router.push('/more')} />
+                <View
+                  style={styles.whoText}
+                  accessible
+                  accessibilityLabel={`PersonalAi. ${statusText}${conversationTitle ? `. ${conversationTitle}` : ''}`}
                 >
-                  {title}
-                </Text>
-                <View style={styles.statusLine}>
-                  <StatusDot color={statusColor} />
-                  <Text style={styles.statusText} maxFontSizeMultiplier={MAX_CHROME_SCALE}>
-                    {statusText}
-                  </Text>
+                  <Wordmark />
+                  <View style={styles.statusLine}>
+                    <StatusDot color={statusColor} />
+                    <Text
+                      style={styles.statusText}
+                      numberOfLines={1}
+                      maxFontSizeMultiplier={MAX_CHROME_SCALE}
+                    >
+                      {conversationTitle ? `${statusText} · ${conversationTitle}` : statusText}
+                    </Text>
+                  </View>
                 </View>
               </View>
             }
@@ -257,7 +245,6 @@ export function ChatView({
                     onPress={() => openNewChat(router)}
                   />
                 ) : null}
-                <HeaderSpark thinking={session.busy} onPress={() => router.push('/more')} />
               </>
             }
           />
@@ -302,13 +289,12 @@ export function ChatView({
                 <EmptyState
                   onPick={send}
                   onOpen={openFromEmpty}
-                  spend={spend}
                   disabled={status.online === false || session.busy}
                 />
               ) : null
             }
           />
-          <View style={[styles.column, { paddingBottom: keyboardOpen ? 0 : tabSpace - space.md }]}>
+          <View style={[styles.column, { paddingBottom: keyboardOpen ? 0 : space.xs }]}>
             <Composer
               initialDraft={draft}
               busy={session.busy}

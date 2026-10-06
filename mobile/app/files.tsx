@@ -33,7 +33,7 @@ const makeStyles = (p: Palette) => ({
   action: { flexGrow: 1, flexBasis: 170 },
   intro: { alignItems: 'center' as const, gap: space.sm, paddingVertical: space.xl },
   introTitle: { ...type.title3, color: p.text },
-  introText: { ...type.subhead, color: p.textMuted, textAlign: 'center' as const },
+  introText: { ...type.subheadline, color: p.textMuted, textAlign: 'center' as const },
 });
 
 const ACTIONS_ENTER = FadeIn.duration(motion.stateMs);

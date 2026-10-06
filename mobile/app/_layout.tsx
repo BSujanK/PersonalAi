@@ -1,7 +1,9 @@
-import { Inter_400Regular } from '@expo-google-fonts/inter/400Regular';
-import { Inter_500Medium } from '@expo-google-fonts/inter/500Medium';
-import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
-import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
+import { HankenGrotesk_400Regular } from '@expo-google-fonts/hanken-grotesk/400Regular';
+import { HankenGrotesk_500Medium } from '@expo-google-fonts/hanken-grotesk/500Medium';
+import { HankenGrotesk_600SemiBold } from '@expo-google-fonts/hanken-grotesk/600SemiBold';
+import { HankenGrotesk_700Bold } from '@expo-google-fonts/hanken-grotesk/700Bold';
+import { Newsreader_500Medium } from '@expo-google-fonts/newsreader/500Medium';
+import { Newsreader_600SemiBold } from '@expo-google-fonts/newsreader/600SemiBold';
 import { useFonts } from 'expo-font';
 import * as Notifications from 'expo-notifications';
 import { router, Stack } from 'expo-router';
@@ -113,10 +115,12 @@ function Themed() {
   const { palette, scheme } = useTheme();
   // Fonts are bundled, so this resolves almost at once. On a load error the system fonts are used.
   const [fontsLoaded, fontError] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
+    Newsreader_500Medium,
+    Newsreader_600SemiBold,
+    HankenGrotesk_400Regular,
+    HankenGrotesk_500Medium,
+    HankenGrotesk_600SemiBold,
+    HankenGrotesk_700Bold,
   });
   return (
     <View style={{ flex: 1, backgroundColor: palette.bg }}>

@@ -32,7 +32,7 @@ const makeStyles = (p: Palette) => ({
     borderColor: p.glassBorder,
     maxWidth: '100%' as const,
   },
-  summaryText: { ...type.subhead, flexShrink: 1, color: p.textMuted },
+  summaryText: { ...type.subheadline, flexShrink: 1, color: p.textMuted },
   list: { gap: space.xs + 2, paddingLeft: space.xs },
   chip: {
     flexDirection: 'row' as const,
@@ -49,7 +49,8 @@ const makeStyles = (p: Palette) => ({
 
 function StatusIcon({ status }: { status: Activity['status'] }) {
   const { palette } = useTheme();
-  if (status === 'started') return <Spark size={16} state="thinking" />;
+  // The reply avatar carries the thinking motion; a running step is a still, dimmed mark.
+  if (status === 'started') return <Spark size={16} style={{ opacity: 0.6 }} />;
   if (status === 'failed') return <Icon name="alert-circle" size={16} color={palette.danger} />;
   return <Icon name="check" size={16} color={palette.ok} />;
 }

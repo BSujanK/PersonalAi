@@ -106,8 +106,8 @@ describe('theme tokens', () => {
   });
 
   it('tightens tracking as type grows', () => {
-    expect(type.hero.letterSpacing).toBeLessThan(type.largeTitle.letterSpacing as number);
-    expect(type.largeTitle.letterSpacing).toBeLessThan(type.title2.letterSpacing as number);
+    expect(type.numberHero.letterSpacing).toBeLessThan(type.display.letterSpacing as number);
+    expect(type.display.letterSpacing).toBeLessThan(type.title2.letterSpacing as number);
     expect(type.title2.letterSpacing).toBeLessThan(type.footnote.letterSpacing as number);
     expect(type.caption.letterSpacing).toBeGreaterThan(0);
   });

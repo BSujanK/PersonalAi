@@ -27,7 +27,7 @@ const makeStyles = (p: Palette) => ({
   doneTitle: { ...type.headline, color: p.text, flex: 1 },
   empty: { alignItems: 'center' as const, gap: space.sm, paddingVertical: space.xxl },
   emptyTitle: { ...type.title3, color: p.text },
-  emptyText: { ...type.subhead, color: p.textMuted, textAlign: 'center' as const },
+  emptyText: { ...type.subheadline, color: p.textMuted, textAlign: 'center' as const },
 });
 
 export default function Approvals() {

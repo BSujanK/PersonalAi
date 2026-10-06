@@ -1,5 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
+import { StyleSheet } from 'react-native';
+
+import { lightPalette } from '../../theme';
 
 import { FloatingTabBar } from '../nav/FloatingTabBar';
 
@@ -46,5 +49,15 @@ describe('FloatingTabBar', () => {
     navigate.mockClear();
     await fireEvent.press(screen.getByLabelText('Chat'));
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('sits on an opaque band in the base colour, down to the bottom edge', async () => {
+    await render(<FloatingTabBar {...props(1).props} />);
+    const band = screen.getByTestId('tab-band');
+    const style = StyleSheet.flatten(band.props.style);
+    // Tests render without a ThemeProvider, so the default (light) palette applies.
+    expect(style.backgroundColor).toBe(lightPalette.bg);
+    expect(style.position).toBeUndefined(); // in the layout, not floating over content
+    expect(style.paddingBottom).toBeGreaterThan(0);
   });
 });

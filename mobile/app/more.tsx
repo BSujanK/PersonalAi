@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { Text, View } from 'react-native';
 
 import { Spark } from '../src/components/brand/Spark';
+import { Wordmark } from '../src/components/brand/Wordmark';
 import { Screen } from '../src/components/Screen';
 import { Card, ListRow, ListSection, StatusDot } from '../src/components/ui';
 import { useAgentStatus } from '../src/lib/AgentStatus';
@@ -11,7 +12,6 @@ import { space, type, useTheme, useThemedStyles, type Palette } from '../src/the
 const makeStyles = (p: Palette) => ({
   profile: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: space.md },
   profileMain: { flex: 1, gap: 2 },
-  name: { ...type.title3, color: p.text },
   line: { ...type.footnote, color: p.textMuted },
   statusLine: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: space.sm },
   footer: {
@@ -41,7 +41,7 @@ export default function More() {
       <Card style={styles.profile}>
         <Spark size={52} />
         <View style={styles.profileMain}>
-          <Text style={styles.name}>PersonalAi</Text>
+          <Wordmark />
           {pairing ? (
             <Text style={styles.line}>Device {pairing.deviceId.slice(0, 8).toUpperCase()}</Text>
           ) : null}

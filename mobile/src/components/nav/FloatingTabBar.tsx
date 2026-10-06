@@ -28,10 +28,12 @@ export const TAB_BAR_HEIGHT = 66;
 const BAR_GAP = 10;
 const PILL_INSET = 5;
 
-/** Space a tab screen leaves at the bottom so its last row clears the floating bar. */
+/**
+ * Bottom padding for a tab screen's scroll content. The bar is an opaque band in the layout
+ * (not floating over the content), so content already ends above it; this is breathing room only.
+ */
 export function useTabBarSpace(): number {
-  const insets = useSafeAreaInsets();
-  return TAB_BAR_HEIGHT + BAR_GAP + Math.max(insets.bottom, space.sm) + space.md;
+  return space.lg;
 }
 
 const ICONS: Record<string, IconName> = {
@@ -41,10 +43,12 @@ const ICONS: Record<string, IconName> = {
 };
 
 const makeStyles = (p: Palette) => ({
-  wrap: {
-    position: 'absolute' as const,
-    left: space.md,
-    right: space.md,
+  // An opaque band in the screen's base colour, down to the bottom edge (gesture/navigation
+  // inset included). It sits in the layout under the scene, so nothing scrolls behind it.
+  band: {
+    backgroundColor: p.bg,
+    paddingHorizontal: space.md,
+    paddingTop: BAR_GAP,
     alignItems: 'center' as const,
   },
   bar: {
@@ -104,9 +108,9 @@ const makeStyles = (p: Palette) => ({
 });
 
 /**
- * The floating pill tab bar. Tabs are peers, so the screens switch with no animation; only the
- * violet pill moves, on a spring that carries over if a second tab is chosen mid-flight. Hidden
- * while the keyboard is up so the composer sits directly on it.
+ * The pill tab bar, on an opaque band. Tabs are peers, so the screens switch with no animation;
+ * only the violet pill moves, on a spring that carries over if a second tab is chosen mid-flight.
+ * Hidden while the keyboard is up so the composer sits directly on it.
  */
 export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const styles = useThemedStyles(makeStyles);
@@ -155,8 +159,8 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
 
   return (
     <View
-      style={[styles.wrap, { bottom: Math.max(insets.bottom, space.sm) + BAR_GAP }]}
-      pointerEvents="box-none"
+      testID="tab-band"
+      style={[styles.band, { paddingBottom: Math.max(insets.bottom, space.sm) + BAR_GAP }]}
     >
       <View style={styles.bar} onLayout={onLayout} accessibilityRole="tablist">
         {slot > 0 ? (

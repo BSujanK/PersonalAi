@@ -52,7 +52,7 @@ const makeStyles = (p: Palette) => ({
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
   },
-  avatarText: { ...type.subhead, fontFamily: fontFamily.bodySemiBold, color: p.accentText },
+  avatarText: { ...type.subheadline, fontFamily: fontFamily.bodySemiBold, color: p.accentText },
 });
 
 interface Inbox {

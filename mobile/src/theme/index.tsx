@@ -14,6 +14,8 @@ import { getJson, setJson } from '../lib/prefs';
 import { darkPalette, lightPalette, type Palette } from './palette';
 
 export {
+  familyFor,
+  FONT_FACES,
   fontFamily,
   MAX_CHROME_SCALE,
   MIN_TARGET,
@@ -22,7 +24,9 @@ export {
   size,
   space,
   type,
+  TYPE_SCALE,
 } from './typography';
+export type { TypeName, TypeSpec } from './typography';
 export { easeInOut, easeOut, motion, timingEaseOut, timingLinear, timingSine } from './motion';
 export { brand, darkPalette, lightPalette } from './palette';
 export type { Palette } from './palette';

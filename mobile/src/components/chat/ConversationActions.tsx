@@ -3,7 +3,7 @@ import { Modal, Pressable, Text, View } from 'react-native';
 
 import { errorMessage } from '../../lib/format';
 import type { ConversationSummary } from '../../lib/api';
-import { fontFamily, MIN_TARGET, size, useTheme, useThemedStyles, type Palette } from '../../theme';
+import { fontFamily, MIN_TARGET, type, useTheme, useThemedStyles, type Palette } from '../../theme';
 import { Icon, type IconName } from '../Icon';
 import { Button, ErrorText, TextField } from '../ui';
 
@@ -18,8 +18,7 @@ const makeStyles = (p: Palette) => ({
     gap: 4,
   },
   sheetTitle: {
-    fontFamily: fontFamily.display,
-    fontSize: size.title - 4,
+    ...type.title2,
     color: p.text,
     paddingHorizontal: 8,
     paddingBottom: 8,
@@ -33,7 +32,7 @@ const makeStyles = (p: Palette) => ({
     borderRadius: 12,
   },
   rowPressed: { backgroundColor: p.muted },
-  rowText: { fontFamily: fontFamily.bodyMedium, fontSize: size.body, color: p.text },
+  rowText: { ...type.body, fontFamily: fontFamily.bodyMedium, color: p.text },
   rowDanger: { color: p.danger },
   dialog: { gap: 12 },
   buttons: { flexDirection: 'row' as const, gap: 10 },

@@ -24,9 +24,9 @@ import { motion, timingEaseOut, timingSine, useTheme } from '../../theme';
 import { Spark } from './Spark';
 
 /**
- * Size of the mark at the start of the intro. It matches the faint mark on the native splash
- * (expo-splash-screen imageWidth 160, mark drawn at 90% of its canvas), so the hand-off from the
- * native splash to the intro shows no jump.
+ * Full size of the mark in the intro (at scale 1). The native splash (expo-splash-screen
+ * imageWidth 160, mark drawn at 90% of its canvas) shows it at the intro's starting pose: 60%
+ * size, turned back 1.15 turns, faint. So the hand-off from the native splash shows no jump.
  */
 export const INTRO_SIZE = 144;
 
@@ -51,9 +51,9 @@ const IntroContext = createContext<Intro>({ active: false, setTarget: () => unde
 export const useIntro = () => useContext(IntroContext);
 
 /**
- * Plays the cold-launch intro over the app: the spark lights up ray by ray with a spring
- * scale/rotation settle and a soft glow pulse, then shrinks and glides into its header position
- * while the screen underneath fades in. Transform and opacity only, on the UI thread; a tap skips
+ * Plays the cold-launch intro over the app: the spark spins in (about 1.15 turns, settling on a
+ * spring) while it scales from 60% to full size, fades and glows in, then shrinks and glides into
+ * its place at the left of the Chat header while Chat fades in underneath. Transform and opacity only, on the UI thread; a tap skips
  * it. With Reduce Motion it is the still mark and a short fade.
  */
 export function IntroProvider({ children }: { children: ReactNode }) {
@@ -121,7 +121,7 @@ function IntroOverlay({
     }
 
     // The glow swells as the last rays light, then eases back.
-    later(motion.introRevealMs * 0.4, () => {
+    later(motion.introSpinMs * 0.35, () => {
       glow.set(
         withSequence(
           withTiming(0.9, { duration: motion.introGlowMs / 2, easing: timingSine }),
@@ -131,7 +131,7 @@ function IntroOverlay({
       glowScale.set(withTiming(1.25, { duration: motion.introGlowMs, easing: timingSine }));
     });
 
-    const glideAt = motion.introRevealMs + motion.introGlowMs * 0.4;
+    const glideAt = motion.introSpinMs + motion.introGlowMs * 0.3;
     later(glideAt, () => {
       const size = target.tsize.get();
       const spring = { duration: motion.introGlideMs, dampingRatio: 1 };

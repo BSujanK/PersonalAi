@@ -79,32 +79,20 @@ describe('EmptyState', () => {
     expect(onPick).not.toHaveBeenCalled();
   });
 
-  it('opens Today from the digest chip and the Mail and Calendar cards', async () => {
+  it('opens Today from the digest chip; the other chips ask the agent', async () => {
     const onPick = jest.fn();
     const onOpen = jest.fn();
-    await render(<EmptyState onPick={onPick} onOpen={onOpen} spend={null} />);
+    await render(<EmptyState onPick={onPick} onOpen={onOpen} />);
     await fireEvent.press(screen.getByLabelText("Today's digest"));
-    await fireEvent.press(screen.getByLabelText('Mail, Inbox'));
-    await fireEvent.press(screen.getByLabelText('Calendar, Events'));
-    await fireEvent.press(screen.getByLabelText('Files, Laptop · Drive'));
-    expect(onOpen.mock.calls).toEqual([['today'], ['mail'], ['calendar'], ['files']]);
-    expect(onPick).not.toHaveBeenCalled();
-    // The News card asks the agent, like the News chip.
-    await fireEvent.press(screen.getByLabelText('News, Headlines'));
+    expect(onOpen).toHaveBeenCalledWith('today');
+    await fireEvent.press(screen.getByLabelText('News'));
     expect(onPick).toHaveBeenCalledWith(SUGGESTIONS.find((s) => s.label === 'News')?.prompt);
   });
 
-  it("shows today's spend as one readable figure", async () => {
-    await render(
-      <EmptyState
-        onPick={jest.fn()}
-        spend={{
-          label: 'Spent today',
-          amount: 1240,
-          delta: { text: '₹320 less than yesterday', direction: 'down', good: true },
-        }}
-      />,
-    );
-    expect(screen.getByLabelText('Spent today: ₹1,240. ₹320 less than yesterday')).toBeTruthy();
+  it('is a greeting and the chips only: no amount, no cards', async () => {
+    await render(<EmptyState onPick={jest.fn()} />);
+    expect(screen.queryByText(/₹/)).toBeNull();
+    expect(screen.queryByText('Spent today')).toBeNull();
+    expect(screen.queryByLabelText(/^Mail,/)).toBeNull();
   });
 });

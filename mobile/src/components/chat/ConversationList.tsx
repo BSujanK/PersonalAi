@@ -19,8 +19,6 @@ const makeStyles = (p: Palette) => ({
   top: { paddingHorizontal: space.md, gap: space.md, paddingBottom: space.sm },
   section: {
     ...type.title3,
-    fontSize: 18,
-    lineHeight: 24,
     color: p.text,
     paddingHorizontal: space.md + space.xs,
     paddingTop: space.sm,
@@ -28,7 +26,7 @@ const makeStyles = (p: Palette) => ({
   },
   list: { paddingHorizontal: space.md, paddingBottom: space.xxl, gap: space.sm },
   empty: {
-    ...type.subhead,
+    ...type.subheadline,
     color: p.textMuted,
     paddingHorizontal: space.md + space.xs,
     paddingVertical: space.md - space.xs,

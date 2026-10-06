@@ -30,11 +30,10 @@ const base = `http://127.0.0.1:${server.address().port}`;
 
 // [file, path, schemes, action?]
 const SHOTS = [
-  ['intro-1-rays', '/', ['dark'], 'intro:420'],
+  ['intro-1-spin', '/', ['dark'], 'intro:300'],
   ['intro-2-glow', '/', ['dark'], 'intro:900'],
-  ['intro-3-glide', '/', ['dark'], 'intro:1180'],
+  ['intro-3-glide', '/', ['dark'], 'intro:1300'],
   ['chat-home', '/', ['dark', 'light']],
-  ['chat-home-scrolled', '/', ['dark'], 'scroll'],
   ['chat-conversation', '/?c=c1', ['dark']],
   ['chat-thinking', '/', ['dark'], 'send'],
   ['more', '/more', ['dark', 'light']],

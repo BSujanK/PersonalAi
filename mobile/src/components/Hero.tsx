@@ -8,7 +8,6 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { formatInr } from '../lib/format';
-import type { Delta } from '../lib/spend';
 import {
   fontFamily,
   MAX_CHROME_SCALE,
@@ -86,17 +85,18 @@ export function CountUp({
 const makeStyles = (p: Palette) => ({
   root: { alignItems: 'center' as const, gap: space.xs, paddingVertical: space.md },
   label: {
-    ...type.subhead,
+    ...type.subheadline,
     fontFamily: fontFamily.bodyMedium,
     color: p.textMuted,
     letterSpacing: 0.2,
   },
-  figure: { ...type.hero, color: p.text, minWidth: 200 },
+  figure: { ...type.numberHero, color: p.text, minWidth: 200 },
   delta: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: space.xs },
   deltaText: { ...type.footnote, fontFamily: fontFamily.bodyMedium },
 });
 
-export type { Delta } from '../lib/spend';
+/** The small line under the figure. `good` picks green over red; flat lines stay muted. */
+export type Delta = { text: string; direction: 'up' | 'down' | 'flat'; good?: boolean };
 
 /**
  * The hero block: a small label over one very large figure, with a small delta line under it.

@@ -10,11 +10,12 @@ import { chromium } from 'playwright';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import {
-  SPARK_CORE_R,
-  SPARK_RAYS,
-  SPARK_STOPS,
-} from '../src/components/brand/sparkGeometry.ts';
+import { SPARK_CORE_R, SPARK_RAYS, SPARK_STOPS } from '../src/components/brand/sparkGeometry.ts';
+
+// Kept in step with INTRO_FROM_* in src/components/brand/Spark.tsx (a test checks they match).
+const INTRO_FROM_SCALE = 0.6;
+const INTRO_FROM_OPACITY = 0.3;
+const INTRO_FROM_DEG = -360 * 1.15;
 
 const ASSETS = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets');
 const INK = '#07060B';
@@ -23,10 +24,10 @@ const GLOW = '#2A1260';
 const stops = SPARK_STOPS.map(([o, c]) => `<stop offset="${o}" stop-color="${c}"/>`).join('');
 
 /** The mark at `scale` of the canvas, centred. `fill` overrides the gradient (e.g. white). */
-function mark(scale, fill, opacity = 1) {
+function mark(scale, fill, opacity = 1, rotate = 0) {
   const paint = fill ?? 'url(#spark)';
   const offset = (100 - 100 * scale) / 2;
-  return `<g opacity="${opacity}" transform="translate(${offset} ${offset}) scale(${scale})">${SPARK_RAYS.map(
+  return `<g opacity="${opacity}" transform="translate(${offset} ${offset}) scale(${scale}) rotate(${rotate} 50 50)">${SPARK_RAYS.map(
     (d) => `<path d="${d}" fill="${paint}"/>`,
   ).join('')}<circle cx="50" cy="50" r="${SPARK_CORE_R}" fill="${paint}"/></g>`;
 }
@@ -49,9 +50,13 @@ const OUTPUTS = [
   ['adaptive-icon.png', 1024, mark(0.5)],
   ['adaptive-icon-background.png', 1024, background],
   ['adaptive-icon-monochrome.png', 1024, mark(0.5, '#FFFFFF')],
-  // Faint on purpose: the in-app intro starts from exactly this and lights the rays one by one
-  // (src/components/brand/LaunchIntro.tsx, FAINT in Spark.tsx).
-  ['splash-icon.png', 1024, mark(0.9, undefined, 0.3)],
+  // The intro's starting pose (INTRO_FROM_* in src/components/brand/Spark.tsx): 60% size,
+  // turned back 1.15 turns, faint. The in-app intro spins it in from exactly here.
+  [
+    'splash-icon.png',
+    1024,
+    mark(0.9 * INTRO_FROM_SCALE, undefined, INTRO_FROM_OPACITY, INTRO_FROM_DEG),
+  ],
   // Android tints the small icon itself; it must be white on transparent.
   ['notification-icon.png', 96, mark(0.92, '#FFFFFF')],
 ];

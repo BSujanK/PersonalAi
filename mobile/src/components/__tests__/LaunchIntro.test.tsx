@@ -82,22 +82,19 @@ describe('LaunchIntro', () => {
 });
 
 describe('Spark', () => {
-  it.each<SparkState>(['still', 'idle', 'thinking', 'intro'])(
-    'renders the %s state',
-    async (state) => {
-      await render(
-        <View testID="mark">
-          <Spark size={40} state={state} />
-        </View>,
-      );
-      expect(screen.getByTestId('mark')).toBeTruthy();
-    },
-  );
+  it.each<SparkState>(['still', 'thinking', 'intro'])('renders the %s state', async (state) => {
+    await render(
+      <View testID="mark">
+        <Spark size={40} state={state} />
+      </View>,
+    );
+    expect(screen.getByTestId('mark')).toBeTruthy();
+  });
 
   it('settles from thinking back to still without throwing', async () => {
     const view = await render(<Spark size={40} state="thinking" />);
     await view.rerender(<Spark size={40} state="still" />);
-    await view.rerender(<Spark size={40} state="idle" />);
+    await view.rerender(<Spark size={40} state="intro" />);
     await act(async () => {
       jest.advanceTimersByTime(3000);
     });

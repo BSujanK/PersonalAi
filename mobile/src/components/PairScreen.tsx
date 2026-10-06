@@ -7,7 +7,7 @@ import { Screen } from './Screen';
 
 const makeStyles = (p: Palette) => ({
   hero: { alignItems: 'center' as const, gap: space.md, paddingTop: space.xl },
-  title: { ...type.largeTitle, color: p.text, textAlign: 'center' as const },
+  title: { ...type.display, color: p.text, textAlign: 'center' as const },
   subtitle: { ...type.callout, color: p.textMuted, textAlign: 'center' as const },
 });
 
