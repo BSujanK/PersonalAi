@@ -69,6 +69,12 @@ def test_every_route_but_pair_rejects_missing_malformed_and_revoked_tokens(world
         ("GET", "/finance/transactions"),
         ("POST", "/finance/category"),
         ("GET", "/mail/digest"),
+        ("GET", "/mail/inbox"),
+        ("GET", "/notifications"),
+        ("GET", "/notifications/settings"),
+        ("PUT", "/notifications/settings"),
+        ("GET", "/deadlines"),
+        ("POST", "/deadlines/x/undo"),
         ("GET", "/device/commands"),
         ("GET", "/health"),
     ):
@@ -99,7 +105,17 @@ def test_every_route_but_pair_rejects_missing_malformed_and_revoked_tokens(world
 
 
 def test_routes_work_with_the_live_token_so_the_rejections_are_meaningful(world: World) -> None:
-    for path in ("/health", "/today", "/approvals", "/finance/balances", "/mail/digest"):
+    for path in (
+        "/health",
+        "/today",
+        "/approvals",
+        "/finance/balances",
+        "/mail/digest",
+        "/mail/inbox",
+        "/notifications",
+        "/notifications/settings",
+        "/deadlines",
+    ):
         assert world.client.get(path, headers=world.headers).status_code == 200, path
 
 
@@ -231,6 +247,7 @@ def test_commands_refuse_insecure_keyring_backends(
 
 def _read_args(world: World, a: Accounts) -> dict[str, dict[str, Any]]:
     return {
+        "account_overview": {},
         "balances": {},
         "calendar_events": {},
         "classroom_announcements": {"account": a.college, "course_id": "c1"},

@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import json
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from agent.connectors.gmail import MailMessage
@@ -15,6 +15,13 @@ from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 
 CATEGORIES = ("important", "normal", "promo", "spam")
+# Inbox order: important first, unclassified between normal and promotions, spam last.
+CATEGORY_RANKS = {"important": 0, "normal": 1, "promo": 3, "spam": 4}
+UNCLASSIFIED_RANK = 2
+_RANK_SQL = (
+    "CASE category WHEN 'important' THEN 0 WHEN 'normal' THEN 1 WHEN 'promo' THEN 3 "
+    "WHEN 'spam' THEN 4 ELSE 2 END"
+)
 CATEGORY_SOURCES = ("sender_rule", "gmail", "rule", "llm", "feedback")
 _ADDR_HASH_LABEL = b"personalai/addr-hash/v1"
 
@@ -190,6 +197,45 @@ class MailStore:
         sql += " ORDER BY internal_date DESC, id LIMIT ?"
         params.append(limit)
         return [self._hydrate(r) for r in self._db.query(sql, params)]
+
+    def page(
+        self,
+        *,
+        categories: Sequence[str] | None = None,
+        before: tuple[int, int, str, str] | None = None,
+        limit: int,
+    ) -> list[StoredMail]:
+        """Inbox order (see ``CATEGORY_RANKS``, then newest first), ``limit`` messages after the
+        keyset ``before`` = (rank, internal_date, account, id). ``unclassified`` selects NULL."""
+        where = ["deleted = 0"]
+        params: list[object] = []
+        if categories:
+            named = [c for c in categories if c != "unclassified"]
+            clauses = [f"category IN ({','.join('?' for _ in named)})"] if named else []
+            if "unclassified" in categories:
+                clauses.append("category IS NULL")
+            where.append(f"({' OR '.join(clauses)})")
+            params.extend(named)
+        sql = f"SELECT *, {_RANK_SQL} AS rank FROM mail_messages WHERE {' AND '.join(where)}"  # noqa: S608
+        if before is not None:
+            rank, date, account, message_id = before
+            sql = (
+                f"SELECT * FROM ({sql}) WHERE rank > ? OR (rank = ? AND (internal_date < ? "  # noqa: S608
+                "OR (internal_date = ? AND (account > ? OR (account = ? AND id > ?)))))"
+            )
+            params.extend([rank, rank, date, date, account, account, message_id])
+        sql += " ORDER BY rank, internal_date DESC, account, id LIMIT ?"
+        params.append(limit)
+        return [self._hydrate(r) for r in self._db.query(sql, params)]
+
+    def category_counts(self) -> dict[str, int]:
+        """Every non-deleted message by category, with ``unclassified`` for those without one."""
+        counts = dict.fromkeys((*CATEGORIES, "unclassified"), 0)
+        for row in self._db.query(
+            "SELECT category, COUNT(*) AS n FROM mail_messages WHERE deleted = 0 GROUP BY category"
+        ):
+            counts[row["category"] or "unclassified"] = row["n"]
+        return counts
 
     # --- replied-to recipients ------------------------------------------------------------
 

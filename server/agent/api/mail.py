@@ -6,9 +6,12 @@ Nothing here goes to the LLM, so no redaction applies: the owner sees their own 
 
 from __future__ import annotations
 
+import base64
+import binascii
+import json
 import logging
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from pydantic import BaseModel, Field
@@ -19,6 +22,7 @@ from agent.core.audit import AuditLog
 from agent.mail.digest import build_digest
 from agent.mail.rules import Category
 from agent.mail.services import MailServices
+from agent.mail.store import CATEGORY_RANKS, UNCLASSIFIED_RANK, StoredMail
 from agent.store.models import Device
 
 log = logging.getLogger(__name__)
@@ -56,6 +60,68 @@ def feedback(
         mail.store.set_sender_rule(message.from_addr, body.category, "feedback")
         audit.record("mail_feedback", actor=f"device:{device.id}", detail=body.category)
     return {"status": "ok"}
+
+
+InboxCategory = Literal["important", "normal", "promo", "spam", "unclassified"]
+INBOX_DEFAULT_LIMIT = 50
+
+
+def _cursor_of(item: StoredMail) -> str:
+    rank = CATEGORY_RANKS.get(item.category or "", UNCLASSIFIED_RANK)
+    key = [rank, item.internal_date, item.account, item.id]
+    return base64.urlsafe_b64encode(json.dumps(key).encode()).decode().rstrip("=")
+
+
+def _parse_cursor(cursor: str) -> tuple[int, int, str, str]:
+    try:
+        key = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+        rank, date, account, message_id = key
+        if (
+            not all(isinstance(v, int) and not isinstance(v, bool) for v in (rank, date))
+            or not isinstance(account, str)
+            or not isinstance(message_id, str)
+            or not 0 <= rank <= max(CATEGORY_RANKS.values())
+        ):
+            raise ValueError("bad cursor")
+    except (ValueError, TypeError, binascii.Error):  # JSONDecodeError and unpacking are ValueError
+        raise HTTPException(status_code=400, detail="bad_cursor") from None
+    return rank, date, account, message_id
+
+
+@router.get("/mail/inbox")
+def inbox(
+    request: Request,
+    limit: Annotated[int, Query(ge=1, le=100)] = INBOX_DEFAULT_LIMIT,
+    cursor: Annotated[str | None, Query(max_length=1000)] = None,
+    category: Annotated[list[InboxCategory] | None, Query()] = None,
+) -> dict[str, Any]:
+    """Every synced message, important first, in pages. Stored data; nothing goes to the LLM."""
+    mail: MailServices = request.app.state.mail
+    before = _parse_cursor(cursor) if cursor else None
+    rows = mail.store.page(categories=category, before=before, limit=limit + 1)
+    page = rows[:limit]
+    return {
+        "items": [_inbox_item(m) for m in page],
+        "counts": mail.store.category_counts(),
+        "next_cursor": _cursor_of(page[-1]) if len(rows) > limit else None,
+    }
+
+
+def _inbox_item(mail: StoredMail) -> dict[str, Any]:
+    return {
+        "account": mail.account,
+        "id": mail.id,
+        "message_id": mail.id,
+        "thread_id": mail.thread_id,
+        "category": mail.category,
+        "from_name": mail.from_name,
+        "from_addr": mail.from_addr,
+        "subject": mail.subject,
+        "snippet": mail.snippet,
+        "reason": mail.reason,
+        "received": _iso(mail.internal_date),
+        "unread": "UNREAD" in mail.label_ids,
+    }
 
 
 def _addr(a: Address) -> dict[str, str]:

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 def _split(value: str) -> tuple[str, ...]:
@@ -35,6 +38,58 @@ def _positive_int(name: str, value: str) -> int:
     if number <= 0:
         raise ValueError(f"{name} must be a positive integer")
     return number
+
+
+MAX_NEWS_FEEDS = 20
+MAX_FEED_URL_CHARS = 500
+_HHMM = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
+
+
+def validate_feed_url(url: str) -> str:
+    """A news feed URL: https, a hostname (not an IP literal), no userinfo, port 443 only."""
+    if not url or len(url) > MAX_FEED_URL_CHARS:
+        raise ValueError(f"a news feed URL must be 1 to {MAX_FEED_URL_CHARS} characters")
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+        port = parts.port
+    except ValueError:
+        raise ValueError("a news feed URL is malformed") from None
+    if parts.scheme != "https" or not host:
+        raise ValueError("a news feed URL must be https://")
+    if parts.username is not None or parts.password is not None or "@" in parts.netloc:
+        raise ValueError("a news feed URL must not contain credentials")
+    if port not in (None, 443):
+        raise ValueError("a news feed URL must use port 443")
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return url
+    raise ValueError("a news feed URL must use a hostname, not an IP address")
+
+
+def _news_feeds(value: str) -> tuple[str, ...]:
+    feeds = _split(value)
+    if len(feeds) > MAX_NEWS_FEEDS:
+        raise ValueError(f"PERSONALAI_NEWS_FEEDS allows at most {MAX_NEWS_FEEDS} feeds")
+    try:
+        return tuple(validate_feed_url(feed) for feed in feeds)
+    except ValueError as exc:
+        raise ValueError(f"PERSONALAI_NEWS_FEEDS: {exc}") from None
+
+
+def _flag(value: str, default: bool) -> bool:
+    text = value.strip().lower()
+    if not text:
+        return default
+    return text not in ("0", "false", "off", "no")
+
+
+def _clock_time(value: str) -> str:
+    text = value.strip()
+    if not _HHMM.fullmatch(text):
+        raise ValueError("PERSONALAI_BRIEFING_TIME must be HH:MM (24-hour)")
+    return text
 
 
 @dataclass(frozen=True)
@@ -72,6 +127,10 @@ class Settings:
     finance_utc_offset_minutes: int = 330
     finance_categorize_minutes: int = 15
     push: str = "off"  # "off" or "expo"; pushes carry only a count, never content
+    news_feeds: tuple[str, ...] = ()
+    calendar_auto_add: bool = True
+    alert_poll_minutes: int = 5
+    briefing_time: str = "07:30"
 
     @property
     def google_accounts(self) -> tuple[str, ...]:
@@ -157,4 +216,13 @@ class Settings:
                 e.get("PERSONALAI_FINANCE_CATEGORIZE_MINUTES", defaults.finance_categorize_minutes)
             ),
             push=_push_mode(e.get("PERSONALAI_PUSH", defaults.push)),
+            news_feeds=_news_feeds(e.get("PERSONALAI_NEWS_FEEDS", "")),
+            calendar_auto_add=_flag(
+                e.get("PERSONALAI_CALENDAR_AUTO_ADD", ""), defaults.calendar_auto_add
+            ),
+            alert_poll_minutes=_positive_int(
+                "PERSONALAI_ALERT_POLL_MINUTES",
+                e.get("PERSONALAI_ALERT_POLL_MINUTES", str(defaults.alert_poll_minutes)),
+            ),
+            briefing_time=_clock_time(e.get("PERSONALAI_BRIEFING_TIME", defaults.briefing_time)),
         )

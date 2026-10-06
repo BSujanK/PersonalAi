@@ -74,6 +74,8 @@ class MailSync:
         clock: Clock,
         initial_days: int,
         on_new: Callable[[MailMessage], None] | None = None,
+        on_pass_start: Callable[[], None] | None = None,
+        on_pass_end: Callable[[], None] | None = None,
     ) -> None:
         self._store = store
         self._api_for = api_for
@@ -81,6 +83,8 @@ class MailSync:
         self._clock = clock
         self._initial_days = initial_days
         self._on_new = on_new
+        self._on_pass_start = on_pass_start
+        self._on_pass_end = on_pass_end
 
     @property
     def clock(self) -> Clock:
@@ -89,13 +93,26 @@ class MailSync:
     def sync_all(self, accounts: Iterable[str]) -> dict[str, SyncStats | str]:
         """Sync each account; a failure is recorded as the exception's type name."""
         results: dict[str, SyncStats | str] = {}
-        for index, account in enumerate(accounts):
-            try:
-                results[account] = self.sync_account(account)
-            except Exception as exc:
-                log.warning("mail sync failed for account #%d: %s", index, type(exc).__name__)
-                results[account] = type(exc).__name__
+        self._call_pass_hook(self._on_pass_start)
+        try:
+            for index, account in enumerate(accounts):
+                try:
+                    results[account] = self.sync_account(account)
+                except Exception as exc:
+                    log.warning("mail sync failed for account #%d: %s", index, type(exc).__name__)
+                    results[account] = type(exc).__name__
+        finally:
+            self._call_pass_hook(self._on_pass_end)
         return results
+
+    @staticmethod
+    def _call_pass_hook(hook: Callable[[], None] | None) -> None:
+        if hook is None:
+            return
+        try:
+            hook()
+        except Exception as exc:
+            log.warning("sync-pass hook failed: %s", type(exc).__name__)
 
     def sync_account(self, account: str) -> SyncStats:
         api = self._api_for(account)

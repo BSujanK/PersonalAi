@@ -13,7 +13,8 @@ import uvicorn
 import agent.main as main_module
 from agent.main import main
 from agent.scheduler import (
-    DEADLINE_JOB_ID,
+    ALERT_JOB_ID,
+    CLASSROOM_DEADLINE_JOB_ID,
     FILE_INDEX_JOB_ID,
     FINANCE_CATEGORIZE_JOB_ID,
     MAIL_JOB_ID,
@@ -156,6 +157,7 @@ def test_serve_with_mail_accounts_polls_and_stops_scheduler(
     assert [(job.id, job.minutes) for job in captured[0]] == [
         (MAIL_JOB_ID, 5),
         (FINANCE_CATEGORIZE_JOB_ID, 15),
+        (ALERT_JOB_ID, 5),
     ]
     assert scheduler.shutdowns == [False]
 
@@ -167,7 +169,10 @@ def test_serve_without_accounts_only_categorises_finance(
     captured, _ = _capture_jobs(monkeypatch)
     assert main(["serve"]) == 0
     assert started == ["127.0.0.1"]
-    assert [(job.id, job.minutes) for job in captured[0]] == [(FINANCE_CATEGORIZE_JOB_ID, 15)]
+    assert [(job.id, job.minutes) for job in captured[0]] == [
+        (FINANCE_CATEGORIZE_JOB_ID, 15),
+        (ALERT_JOB_ID, 5),
+    ]
 
 
 def test_serve_with_workspace_registers_jobs(
@@ -183,9 +188,10 @@ def test_serve_with_workspace_registers_jobs(
     captured, _ = _capture_jobs(monkeypatch)
     assert main(["serve"]) == 0
     assert [(job.id, job.minutes) for job in captured[0]] == [
-        (DEADLINE_JOB_ID, 60),
+        (CLASSROOM_DEADLINE_JOB_ID, 60),
         (FILE_INDEX_JOB_ID, 30),
         (FINANCE_CATEGORIZE_JOB_ID, 15),
+        (ALERT_JOB_ID, 5),
     ]
 
 
@@ -200,8 +206,8 @@ def test_classroom_job_without_google_tokens_is_recorded_as_failing(
     monkeypatch.setenv("PERSONALAI_CLASSROOM_ACCOUNTS", "student@example.edu")
     captured, _ = _capture_jobs(monkeypatch)
     assert main(["serve"]) == 0
-    [deadline_job] = [j for j in captured[0] if j.id == DEADLINE_JOB_ID]
-    deadline_job.run()  # no OAuth client or token in the (in-memory) keyring
+    [classroom_job] = [j for j in captured[0] if j.id == CLASSROOM_DEADLINE_JOB_ID]
+    classroom_job.run()  # no OAuth client or token in the (in-memory) keyring
     db = Database(tmp_path / "agent.db")
     assert last_ok(db, CLASSROOM) is None
     failure = last_failure(db, CLASSROOM)

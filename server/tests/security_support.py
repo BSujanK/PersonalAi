@@ -37,6 +37,7 @@ from agent.mail.store import MailStore
 from agent.mail.sync import MailSync
 from agent.mail.tools import register_mail_tools
 from agent.outbound.services import register_outbound_tools
+from agent.proactive.services import ProactiveServices, setup_proactive
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 from agent.store.keystore import KeyStore
@@ -238,6 +239,7 @@ class World:
     mail: MailServices
     finance: FinanceServices
     workspace: WorkspaceServices
+    proactive: ProactiveServices
     paired: dict[str, str] = field(default_factory=dict)
     pairing_code: str = ""
 
@@ -361,6 +363,17 @@ def build_world(
     workspace = setup_workspace(settings, db, db_key, registry, object(), clock)  # type: ignore[arg-type]
     register_outbound_tools(registry, settings, mail, workspace.drive_api_for, workspace.file_roots)
 
+    proactive = setup_proactive(
+        settings,
+        db,
+        db_key,
+        registry,
+        clock,
+        mail_store=store,
+        classifier_llm=None,
+        classroom_api_for=None,
+        own_calendar_api_for=None,
+    )
     model = llm if llm is not None else RecordingLLM()
     app = create_app(
         settings,
@@ -371,12 +384,13 @@ def build_world(
         clock=clock,
         mail=mail,
         finance=finance,
+        proactive=proactive,
     )
     client = TestClient(app)
     recorder = cast(RecordingLLM, model)
     world = World(
         app, client, db, clock, keystore, registry, recorder, settings, gmail, calendars, classroom,
-        drive, files_root, mail, finance, workspace,
+        drive, files_root, mail, finance, workspace, proactive,
     )  # fmt: skip
     code = open_pairing_window(db, clock, 300)
     paired = client.post("/pair", json={"code": code, "device_name": "Pixel"})

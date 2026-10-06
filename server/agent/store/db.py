@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS devices (
@@ -126,6 +126,43 @@ CREATE TABLE IF NOT EXISTS deadline_proposals (
     action_id TEXT NOT NULL,
     proposed_at TEXT NOT NULL,
     PRIMARY KEY (classroom_account, course_id, coursework_id)
+);
+CREATE TABLE IF NOT EXISTS deadlines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL CHECK (source IN ('mail', 'classroom')),
+    source_key TEXT NOT NULL,
+    source_account TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('fee', 'exam', 'submission', 'bill', 'event', 'other')),
+    title_enc BLOB NOT NULL,
+    due TEXT NOT NULL,
+    found_by TEXT NOT NULL CHECK (found_by IN ('rule', 'llm', 'classroom')),
+    created_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'undone')),
+    UNIQUE (source, source_key)
+);
+CREATE TABLE IF NOT EXISTS auto_events (
+    deadline_id INTEGER PRIMARY KEY REFERENCES deadlines(id),
+    calendar_account TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    marker TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    undone_at TEXT
+);
+CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL CHECK (kind IN ('important_mail', 'deadline', 'briefing', 'calendar_added')),
+    dedupe_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    content_enc BLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS alert_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    important_mail INTEGER NOT NULL DEFAULT 1,
+    deadlines INTEGER NOT NULL DEFAULT 1,
+    briefing INTEGER NOT NULL DEFAULT 1,
+    briefing_time TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS local_files (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
