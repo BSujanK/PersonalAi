@@ -43,6 +43,16 @@ export function shortDateTime(iso: string | undefined | null): string {
   });
 }
 
+const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** A deadline's due: an all-day date shows without a time, a datetime like `shortDateTime`. */
+export function dueLabel(due: string | undefined | null): string {
+  const match = due ? DATE_ONLY.exec(due) : null;
+  if (!match) return shortDateTime(due);
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
 /** "1.2 MB", "340 KB" or "12 B". */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '';

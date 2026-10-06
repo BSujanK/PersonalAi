@@ -30,8 +30,8 @@ export function EmptyState({
         <Text style={styles.sub}>What would you like to know?</Text>
       </View>
       <View style={styles.chips}>
-        {SUGGESTIONS.map((text) => (
-          <Chip key={text} label={text} onPress={() => !disabled && onPick(text)} />
+        {SUGGESTIONS.map(({ label, prompt }) => (
+          <Chip key={label} label={label} onPress={() => !disabled && onPick(prompt)} />
         ))}
       </View>
     </View>

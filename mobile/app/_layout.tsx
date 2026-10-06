@@ -3,7 +3,8 @@ import { Inter_500Medium } from '@expo-google-fonts/inter/500Medium';
 import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
 import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import * as Notifications from 'expo-notifications';
+import { router, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { AppState, View } from 'react-native';
@@ -15,8 +16,10 @@ import { PairForm } from '../src/components/PairForm';
 import { Loading } from '../src/components/ui';
 import { Screen } from '../src/components/Screen';
 import { AgentStatusProvider } from '../src/lib/AgentStatus';
+import { checkAlerts, handleAlertResponse, requestAlertPermission } from '../src/lib/alerts';
 import { registerBackgroundSync } from '../src/lib/backgroundTasks';
 import { flushSmsQueue, refreshDefaultSenders } from '../src/lib/bankSms';
+import { getJson, setJson } from '../src/lib/prefs';
 import { ConversationsProvider } from '../src/lib/Conversations';
 import { processDeviceCommands } from '../src/lib/deviceCommands';
 import { listenForNotifications } from '../src/lib/push';
@@ -27,8 +30,17 @@ import { ThemeProvider, useTheme } from '../src/theme';
 /** Work done whenever the app is in the foreground and paired. Failures are retried next time. */
 async function foregroundSync(): Promise<void> {
   await refreshDefaultSenders();
-  await Promise.allSettled([flushSmsQueue(), processDeviceCommands()]);
+  await Promise.allSettled([flushSmsQueue(), processDeviceCommands(), checkAlerts()]);
   emitRefresh();
+}
+
+const PERMISSION_ASKED_KEY = 'alerts.permissionAsked';
+
+/** Ask for notification permission once after pairing; Settings explains it and can ask again. */
+async function askAlertPermissionOnce(): Promise<void> {
+  if (await getJson<boolean>(PERMISSION_ASKED_KEY, false)) return;
+  await setJson(PERMISSION_ASKED_KEY, true);
+  await requestAlertPermission();
 }
 
 function Gate() {
@@ -39,14 +51,29 @@ function Gate() {
 
   useEffect(() => {
     if (!paired) return;
-    void foregroundSync();
+    void askAlertPermissionOnce()
+      .catch(() => undefined)
+      .then(foregroundSync);
     void registerBackgroundSync().catch(() => undefined);
     const stopNotifications = listenForNotifications();
+    const respond = (response: Notifications.NotificationResponse) => {
+      // Cleared so a later remount does not replay a response that was already handled.
+      void Notifications.clearLastNotificationResponseAsync().catch(() => undefined);
+      void handleAlertResponse(response, (route) => router.push(route)).catch(() => undefined);
+    };
+    // A tap that launched the app from killed state arrives here, not through the listener.
+    void Notifications.getLastNotificationResponseAsync()
+      .then((last) => {
+        if (last) respond(last);
+      })
+      .catch(() => undefined);
+    const responses = Notifications.addNotificationResponseReceivedListener(respond);
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') void foregroundSync();
     });
     return () => {
       stopNotifications();
+      responses.remove();
       sub.remove();
     };
   }, [paired]);
