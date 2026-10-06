@@ -292,6 +292,7 @@ uv run python -m agent restore --in D:\backups\personalai-2026-10-05.paibak     
 | `PERSONALAI_MAIL_ACCOUNTS` | Comma-separated Gmail addresses to sync (empty turns mail off); also masked before the cloud | none |
 | `PERSONALAI_VIP_SENDERS` | Comma-separated senders always classified important | none |
 | `PERSONALAI_COLLEGE_DOMAINS` | Comma-separated college domains (subdomains match); mail from them is important | none |
+| `PERSONALAI_DEADLINE_IGNORE_SENDERS` | Comma-separated sender addresses or domains (subdomains match) whose mail never produces deadlines or calendar auto-adds, e.g. a broker's newsletters | none |
 | `PERSONALAI_MAIL_POLL_MINUTES` | Mail sync interval | `5` |
 | `PERSONALAI_MAIL_INITIAL_DAYS` | How many days of mail the first sync fetches | `7` |
 | `PERSONALAI_CLASSIFIER_MODEL` | Local Ollama model for classification | `qwen2.5:3b` |

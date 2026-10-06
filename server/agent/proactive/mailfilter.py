@@ -41,6 +41,16 @@ def is_trusted_sender(
     return any(domain == d or domain.endswith(f".{d}") for d in college_domains)
 
 
+def is_ignored_sender(from_addr: str, ignored: Collection[str]) -> bool:
+    """The owner never wants deadlines from this sender: an exact address, or a domain with its
+    subdomains (``example.net`` matches ``noreply@example.net`` and ``a@mail.example.net``)."""
+    sender = from_addr.lower()
+    domain = sender.rpartition("@")[2]
+    return any(
+        sender == entry or domain == entry or domain.endswith(f".{entry}") for entry in ignored
+    )
+
+
 def is_bulk_mail(
     from_addr: str,
     subject: str,

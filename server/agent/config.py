@@ -172,6 +172,8 @@ class Settings:
     mail_accounts: tuple[str, ...] = ()
     vip_senders: tuple[str, ...] = ()
     college_domains: tuple[str, ...] = ()
+    # Senders (address, or domain incl. subdomains) never used for deadlines/calendar auto-add.
+    deadline_ignore_senders: tuple[str, ...] = ()
     mail_poll_minutes: int = 5
     mail_initial_days: int = 7
     classifier_model: str = "qwen2.5:3b"
@@ -266,6 +268,7 @@ class Settings:
             mail_accounts=_split(e.get("PERSONALAI_MAIL_ACCOUNTS", "")),
             vip_senders=_split(e.get("PERSONALAI_VIP_SENDERS", "")),
             college_domains=_split(e.get("PERSONALAI_COLLEGE_DOMAINS", "")),
+            deadline_ignore_senders=_split(e.get("PERSONALAI_DEADLINE_IGNORE_SENDERS", "")),
             mail_poll_minutes=int(
                 e.get("PERSONALAI_MAIL_POLL_MINUTES", defaults.mail_poll_minutes)
             ),
