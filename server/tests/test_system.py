@@ -140,3 +140,15 @@ def test_file_size_and_read_from_offset(tmp_path: Path) -> None:
     assert system.file_size(log) == len("first\nsecond \u00e9\n".encode())
     assert system.read_text_from(log, len("first\n")) == "second \u00e9\n"
     assert system.read_text_from(log, 10_000) == ""
+
+
+@pytest.mark.parametrize("code", [10048, 10013])
+def test_port_is_free_reads_windows_socket_codes_as_busy(
+    code: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Windows reports a taken port with a WinSock code, not errno.EADDRINUSE.
+    def busy(self: socket.socket, address: object) -> None:
+        raise OSError(code, "address already in use")
+
+    monkeypatch.setattr(socket.socket, "bind", busy)
+    assert RealSystem().port_is_free("127.0.0.1", 8765) is False

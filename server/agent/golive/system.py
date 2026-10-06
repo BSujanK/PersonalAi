@@ -24,6 +24,10 @@ import httpx
 # Fallback when a command is not installed, mirroring the shell's "command not found".
 NOT_FOUND = 127
 _MAX_LOG_READ = 1_000_000
+# A bind that fails because the port is taken. On Windows a socket error carries the WinSock code
+# (10048 WSAEADDRINUSE, 10013 WSAEACCES), not errno.EADDRINUSE; listing only the POSIX codes would
+# report a busy port as free on the laptop, which is the one place this runs.
+_PORT_BUSY = frozenset({errno.EADDRINUSE, errno.EACCES, 10048, 10013})
 
 
 @dataclass(frozen=True)
@@ -157,7 +161,8 @@ class RealSystem:
             try:
                 probe.bind((host, port))
             except OSError as exc:
-                return exc.errno not in (errno.EADDRINUSE, errno.EACCES)
+                codes = {exc.errno, getattr(exc, "winerror", None)}
+                return not (codes & _PORT_BUSY)
         return True
 
     def file_size(self, path: Path) -> int:
