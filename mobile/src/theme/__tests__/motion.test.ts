@@ -21,3 +21,12 @@ it('never passes a CSS cubic-bezier string to Reanimated', () => {
   );
   expect(offenders).toEqual([]);
 });
+
+it('keeps motion tokens worklet-copyable (plain numbers only)', () => {
+  // Worklets copy everything they capture; a class instance here crashes the UI thread on device
+  // ("Cannot copy value of type ..."). Easing objects live outside `motion`.
+  const { motion } = jest.requireActual<typeof import('../motion')>('../motion');
+  for (const [key, value] of Object.entries(motion)) {
+    expect([key, typeof value]).toEqual([key, 'number']);
+  }
+});
