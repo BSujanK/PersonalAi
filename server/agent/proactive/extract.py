@@ -23,6 +23,7 @@ MAX_PER_MAIL = 3
 TEXT_CHARS = 4000
 LLM_BODY_CHARS = 2000
 WINDOW_DAYS = 180
+KEYWORD_PROXIMITY_CHARS = 60  # a date counts only this close to a deadline keyword
 
 Kind = Literal["fee", "exam", "submission", "bill", "event", "other"]
 KINDS: dict[str, Kind] = {kind: kind for kind in get_args(Kind)}
@@ -138,6 +139,19 @@ def _kind_of(sentence: str) -> Kind | None:
     return None
 
 
+def _keyword_spans(sentence: str) -> list[tuple[int, int]]:
+    return [m.span() for _, pattern in _KEYWORD_RES for m in pattern.finditer(sentence)]
+
+
+def _near_keyword(date_span: tuple[int, int], keywords: list[tuple[int, int]]) -> bool:
+    """Whether the gap between the date and some keyword is at most ``KEYWORD_PROXIMITY_CHARS``."""
+    start, end = date_span
+    return any(
+        max(start - kw_end, kw_start - end, 0) <= KEYWORD_PROXIMITY_CHARS
+        for kw_start, kw_end in keywords
+    )
+
+
 def _make_date(year: int, month: int, day: int) -> date | None:
     try:
         return date(year, month, day)
@@ -202,12 +216,16 @@ def _in_window(day: date, today: date) -> bool:
 
 
 def _scan_sentence(sentence: str, today: date, tz: timezone) -> tuple[list[date | datetime], bool]:
-    """Valid dues in one sentence, and whether it contained any date at all."""
+    """Valid dues in one sentence, and whether it contained any date at all. Only dates close to a
+    deadline keyword are dues; a far-away date still counts as "dated"."""
     matches = list(_DATE_RE.finditer(sentence))
     spans = [m.span() for m in matches]
     times = _times(sentence, spans)
+    keywords = _keyword_spans(sentence)
     dues: list[date | datetime] = []
     for match in matches:
+        if not _near_keyword(match.span(), keywords):
+            continue
         day = _resolve(match, today)
         if day is None or not _in_window(day, today):
             continue

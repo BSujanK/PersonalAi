@@ -47,7 +47,12 @@ from agent.mail.sync import MailSync, sync_and_record
 from agent.mail.tools import register_mail_tools
 from agent.news.feeds import NewsFeeds
 from agent.news.tools import register_news_tool
+from agent.news.topics import parse_news_topics
 from agent.outbound.services import register_outbound_tools
+from agent.proactive.alerts import AlertStore
+from agent.proactive.autocal import AutoCalendar
+from agent.proactive.deadlines import DeadlineStore
+from agent.proactive.recheck import apply_rejections, find_rejected
 from agent.proactive.services import Fanout, ProactiveServices, setup_proactive
 from agent.scheduler import (
     ALERT_JOB_ID,
@@ -148,7 +153,8 @@ def _setup_proactive(
         hooks.pass_start.add(proactive.mail_alerts.begin_pass)
         hooks.pass_end.add(proactive.mail_alerts.end_pass)
     if settings.news_feeds:
-        register_news_tool(registry, NewsFeeds(settings.news_feeds))
+        news_topics = parse_news_topics(settings.news_topics)
+        register_news_tool(registry, NewsFeeds(settings.news_feeds, topics=news_topics))
     return proactive
 
 
@@ -456,6 +462,61 @@ def _setup(redo: list[str]) -> int:
     )
 
 
+def _deadlines_recheck(settings: Settings, apply: bool, out: TextIO) -> int:
+    """List mail deadlines the current rules reject; with ``apply``, undo or dismiss them."""
+    if not settings.mail_accounts:
+        print(
+            "No mail accounts are configured (PERSONALAI_MAIL_ACCOUNTS): nothing to check.",
+            file=out,
+        )
+        return 0
+    try:
+        assert_secure_backend()
+    except InsecureKeyringError as exc:
+        return _refuse(str(exc))
+    db = Database(settings.db_path)
+    db_key = KeyStore().get_or_create_bytes("db_key")
+    cipher = FieldCipher(db_key)
+    deadlines = DeadlineStore(db, cipher, utcnow)
+    offset = settings.finance_utc_offset_minutes
+    rejected = find_rejected(db, deadlines, MailStore(db, cipher, db_key), settings, offset)
+    for item in rejected:
+        print(
+            f"{item.deadline_id}  {item.kind}  {item.due.isoformat()}  {item.account}  "
+            f"{item.title}  on calendar: {'yes' if item.on_calendar else 'no'}  {item.reason}",
+            file=out,
+        )
+    if not rejected:
+        print("No wrongly found mail deadlines.", file=out)
+        return 0
+    if not apply:
+        print("dry run: nothing changed; re-run with --apply", file=out)
+        return 0
+    google_auth = GoogleAuth(KeyStore())
+    api_for = cached_factory(
+        settings.calendar_accounts, lambda account: build_own_calendar_api(account, google_auth)
+    )
+    audit = AuditLog(db, utcnow)
+    autocal = AutoCalendar(
+        db,
+        deadlines,
+        api_for,
+        settings.deadline_calendar,
+        utcnow,
+        audit,
+        AlertStore(db, cipher, utcnow, settings.briefing_time),
+        settings.calendar_auto_add,
+        offset,
+    )
+    counts = apply_rejections(rejected, autocal, db, audit)
+    print(
+        f"undone {counts.undone}, dismissed {counts.dismissed}, "
+        f"refused {counts.refused}, failed {counts.failed}",
+        file=out,
+    )
+    return 0
+
+
 def _news_check(settings: Settings, urls: Sequence[str], out: TextIO) -> int:
     """Fetch each feed (the configured ones, or ``urls``) and say whether it can be read."""
     wanted = list(urls) or list(settings.news_feeds)
@@ -538,6 +599,13 @@ def main(
         "news-check", help="fetch the configured news feeds (or the given URLs) and report"
     )
     news.add_argument("urls", nargs="*", help="https feed URLs; default: PERSONALAI_NEWS_FEEDS")
+    recheck = sub.add_parser(
+        "deadlines-recheck",
+        help="find mail deadlines the newsletter filter now rejects (dry run unless --apply)",
+    )
+    recheck.add_argument(
+        "--apply", action="store_true", help="remove their calendar events and dismiss them"
+    )
     sub.add_parser(
         "supervise",
         help="run the server under a console-less supervisor (used by the scheduled task)",
@@ -557,6 +625,8 @@ def main(
         return _doctor(settings, args.json)
     if args.command == "news-check":
         return _news_check(settings, args.urls, sys.stdout)
+    if args.command == "deadlines-recheck":
+        return _deadlines_recheck(settings, args.apply, sys.stdout)
     if args.command == "pair":
         return _pair(settings, args.url)
     if args.command == "devices":

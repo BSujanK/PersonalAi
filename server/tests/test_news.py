@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from agent.news.feeds import (
     parse_feed,
 )
 from agent.news.tools import register_news_tool
+from agent.news.topics import Topic, default_topics, parse_news_topics
 from agent.proactive.services import Fanout
 from agent.store.db import Database
 from agent.store.keystore import KeyStore
@@ -73,12 +75,22 @@ ATOM = """<?xml version="1.0" encoding="utf-8"?>
 Handler = Callable[[httpx.Request], httpx.Response]
 
 
+NOW = datetime(2026, 10, 5, 13, 0, tzinfo=UTC)
+
+
 def _feeds(
     handler: Handler,
     urls: tuple[str, ...] = (URL,),
     monotonic: Callable[[], float] = lambda: 0.0,
+    topics: tuple[Topic, ...] | None = None,
 ) -> NewsFeeds:
-    return NewsFeeds(urls, transport=httpx.MockTransport(handler), monotonic=monotonic)
+    return NewsFeeds(
+        urls,
+        topics=topics,
+        transport=httpx.MockTransport(handler),
+        monotonic=monotonic,
+        now=lambda: NOW,
+    )
 
 
 def _serve(bodies: dict[str, str | bytes]) -> Handler:
@@ -167,7 +179,7 @@ def test_bad_or_hostile_xml_is_refused(xml: bytes) -> None:
 def test_no_links_in_headlines() -> None:
     feeds = _feeds(_serve({URL: RSS}))
     items, _ = feeds.headlines(10, None)
-    assert set(vars(items[0])) == {"source", "title", "published", "summary"}
+    assert set(vars(items[0])) == {"source", "title", "published", "summary", "topic"}
 
 
 # --- fetching ----------------------------------------------------------------------------------
@@ -338,6 +350,246 @@ def test_feeds_are_cached_for_fifteen_minutes_and_failures_are_not() -> None:
     assert len(calls) == 3
 
 
+# --- ranking by topic --------------------------------------------------------------------------
+
+
+def _item(title: str, published: datetime | None, summary: str = "") -> str:
+    date = (
+        f"<pubDate>{published.strftime('%a, %d %b %Y %H:%M:%S GMT')}</pubDate>" if published else ""
+    )
+    return f"<item><title>{title}</title>{date}<description>{summary}</description></item>"
+
+
+def _ranked(items: list[str], topics: tuple[Topic, ...] | None = None) -> NewsFeeds:
+    xml = f"<rss><channel><title>Wire</title>{''.join(items)}</channel></rss>"
+    return _feeds(_serve({URL: xml}), topics=topics)
+
+
+def _titles(feeds: NewsFeeds, topic: str | None = None) -> list[str]:
+    return [i.title for i in feeds.headlines(30, None, topic)[0]]
+
+
+def test_default_topics_rank_ai_gpus_and_markets_above_general() -> None:
+    hour_ago = NOW - timedelta(hours=1)
+    feeds = _ranked(
+        [
+            _item("Mayor opens a new bridge", hour_ago),
+            _item("Sensex rallies as investors cheer", hour_ago),
+            _item("Anthropic ships a new Claude model", hour_ago),
+            _item("Nvidia sells out of Blackwell GPUs", hour_ago),
+            _item("A quiet week for the harbour", hour_ago),
+        ]
+    )
+    items = feeds.headlines(10, None)[0]
+    assert [(i.title, i.topic) for i in items] == [
+        ("Anthropic ships a new Claude model", "ai"),
+        ("Nvidia sells out of Blackwell GPUs", "ai_infra"),
+        ("Sensex rallies as investors cheer", "markets"),
+        ("Mayor opens a new bridge", "general"),
+        ("A quiet week for the harbour", "general"),
+    ]
+
+
+def test_freshness_and_weight_trade_off_by_the_formula() -> None:
+    # weight 5 after 72 h: 5 * 0.5**3 = 0.625; a fresh general item: 1 * 0.5**0 = 1
+    feeds = _ranked(
+        [
+            _item("OpenAI launches a model", NOW - timedelta(hours=72)),
+            _item("Town fair this weekend", NOW),
+        ]
+    )
+    assert _titles(feeds) == ["Town fair this weekend", "OpenAI launches a model"]
+    # the same AI item at 24 h: 5 * 0.5 = 2.5 beats a fresh general item
+    feeds = _ranked(
+        [
+            _item("OpenAI launches a model", NOW - timedelta(hours=24)),
+            _item("Town fair this weekend", NOW),
+        ]
+    )
+    assert _titles(feeds) == ["OpenAI launches a model", "Town fair this weekend"]
+
+
+def test_an_unknown_date_counts_as_48_hours_old_and_the_future_as_now() -> None:
+    feeds = _ranked(
+        [
+            _item("Undated chip news", None),  # 5 * 0.25 = 1.25
+            _item("Chip news from tomorrow", NOW + timedelta(hours=30)),  # age 0: 5
+            _item("Chip news 2 days ago", NOW - timedelta(hours=49)),  # 5 * 0.5**(49/24) ~ 1.21
+        ]
+    )
+    assert _titles(feeds) == [
+        "Chip news from tomorrow",
+        "Undated chip news",
+        "Chip news 2 days ago",
+    ]
+
+
+def test_a_summary_only_match_is_weaker_than_a_title_match() -> None:
+    feeds = _ranked(
+        [
+            _item("Weekend roundup", NOW, "Includes a story on the new GPU launch."),  # 3.0
+            _item("New GPU launch", NOW),  # 5.0
+            _item("Weekend sport", NOW, "Nothing relevant."),  # general 1.0
+        ]
+    )
+    items = feeds.headlines(10, None)[0]
+    assert [(i.title, i.topic) for i in items] == [
+        ("New GPU launch", "ai_infra"),
+        ("Weekend roundup", "ai_infra"),
+        ("Weekend sport", "general"),
+    ]
+    # 0.6 * 5 = 3 is below a title match on a weight-4 topic
+    topics = parse_news_topics("sport=4:cricket")
+    feeds = _ranked(
+        [_item("Roundup", NOW, "A GPU story"), _item("Cricket final tonight", NOW)], topics
+    )
+    assert _titles(feeds) == ["Cricket final tonight", "Roundup"]
+
+
+def test_the_best_topic_wins_not_the_first_match() -> None:
+    [item] = _ranked([_item("Apple unveils AI chips", NOW)]).headlines(5, None)[0]
+    assert item.topic == "ai"  # tech (3) also matches; ai comes first and is heavier
+
+
+def test_matching_is_case_insensitive_and_word_bounded() -> None:
+    feeds = _ranked(
+        [
+            _item("GPUS AND DATA CENTRES", NOW),
+            _item("A maid paid the faint chipper", NOW),  # ai/chip only inside other words
+            _item("Fed holds interest rates", NOW),
+            _item("GPT-5 and gpt4o arrive", NOW),
+            _item("Gain from S&amp;P 500", NOW),
+        ]
+    )
+    topics = {i.title: i.topic for i in feeds.headlines(10, None)[0]}
+    assert topics == {
+        "GPUS AND DATA CENTRES": "ai_infra",
+        "A maid paid the faint chipper": "general",
+        "Fed holds interest rates": "markets",
+        "GPT-5 and gpt4o arrive": "ai",
+        "Gain from S&P 500": "markets",
+    }
+
+
+def test_weight_zero_hides_matching_items() -> None:
+    topics = parse_news_topics("markets=0")
+    feeds = _ranked(
+        [_item("Stocks rally", NOW), _item("Nvidia and the markets", NOW), _item("Harbour", NOW)],
+        topics,
+    )
+    assert _titles(feeds) == ["Nvidia and the markets", "Harbour"]  # best weight is ai_infra's
+    assert _titles(_ranked([_item("Harbour", NOW)], parse_news_topics("general=0"))) == []
+
+
+def test_custom_topics_and_keywords() -> None:
+    topics = parse_news_topics("sport=6:cricket|f1 race,ai=0:rocket")
+    assert [t.name for t in topics] == ["ai", "ai_infra", "tech", "markets", "general", "sport"]
+    feeds = _ranked(
+        [
+            _item("Cricket: final tonight", NOW),
+            _item("The F1 race is on", NOW),
+            _item("Claude writes code", NOW),  # ai's keywords were replaced by "rocket"
+            _item("Rocket lands", NOW),  # now hidden, weight 0
+        ],
+        topics,
+    )
+    items = feeds.headlines(10, None)[0]
+    assert [(i.title, i.topic) for i in items] == [
+        ("Cricket: final tonight", "sport"),
+        ("The F1 race is on", "sport"),
+        ("Claude writes code", "general"),
+    ]
+
+
+def test_custom_keywords_are_plain_text_not_regex() -> None:
+    topics = parse_news_topics("odd=5:c++|a.b")
+    feeds = _ranked([_item("Why c++ still matters", NOW), _item("axb", NOW)], topics)
+    assert [(i.title, i.topic) for i in feeds.headlines(5, None)[0]] == [
+        ("Why c++ still matters", "odd"),
+        ("axb", "general"),
+    ]
+
+
+def test_the_topic_filter_and_limit() -> None:
+    feeds = _ranked(
+        [
+            _item("Harbour news", NOW),
+            _item("Nvidia news", NOW),
+            _item("Claude news", NOW),
+            _item("More Claude news", NOW - timedelta(hours=2)),
+        ]
+    )
+    assert _titles(feeds, "ai") == ["Claude news", "More Claude news"]
+    assert _titles(feeds, "general") == ["Harbour news"]
+    assert _titles(feeds, "markets") == []
+    assert len(feeds.headlines(1, None, "ai")[0]) == 1
+    assert feeds.topic_names == ("ai", "ai_infra", "tech", "markets", "general")
+
+
+def test_ties_keep_the_newest_first() -> None:
+    feeds = _ranked(
+        [
+            _item("Harbour a", NOW - timedelta(hours=1)),
+            _item("Harbour b", NOW - timedelta(hours=1)),
+        ],
+        parse_news_topics("general=5"),
+    )
+    assert _titles(feeds) == ["Harbour a", "Harbour b"]  # equal score and date: feed order
+
+
+def test_the_real_clock_is_the_default() -> None:
+    assert NewsFeeds(()).topic_names == tuple(t.name for t in default_topics())
+    body = f"<rss><channel>{_item('GPU', datetime.now(UTC))}</channel></rss>"
+    fresh = NewsFeeds((URL,), transport=httpx.MockTransport(_serve({URL: body})))
+    assert [i.title for i in fresh.headlines(5, None)[0]] == ["GPU"]
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "ai",
+        "ai=",
+        "ai=x",
+        "ai=11",
+        "ai=-1",
+        "ai=5.5",
+        "=5",
+        "AI=5",
+        "1ai=5",
+        "a-b=5:x",
+        "x" * 32 + "=5:word",
+        "newtopic=5",  # a new topic needs keywords
+        "newtopic=5:",
+        "newtopic=5:a||b",
+        "newtopic=5:" + "k" * 41,
+        "newtopic=5:" + "|".join(f"k{i}" for i in range(21)),
+        "general=5:word",
+        "ai=1,ai=2",
+    ],
+)
+def test_bad_topic_settings_are_refused(raw: str) -> None:
+    with pytest.raises(ValueError, match="PERSONALAI_NEWS_TOPICS"):
+        parse_news_topics(raw)
+
+
+def test_topic_limits_are_accepted_and_enforced() -> None:
+    assert len(parse_news_topics("")) == 5
+    assert parse_news_topics("  ,ai=10, ")[0].weight == 10
+    assert parse_news_topics("t=5:" + "|".join("k" * 40 for _ in range(20)))[-1].name == "t"
+    assert parse_news_topics("x" * 31 + "=1:w")[-1].name == "x" * 31
+    fifteen = ",".join(f"t{i}=1:w{i}" for i in range(15))
+    assert len(parse_news_topics(fifteen)) == 20
+    with pytest.raises(ValueError, match="at most 20"):
+        parse_news_topics(fifteen + ",t15=1:w15")
+
+
+def test_topics_in_the_environment() -> None:
+    assert Settings.from_env({}).news_topics == ""
+    assert Settings.from_env({"PERSONALAI_NEWS_TOPICS": " ai=9 "}).news_topics == "ai=9"
+    with pytest.raises(ValueError, match="PERSONALAI_NEWS_TOPICS"):
+        Settings.from_env({"PERSONALAI_NEWS_TOPICS": "ai=99"})
+
+
 # --- config ------------------------------------------------------------------------------------
 
 
@@ -403,7 +655,14 @@ def _tool(feeds: NewsFeeds) -> Any:
 def test_tool_is_a_read_tool_without_a_url_parameter() -> None:
     tool = _tool(_feeds(_serve({URL: RSS})))
     assert tool.kind is ToolKind.READ and tool.untrusted_output is True
-    assert set(tool.parameters["properties"]) == {"limit", "source"}
+    assert set(tool.parameters["properties"]) == {"limit", "source", "topic"}
+    assert tool.parameters["properties"]["topic"]["enum"] == [
+        "ai",
+        "ai_infra",
+        "tech",
+        "markets",
+        "general",
+    ]
     assert tool.parameters["additionalProperties"] is False
 
 
@@ -412,7 +671,7 @@ def test_tool_output_shape() -> None:
     result = tool.run({"limit": 2})
     assert result["unavailable"] == ["gone.example.com"]
     assert len(result["items"]) == 2
-    assert set(result["items"][0]) == {"source", "title", "published", "summary"}
+    assert set(result["items"][0]) == {"source", "title", "published", "summary", "topic"}
     assert len(tool.run({})["items"]) == 5
     assert {i["source"] for i in tool.run({"source": "tech"})["items"]} == {"Tech Notes"}
 
@@ -429,6 +688,8 @@ def test_tool_output_shape() -> None:
         {"source": "   "},
         {"source": "x" * 101},
         {"source": 5},
+        {"topic": "sports"},
+        {"topic": 5},
         {"url": "https://evil.example.net/feed"},
     ],
 )
@@ -442,6 +703,19 @@ def test_tool_validates_arguments(args: dict[str, Any]) -> None:
     with pytest.raises(ValueError):
         _tool(_feeds(handler)).run(args)
     assert calls == []
+
+
+def test_tool_topic_argument_filters_and_labels_items() -> None:
+    xml = (
+        f"<rss><channel><title>Wire</title>{_item('Claude news', NOW)}"
+        f"{_item('Harbour news', NOW)}</channel></rss>"
+    )
+    tool = _tool(_feeds(_serve({URL: xml})))
+    assert [(i["title"], i["topic"]) for i in tool.run({"topic": "ai"})["items"]] == [
+        ("Claude news", "ai")
+    ]
+    assert [i["topic"] for i in tool.run({})["items"]] == ["ai", "general"]
+    assert "topic weights" in tool.description
 
 
 def test_tool_accepts_the_limits() -> None:

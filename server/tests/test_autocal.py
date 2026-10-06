@@ -488,7 +488,7 @@ def test_undo_deletes_the_event_and_never_re_adds() -> None:
     env = make_env()
     env.deliver(mail_message())
     env.services.autocal.run()
-    assert env.services.autocal.undo(1, "dev1") == "undone"
+    assert env.services.autocal.undo(1, "device:dev1") == "undone"
     assert env.calendar.deleted == ["auto1"] and env.calendar.events == {}
     [row] = env.db.query("SELECT * FROM auto_events")
     assert row["undone_at"] == env.clock.now.isoformat()
@@ -500,16 +500,16 @@ def test_undo_deletes_the_event_and_never_re_adds() -> None:
     assert env.services.autocal.run() == 0
     assert env.services.autocal.run() == 0
     assert len(env.calendar.inserted) == 1
-    assert env.services.autocal.undo(1, "dev1") == "not_found"  # already undone
+    assert env.services.autocal.undo(1, "device:dev1") == "not_found"  # already undone
 
 
 def test_undo_refuses_ids_the_agent_did_not_create() -> None:
     env = make_env()
     env.calendar.events["foreign"] = {"id": "foreign", "summary": "Dentist"}
     _add(env, "a", date(2026, 10, 20))  # a deadline with no auto event
-    assert env.services.autocal.undo(1, "dev1") == "not_found"
-    assert env.services.autocal.undo(999, "dev1") == "not_found"
-    assert env.services.autocal.undo(-1, "dev1") == "not_found"
+    assert env.services.autocal.undo(1, "device:dev1") == "not_found"
+    assert env.services.autocal.undo(999, "device:dev1") == "not_found"
+    assert env.services.autocal.undo(-1, "device:dev1") == "not_found"
     assert env.calendar.deleted == [] and "foreign" in env.calendar.events
 
 
@@ -518,7 +518,7 @@ def test_undo_ignores_a_row_whose_event_was_never_recorded() -> None:
     _add(env, "a", date(2026, 10, 20))
     env.calendar.fail_insert = ConnectionError("down")
     env.services.autocal.run()
-    assert env.services.autocal.undo(1, "dev1") == "not_found"
+    assert env.services.autocal.undo(1, "device:dev1") == "not_found"
     assert env.calendar.deleted == []
 
 
@@ -527,7 +527,7 @@ def test_undo_only_deletes_the_event_recorded_for_that_deadline() -> None:
     _add(env, "a", date(2026, 10, 20))
     _add(env, "b", date(2026, 10, 21))
     env.services.autocal.run()
-    assert env.services.autocal.undo(2, "dev1") == "undone"
+    assert env.services.autocal.undo(2, "device:dev1") == "undone"
     assert env.calendar.deleted == ["auto2"] and list(env.calendar.events) == ["auto1"]
 
 
@@ -540,7 +540,7 @@ def test_undo_reports_refused_when_the_connector_refuses() -> None:
         raise NotOwnEvent(event_id)
 
     env.calendar.delete_own = refuse  # type: ignore[method-assign]
-    assert env.services.autocal.undo(1, "dev1") == "refused"
+    assert env.services.autocal.undo(1, "device:dev1") == "refused"
     [row] = env.db.query("SELECT * FROM auto_events")
     assert row["undone_at"] is None
     assert env.deadlines(("active",))[0].status == "active"
@@ -552,7 +552,7 @@ def test_undo_counts_an_already_deleted_event_as_done() -> None:
     _add(env, "a", date(2026, 10, 20))
     env.services.autocal.run()
     env.calendar.events.clear()  # the owner deleted it in Google Calendar
-    assert env.services.autocal.undo(1, "dev1") == "undone"
+    assert env.services.autocal.undo(1, "device:dev1") == "undone"
 
 
 def test_undo_works_even_when_auto_add_is_switched_off_later() -> None:
@@ -560,4 +560,4 @@ def test_undo_works_even_when_auto_add_is_switched_off_later() -> None:
     _add(env, "a", date(2026, 10, 20))
     env.services.autocal.run()
     env.services.autocal._enabled = False
-    assert env.services.autocal.undo(1, "dev1") == "undone"
+    assert env.services.autocal.undo(1, "device:dev1") == "undone"

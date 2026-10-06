@@ -78,6 +78,8 @@ def setup_proactive(
         clock=clock,
         horizon_days=settings.deadline_horizon_days,
         offset_minutes=offset,
+        vip_senders=frozenset(addr.lower() for addr in settings.vip_senders),
+        college_domains=frozenset(domain.lower() for domain in settings.college_domains),
     )
     calendar = settings.deadline_calendar
     autocal = AutoCalendar(

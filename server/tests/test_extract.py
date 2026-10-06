@@ -147,6 +147,40 @@ def test_scan_reports_triggers_and_dates() -> None:
     assert (nothing.found, nothing.trigger, nothing.dated) == ((), False, False)
 
 
+# --- keyword proximity -------------------------------------------------------------------------
+
+
+def test_a_date_next_to_a_keyword_is_found() -> None:
+    assert _found("Submit the assignment by 20 October") == [("submission", date(2026, 10, 20))]
+
+
+def test_a_date_before_the_keyword_counts_too() -> None:
+    assert _found("On 20 October the assignment is due.") == [("submission", date(2026, 10, 20))]
+
+
+def test_the_gap_between_keyword_and_date_is_at_most_sixty_characters() -> None:
+    near = scan_rules("Submit" + " " * 60 + "20 October", RECEIVED, IST_MINUTES)
+    assert [f.due for f in near.found] == [date(2026, 10, 20)]
+    far = scan_rules("Submit" + " " * 61 + "20 October", RECEIVED, IST_MINUTES)
+    assert far.found == ()
+    # a far-away date is still a date: the mail does not go to the model fallback
+    assert (far.trigger, far.dated) == (True, True)
+    before = scan_rules("20 October" + " " * 61 + "deadline", RECEIVED, IST_MINUTES)
+    assert before.found == () and before.dated is True
+
+
+def test_only_dates_near_a_keyword_count_in_one_sentence() -> None:
+    filler = "and a lot of other words that have nothing to do with it at all, " * 2
+    text = f"Submit the assignment by 20 October {filler} see you on 25 October"
+    assert _found(text) == [("submission", date(2026, 10, 20))]
+
+
+def test_any_keyword_of_any_kind_makes_a_date_near_but_the_kind_keeps_its_priority() -> None:
+    # "event" is next to the date, but the sentence also has a higher priority "fee" keyword
+    text = "The fee is explained below, and the orientation event is on 14 October"
+    assert _found(text) == [("fee", date(2026, 10, 14))]
+
+
 # --- local model fallback ----------------------------------------------------------------------
 
 

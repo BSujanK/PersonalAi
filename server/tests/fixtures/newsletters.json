@@ -1,0 +1,72 @@
+[
+  {
+    "name": "market-newsletter",
+    "from_addr": "markets@wire.example.com",
+    "from_name": "Example Wire Markets",
+    "subject": "Crude down. Metals steady. What's next this week?",
+    "body": "Good morning. Crude slipped and metals held steady overnight. The Fed meeting is on 8 October and bank results due 10 Oct will set the tone for the week.",
+    "label_ids": ["INBOX", "UNREAD"],
+    "list_unsubscribe": true,
+    "expect_reason": "list_unsubscribe"
+  },
+  {
+    "name": "tech-digest-with-footer-only",
+    "from_addr": "editors@techbrief.example.net",
+    "from_name": "Tech Brief",
+    "subject": "Chips, clouds and a quiet Tuesday",
+    "body": "Top stories today. Our virtual summit event is on 14 October with three speakers.\n\nView in browser | Unsubscribe | Privacy",
+    "label_ids": ["INBOX", "UNREAD"],
+    "list_unsubscribe": false,
+    "expect_reason": "newsletter_text"
+  },
+  {
+    "name": "promotions-label",
+    "from_addr": "hello@shop.example.com",
+    "from_name": "Example Shop",
+    "subject": "Our big sale",
+    "body": "Our sale event ends on 9 October, so hurry while stocks last.",
+    "label_ids": ["INBOX", "CATEGORY_PROMOTIONS"],
+    "list_unsubscribe": false,
+    "expect_reason": "bulk_label"
+  },
+  {
+    "name": "newsletter-sender",
+    "from_addr": "newsletter@club.example.net",
+    "from_name": "Example Club",
+    "subject": "This month at the club",
+    "body": "A pottery workshop runs on 18 October. Registration closes on 15 October.",
+    "label_ids": ["INBOX"],
+    "list_unsubscribe": false,
+    "expect_reason": "bulk_sender"
+  },
+  {
+    "name": "social-label",
+    "from_addr": "notifications@social.example.com",
+    "from_name": "Example Social",
+    "subject": "You have a new invitation",
+    "body": "Asha Verma invited you to a seminar on 21 October.",
+    "label_ids": ["INBOX", "CATEGORY_SOCIAL"],
+    "list_unsubscribe": false,
+    "expect_reason": "bulk_label"
+  },
+  {
+    "name": "weekly-digest-phrase",
+    "from_addr": "editor@weekly.example.org",
+    "from_name": "The Weekly",
+    "subject": "Five things worth reading",
+    "body": "Your weekly digest is here. A webinar on exam preparation takes place on 22 October.",
+    "label_ids": ["INBOX"],
+    "list_unsubscribe": false,
+    "expect_reason": "newsletter_text"
+  },
+  {
+    "name": "receiving-this-because",
+    "from_addr": "info@events.example.net",
+    "from_name": "Example Events",
+    "subject": "Join us",
+    "body": "You’re receiving this email because you signed up on our site. Our workshop is on 25 October.",
+    "label_ids": ["INBOX"],
+    "list_unsubscribe": false,
+    "expect_reason": "newsletter_text"
+  }
+]

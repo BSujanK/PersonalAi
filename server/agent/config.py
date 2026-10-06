@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from agent.news.topics import parse_news_topics
+
 log = logging.getLogger(__name__)
 
 
@@ -127,6 +129,11 @@ def account_label(settings: Settings, account: str) -> str:
     domain (``someone@cs.example.edu`` -> ``Example``)."""
     key = account.strip().lower()
     return settings.account_labels.get(key) or _default_label(key)
+
+
+def _news_topics(value: str) -> str:
+    parse_news_topics(value)  # fail at startup; the raw text is parsed again where it is used
+    return value.strip()
 
 
 def _flag(value: str, default: bool) -> bool:
@@ -303,7 +310,7 @@ class Settings:
                 "PERSONALAI_WEB_SEARCHES_PER_HOUR",
                 e.get("PERSONALAI_WEB_SEARCHES_PER_HOUR", str(defaults.web_searches_per_hour)),
             ),
-            news_topics=e.get("PERSONALAI_NEWS_TOPICS", defaults.news_topics).strip(),
+            news_topics=_news_topics(e.get("PERSONALAI_NEWS_TOPICS", defaults.news_topics)),
             today_refresh_minutes=_positive_int(
                 "PERSONALAI_TODAY_REFRESH_MINUTES",
                 e.get("PERSONALAI_TODAY_REFRESH_MINUTES", str(defaults.today_refresh_minutes)),

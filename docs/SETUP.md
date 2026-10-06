@@ -306,6 +306,7 @@ uv run python -m agent restore --in D:\backups\personalai-2026-10-05.paibak     
 | `PERSONALAI_BRIEFING_TIME` | Default morning briefing time (`HH:MM`, local); the app's Settings override it | `07:30` |
 | `PERSONALAI_ACCOUNT_LABELS` | Comma-separated `address=Label` pairs naming your Google accounts in the app, e.g. `college@example.edu=College,me@example.com=Personal`. Without one, consumer addresses (Gmail, Outlook, ...) show in full and others show their domain name (`someone@cs.example.edu` shows as `Example`) | none |
 | `PERSONALAI_NEWS_FEEDS` | Comma-separated https RSS/Atom feed URLs for `news_headlines` (check them with `agent news-check`) | none |
+| `PERSONALAI_NEWS_TOPICS` | Re-weights or adds news topics that rank `news_headlines` (see "News feeds" below). Invalid values stop startup | AI 5, AI infrastructure 5, tech 3, markets 3, general 1 |
 | `PERSONALAI_FILE_ROOTS` | Absolute folders the agent may read, separated by `;` on Windows (`:` elsewhere) | none |
 | `PERSONALAI_FILE_INDEX_MINUTES` | Local file index refresh interval | `30` |
 | `PERSONALAI_FINANCE_UTC_OFFSET_MINUTES` | Local time offset for finance periods (India is +330) | `330` |
@@ -346,6 +347,17 @@ Attachments come from the folders in `PERSONALAI_FILE_ROOTS` (any file type, hid
 ## Alerts, deadlines and news
 
 - **Deadlines.** Mail (not promo or spam) is scanned for fees, exams, submissions, bills and events; Classroom due dates are collected too. Each one is added to your own primary calendar without asking, with no guests and nobody notified, and the phone shows "Added to calendar" with an **Undo** button. Turn this off with `PERSONALAI_CALENDAR_AUTO_ADD=off`.
+- **Newsletters are skipped.** Mail from senders you do not trust is not searched for deadlines when it has a `List-Unsubscribe` header, is labelled Promotions, Social or Forums by Gmail, reads like a newsletter ("unsubscribe", "view in browser", "weekly digest", "market update" and similar) or comes from an address such as `newsletter@`, `news@`, `digest@`, `marketing@`, `offers@` or `deals@`. Your `PERSONALAI_VIP_SENDERS` and `PERSONALAI_COLLEGE_DOMAINS` are always trusted and never filtered. A date also counts only when it is within 60 characters of a deadline word in the same sentence.
+
+  To clean up deadlines an older version added from newsletters, run this once after updating (it changes nothing without `--apply`):
+
+  ```powershell
+  cd server
+  uv run python -m agent deadlines-recheck
+  uv run python -m agent deadlines-recheck --apply
+  ```
+
+  The first command lists each rejected mail deadline with its id, kind, date, account, title, whether it is on your calendar and why it was rejected. With `--apply`, the calendar event of each one is deleted (only if the agent created it, as with the app's Undo button) and the others are dismissed so they are never added. Classroom deadlines are never touched. Every change is written to the audit log as `cli:recheck`.
 - **Alerts on the phone.** In Settings > Alerts, turn on Important mail, Deadlines (a day and two hours before) and the Morning briefing, and set its time. Android 13+ asks for notification permission the first time. The app checks for alerts about every 15 minutes in the background and whenever you open it; alerts come over Tailscale, never through Google push.
 - **News feeds.** No feed is on by default, because the build environment could not reach any news site to confirm a URL. Check candidates on the laptop, then set the ones that pass:
 
@@ -357,6 +369,15 @@ Attachments come from the folders in `PERSONALAI_FILE_ROOTS` (any file type, hid
   ```
 
   `news-check` with no URLs checks the configured list.
+
+- **News ranking.** Headlines are ranked by how much weight you give their topic, then by freshness, instead of newest first. Each topic has a weight from 0 to 10 and a list of keywords (matched as whole words, ignoring case). A match in the title counts in full, a match only in the summary counts 60 %, and an item that matches nothing gets the `general` weight. The score is the weight halved for every 24 hours of age (an item without a date counts as 48 hours old), so a fresh general item can still beat a three-day-old AI item. The defaults are `ai` 5, `ai_infra` 5 (GPUs, data centres, NVIDIA, chips), `tech` 3, `markets` 3 and `general` 1. `PERSONALAI_NEWS_TOPICS` changes them with comma-separated entries: `name=weight` re-weights a topic, `name=weight:keyword|keyword` adds a topic or replaces a topic's keywords (up to 20 keywords of 40 characters, plain words rather than patterns, at most 20 topics). Weight `0` hides matching items. For example:
+
+  ```powershell
+  setx PERSONALAI_NEWS_TOPICS "general=0,markets=4,cricket=2:cricket|ipl|test match"
+  uv run python -m agent restart
+  ```
+
+  Ask the assistant for headlines "about markets" and it can filter by topic.
 
 ## Finance (M4, finish with the phone app in M5 and on the laptop in M7)
 
