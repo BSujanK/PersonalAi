@@ -125,6 +125,20 @@ def _log(log_path: Path, message: str) -> None:
         handle.write(f"{stamp} INFO agent.supervisor {message}\n")
 
 
+def detach_from_console() -> None:
+    """Leave any console this process inherited and ignore console control events.
+
+    The venv's pythonw.exe launcher starts this supervisor as a console python.exe, so a stray
+    Ctrl+C/close event on that console once ended it (0xC000013A) and, through the job object,
+    the server. The server itself runs with its own hidden console (CREATE_NO_WINDOW).
+    """
+    if sys.platform != "win32":
+        return
+    kernel32 = ctypes.windll.kernel32
+    kernel32.FreeConsole()
+    kernel32.SetConsoleCtrlHandler(None, True)
+
+
 def supervise(
     command: Sequence[str],
     cwd: Path,
@@ -135,6 +149,7 @@ def supervise(
     max_restarts: int = MAX_RESTARTS,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
+    detach: Callable[[], None] = detach_from_console,
 ) -> int:
     """Run ``command`` hidden under a kill-on-close job, restarting it after crashes.
 
@@ -149,6 +164,7 @@ def supervise(
             log_path, f"no job object: errno={exc.errno} winerror={getattr(exc, 'winerror', None)}"
         )
         return EXIT_NO_JOB_OBJECT
+    detach()
     _log(log_path, f"supervisor started pid={os.getpid()}")
     crashes: list[float] = []
     while True:

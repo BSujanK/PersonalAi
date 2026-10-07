@@ -243,3 +243,22 @@ def test_crashes_outside_the_window_do_not_count(tmp_path: Path) -> None:
         clock=lambda: now[0],
     )
     assert code == 0 and len(popen.calls) == 4
+
+
+def test_supervisor_detaches_from_its_console_before_starting(tmp_path: Path) -> None:
+    order: list[str] = []
+    popen = FakePopen(0)
+
+    def tracking_popen(command: list[str], **kwargs: Any) -> FakeChild:
+        order.append("popen")
+        return popen(command, **kwargs)
+
+    supervise(
+        ["x"],
+        tmp_path,
+        tmp_path / "agent.log",
+        popen=tracking_popen,
+        job=object,
+        detach=lambda: order.append("detach"),
+    )
+    assert order == ["detach", "popen"]
