@@ -23,11 +23,16 @@ class Ledger:
     def record(self, parsed: ParsedTxn, occurred_at: datetime, source: Source) -> tuple[int, bool]:
         """Store a transaction, or merge it into the same payment seen via the other source.
 
-        Returns ``(txn_id, merged)``. Rows from the same source are never merged, so two genuine
-        identical payments stay two rows.
+        Returns ``(txn_id, merged)``. A row with the same bank reference is the same payment,
+        whatever its source. Without a shared reference, rows from the same source are never
+        merged, so two genuine identical payments stay two rows.
         """
         with self._store.transaction():
-            match = self._find_match(parsed, occurred_at, source)
+            match = (
+                self._store.find_by_reference(parsed.bank, parsed.direction, parsed.reference)
+                if parsed.reference
+                else None
+            ) or self._find_match(parsed, occurred_at, source)
             if match is not None:
                 self._store.merge_txn(match.id, parsed, source, match)
                 self._categorize_if_missing(match.id)
