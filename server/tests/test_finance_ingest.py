@@ -160,3 +160,33 @@ def test_resent_unparsed_sms_stays_a_duplicate_while_still_unparsed() -> None:
     env.ingest.ingest_sms_batch([SmsIn(SENDER, body, at())])
     again = env.ingest.ingest_sms_batch([SmsIn(SENDER, body, at())])
     assert (again.accepted, again.duplicates) == (0, 1)
+
+
+def test_same_sms_uploaded_twice_with_different_precision_counts_once() -> None:
+    # The inbox scan reports whole seconds, the live receiver adds milliseconds.
+    env = make_fin()
+    env.parsers.sms[BODY_A] = txn()
+    received = at()
+    first = env.ingest.ingest_sms_batch([SmsIn(SENDER, BODY_A, received.replace(microsecond=0))])
+    again = env.ingest.ingest_sms_batch(
+        [SmsIn(SENDER, BODY_A, received.replace(microsecond=453000))]
+    )
+    assert (first.parsed, again.duplicates) == (1, 1)
+    assert len(env.store.txns_between(at(-5), at(5))) == 1
+
+
+def test_two_alerts_for_one_bank_reference_are_one_payment() -> None:
+    # The bank sent two different SMS (two senders, an hour apart) for one payment.
+    env = make_fin()
+    env.parsers.sms[BODY_A] = txn(reference="400099990001")
+    env.parsers.sms[BODY_B] = txn(reference="400099990001")
+    env.ingest.ingest_sms_batch([SmsIn(SENDER, BODY_A, at()), SmsIn("JK-BOBTXN-S", BODY_B, at(60))])
+    assert len(env.store.txns_between(at(-5), at(120))) == 1
+
+
+def test_different_references_stay_separate_payments() -> None:
+    env = make_fin()
+    env.parsers.sms[BODY_A] = txn(reference="400099990001")
+    env.parsers.sms[BODY_B] = txn(reference="400099990002")
+    env.ingest.ingest_sms_batch([SmsIn(SENDER, BODY_A, at()), SmsIn(SENDER, BODY_B, at(1))])
+    assert len(env.store.txns_between(at(-5), at(5))) == 2

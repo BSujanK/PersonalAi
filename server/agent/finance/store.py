@@ -106,7 +106,10 @@ class FinanceStore:
         return self._mac(self._reference_key, reference.strip().upper())
 
     def sms_key(self, sender: str, body: str, received_at: datetime) -> str:
-        return self._mac(self._sms_key, f"{sender}|{body}|{iso(received_at)}")
+        # Whole seconds: the inbox scan reports 11:19:52.000 and the live receiver 11:19:52.453
+        # for the same SMS; with full precision they looked like two messages.
+        moment = received_at.replace(microsecond=0)
+        return self._mac(self._sms_key, f"{sender}|{body}|{iso(moment)}")
 
     # --- SMS log --------------------------------------------------------------------------
 
@@ -238,6 +241,19 @@ class FinanceStore:
 
     def get_txn(self, txn_id: int) -> StoredTxn | None:
         rows = self._db.query("SELECT * FROM finance_txns WHERE id = ?", (txn_id,))
+        return self._hydrate(rows[0]) if rows else None
+
+    def find_by_reference(self, bank: str, direction: str, reference: str) -> StoredTxn | None:
+        """The stored payment with this bank reference, from any source.
+
+        A bank reference identifies one payment: the same SMS uploaded twice, or two different
+        alerts the bank sent for one payment, must not count twice.
+        """
+        rows = self._db.query(
+            "SELECT * FROM finance_txns WHERE bank = ? AND direction = ? AND reference_hash = ? "
+            "ORDER BY id LIMIT 1",
+            (bank, direction, self.reference_hash(reference)),
+        )
         return self._hydrate(rows[0]) if rows else None
 
     def find_dedup_candidates(
