@@ -24,6 +24,16 @@ from agent.scheduler import (
 )
 
 
+def _fake_run(started: list[str]):  # type: ignore[no-untyped-def]
+    """A uvicorn.Server.run stand-in: records the host and reports a successful start."""
+
+    def run(self: uvicorn.Server) -> None:
+        self.started = True
+        started.append(self.config.host)
+
+    return run
+
+
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> pytest.MonkeyPatch:
     monkeypatch.setenv("PERSONALAI_DB_PATH", str(tmp_path / "agent.db"))
@@ -63,7 +73,7 @@ def test_serve_starts_uvicorn_when_valid(monkeypatch: pytest.MonkeyPatch, tmp_pa
     monkeypatch.setenv("PERSONALAI_DB_PATH", str(tmp_path / "agent.db"))
     monkeypatch.setenv("PERSONALAI_BIND_HOSTS", "127.0.0.1")
     monkeypatch.setattr(main_module, "assert_secure_backend", lambda: None)
-    monkeypatch.setattr(uvicorn.Server, "run", lambda self: started.append(self.config.host))
+    monkeypatch.setattr(uvicorn.Server, "run", _fake_run(started))
     assert main(["serve"]) == 0
     assert started == ["127.0.0.1"]
 
@@ -132,7 +142,7 @@ def _serve_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[str]:
     monkeypatch.setenv("PERSONALAI_DB_PATH", str(tmp_path / "agent.db"))
     monkeypatch.setenv("PERSONALAI_BIND_HOSTS", "127.0.0.1")
     monkeypatch.setattr(main_module, "assert_secure_backend", lambda: None)
-    monkeypatch.setattr(uvicorn.Server, "run", lambda self: started.append(self.config.host))
+    monkeypatch.setattr(uvicorn.Server, "run", _fake_run(started))
     return started
 
 
@@ -304,7 +314,7 @@ def test_serve_logs_to_a_rotating_file_next_to_the_database(
     monkeypatch.setenv("PERSONALAI_DB_PATH", str(tmp_path / "data" / "agent.db"))
     monkeypatch.setenv("PERSONALAI_BIND_HOSTS", "127.0.0.1")
     monkeypatch.setattr(main_module, "assert_secure_backend", lambda: None)
-    monkeypatch.setattr(uvicorn.Server, "run", lambda self: None)
+    monkeypatch.setattr(uvicorn.Server, "run", _fake_run([]))
     assert main(["serve"]) == 0
     assert main(["serve"]) == 0  # no duplicate handlers the second time
     handlers = [
@@ -381,3 +391,21 @@ def test_supervise_is_windows_only(
     )
     assert main(["supervise"]) == 1
     assert "only available on Windows" in capsys.readouterr().err
+
+
+def test_serve_exits_3_when_a_listener_cannot_start(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _serve_env(monkeypatch, tmp_path)
+    _capture_jobs(monkeypatch)
+    monkeypatch.setattr(uvicorn.Server, "run", lambda self: None)  # returned without starting
+    assert main(["serve"]) == main_module.EXIT_BIND_UNAVAILABLE
+
+
+def test_serve_exits_3_when_a_bind_address_never_appears(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _serve_env(monkeypatch, tmp_path)
+    _capture_jobs(monkeypatch)
+    monkeypatch.setattr(main_module, "wait_for_bind_addresses", lambda hosts: list(hosts))
+    assert main(["serve"]) == main_module.EXIT_BIND_UNAVAILABLE

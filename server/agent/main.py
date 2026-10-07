@@ -8,8 +8,10 @@ import ipaddress
 import json
 import logging
 import logging.handlers
+import socket
 import sys
 import threading
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -323,6 +325,14 @@ def _run_server(settings: Settings) -> int:
     except (InsecureKeyringError, UnsafeBindAddress, ValueError) as exc:
         logging.getLogger("agent").error("server refused to start: %s", type(exc).__name__)
         return _refuse(str(exc))
+    missing = wait_for_bind_addresses(hosts)
+    if missing:
+        # At logon Tailscale may not have its address yet. Exit non-zero so the supervisor
+        # restarts the server with back-off instead of serving without the phone's listener.
+        logging.getLogger("agent").error(
+            "server refused to start: %d bind address(es) not available", len(missing)
+        )
+        return EXIT_BIND_UNAVAILABLE
     logging.getLogger("agent").info("server starting: hosts=%d port=%d", len(hosts), settings.port)
     app = create_app(
         settings,
@@ -355,11 +365,29 @@ def _run_server(settings: Settings) -> int:
         )
         for host in hosts
     ]
-    threads = [threading.Thread(target=s.run, daemon=True) for s in servers[1:]]
+    # Every listener runs in its own thread; if any of them stops (for example it could not
+    # bind), the whole server exits non-zero so the supervisor restarts it, rather than
+    # silently serving on fewer addresses (the phone's Tailscale listener once died at logon).
+    errors: list[BaseException] = []
+
+    def listen(server: uvicorn.Server) -> None:
+        try:
+            server.run()
+        except BaseException as exc:  # re-raised on the main thread below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=listen, args=(s,), daemon=True) for s in servers]
     for thread in threads:
         thread.start()
+    code = 0
     try:
-        servers[0].run()
+        while all(thread.is_alive() for thread in threads):
+            time.sleep(0.2)
+        if errors:
+            raise errors[0]
+        if not all(server.started for server in servers):
+            logging.getLogger("agent").error("a listener could not start; exiting")
+            code = EXIT_BIND_UNAVAILABLE
     finally:
         if scheduler is not None:
             scheduler.shutdown(wait=False)
@@ -367,10 +395,43 @@ def _run_server(settings: Settings) -> int:
             server.should_exit = True
         for thread in threads:
             thread.join(timeout=5)
-    return 0
+    return code
 
 
 _TAILSCALE = (ipaddress.ip_network("100.64.0.0/10"), ipaddress.ip_network("fd7a:115c:a1e0::/48"))
+EXIT_BIND_UNAVAILABLE = 3
+BIND_WAIT_SECONDS = 180.0
+BIND_POLL_SECONDS = 5.0
+
+
+def _bindable(host: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """True when this machine currently owns ``host`` (an ephemeral-port bind succeeds)."""
+    family = socket.AF_INET6 if host.version == 6 else socket.AF_INET
+    with socket.socket(family, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind((str(host), 0))
+        except OSError:
+            return False
+    return True
+
+
+def wait_for_bind_addresses(
+    hosts: Sequence[ipaddress.IPv4Address | ipaddress.IPv6Address],
+    *,
+    timeout: float = BIND_WAIT_SECONDS,
+    poll: float = BIND_POLL_SECONDS,
+    bindable: Callable[[ipaddress.IPv4Address | ipaddress.IPv6Address], bool] = _bindable,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    """Wait until every bind address exists on this machine; return the ones still missing."""
+    deadline = clock() + timeout
+    while True:
+        missing = [host for host in hosts if not bindable(host)]
+        if not missing or clock() >= deadline:
+            return missing
+        logging.getLogger("agent").info("waiting for %d bind address(es) to come up", len(missing))
+        sleep(poll)
 
 
 def _phone_url(
