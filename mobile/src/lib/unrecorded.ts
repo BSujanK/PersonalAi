@@ -1,7 +1,6 @@
 // Wording for payments the bank sent no SMS for. The agent infers them from a balance that moved
 // between two readings; they are shown quietly and are never presented as a confirmed payment.
-import type { BalanceMismatch, Txn } from './api';
-import { formatInr } from './format';
+import type { Txn } from './api';
 
 export function isInferred(txn: Pick<Txn, 'inferred' | 'category'>): boolean {
   return txn.inferred === true || txn.category === 'unrecorded';
@@ -47,9 +46,4 @@ export function inferredSubtitle(txn: Pick<Txn, 'window' | 'date'>): string {
   return window
     ? `No bank SMS · balance changed between ${formatWindow(window.from, window.to)}`
     : `${txn.date} · No bank SMS · balance changed`;
-}
-
-/** "Balance doesn't add up by ₹250 between 9:48 am and 3:42 pm". */
-export function mismatchLine(m: BalanceMismatch): string {
-  return `Balance doesn't add up by ${formatInr(m.amount_inr)} between ${formatWindow(m.from, m.to)}`;
 }

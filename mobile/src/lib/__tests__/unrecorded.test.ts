@@ -3,7 +3,6 @@ import {
   inferredSubtitle,
   inferredTitle,
   isInferred,
-  mismatchLine,
 } from '../unrecorded';
 
 const at = (day: number, hour: number, minute: number) =>
@@ -65,20 +64,5 @@ describe('inferredSubtitle', () => {
       '2026-10-07 · No bank SMS · balance changed',
     );
     expect(inferredSubtitle({ date: '2026-10-07' })).toContain('2026-10-07');
-  });
-});
-
-describe('mismatchLine', () => {
-  it('states the shortfall with Indian grouping and the window', () => {
-    const m = {
-      account: 'XX1234',
-      from: at(7, 9, 48),
-      to: at(7, 15, 42),
-      amount_inr: '12500.50',
-      direction: 'debit' as const,
-    };
-    expect(mismatchLine(m)).toBe(
-      `Balance doesn't add up by ₹12,500.50 between ${formatWindow(m.from, m.to)}`,
-    );
   });
 });
