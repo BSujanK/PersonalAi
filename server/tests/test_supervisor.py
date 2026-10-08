@@ -117,6 +117,23 @@ def test_server_command_uses_python_next_to_pythonw(
     assert server_command()[0] == str(tmp_path / "pythonw.exe")
 
 
+def test_server_command_prefers_the_server_virtualenv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = tmp_path / "base"
+    base.mkdir()
+    (base / "pythonw.exe").write_text("", encoding="utf-8")
+    (base / "python.exe").write_text("", encoding="utf-8")
+    monkeypatch.setattr(sys, "executable", str(base / "pythonw.exe"))
+    server = tmp_path / "server"
+    scripts = server / ".venv" / "Scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "python.exe").write_text("", encoding="utf-8")
+    assert server_command(server) == [str(scripts / "python.exe"), "-m", "agent", "serve"]
+    (scripts / "python.exe").unlink()
+    assert server_command(server)[0] == str(base / "python.exe")
+
+
 SYNCHRONIZE = 0x00100000
 WAIT_TIMEOUT = 0x102
 

@@ -1,10 +1,12 @@
-"""Console-less supervisor for the scheduled task (Windows): ``pythonw.exe -m agent supervise``.
+"""Console-less supervisor for the scheduled task (Windows): ``agent supervise``.
 
 Why: a server started from a console host dies with ``0xC000013A`` (STATUS_CONTROL_C_EXIT) when
 that console gets a close or Ctrl+C event, which Windows 11 does at logon with Windows Terminal as
-the default terminal. ``pythonw.exe`` is a GUI-subsystem program, so this process has no console.
-It starts the server with its own hidden console (``CREATE_NO_WINDOW``) in a new process group, so
-no terminal can close it or send it Ctrl+C.
+the default terminal, and which also happened during Modern Standby. The venv's pythonw.exe
+(from uv) is a console-subsystem launcher, so the task runs the base interpreter's real
+(GUI-subsystem) ``pythonw.exe`` with ``scripts/agent_task.py`` instead: nothing above this process
+has a console. It starts the server with its own hidden console (``CREATE_NO_WINDOW``) in a new
+process group, so no terminal can close it or send it Ctrl+C.
 
 It also puts itself in a job object that kills every member when its handle closes (which is when
 this process ends, however it ends), so stopping the scheduled task stops the server too.
@@ -110,8 +112,17 @@ def create_kill_on_close_job() -> object:
     raise ctypes.WinError(error)
 
 
-def server_command() -> list[str]:
-    """``python.exe -m agent serve``, from the ``python.exe`` next to this ``pythonw.exe``."""
+def server_command(server_dir: Path | None = None) -> list[str]:
+    """``python.exe -m agent serve``, preferring the server's virtualenv interpreter.
+
+    The task runs the base interpreter's pythonw.exe, whose sibling python.exe has no virtualenv,
+    so ``<server_dir>/.venv/Scripts/python.exe`` comes first; otherwise the ``python.exe`` next to
+    this interpreter.
+    """
+    if server_dir is not None:
+        venv_python = server_dir / ".venv" / "Scripts" / "python.exe"
+        if venv_python.is_file():
+            return [str(venv_python), "-m", "agent", "serve"]
     exe = Path(sys.executable)
     sibling = exe.with_name("python.exe")
     python = sibling if sibling.is_file() else exe
@@ -128,9 +139,9 @@ def _log(log_path: Path, message: str) -> None:
 def detach_from_console() -> None:
     """Leave any console this process inherited and ignore console control events.
 
-    The venv's pythonw.exe launcher starts this supervisor as a console python.exe, so a stray
-    Ctrl+C/close event on that console once ended it (0xC000013A) and, through the job object,
-    the server. The server itself runs with its own hidden console (CREATE_NO_WINDOW).
+    Under an older task (uv's console pythonw.exe launcher) this supervisor inherited a console,
+    and a stray Ctrl+C/close event on it ended the supervisor (0xC000013A) and, through the job
+    object, the server. The server itself runs with its own hidden console (CREATE_NO_WINDOW).
     """
     if sys.platform != "win32":
         return
