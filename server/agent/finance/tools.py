@@ -190,7 +190,9 @@ def register_finance_tools(
             name="spend_summary",
             description=(
                 "Spending summary for a period: total spent, received and net, spend by "
-                "category and the top merchants. Amounts are in rupees."
+                "category and the top merchants. Amounts are in rupees. unrecorded_inr is the "
+                "part of the spending inferred from balance gaps (payments the bank sent no "
+                "message for); it is already included in the totals."
             ),
             parameters={
                 "type": "object",
@@ -221,7 +223,9 @@ def register_finance_tools(
             name="transactions",
             description=(
                 "Aggregate transactions for a period into groups (count and total in rupees), "
-                "filtered by direction, category, account, merchant or amount. Debits by default."
+                "filtered by direction, category, account, merchant or amount. Debits by default. "
+                "unrecorded_inr is the part of the debits inferred from balance gaps; it is "
+                "already included in the totals."
             ),
             parameters={
                 "type": "object",

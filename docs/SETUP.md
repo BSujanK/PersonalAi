@@ -257,6 +257,7 @@ Go through these once; they are the end-to-end acceptance list from `docs/PLAN.m
 - [ ] Ask "Remind me at 7am": an approval appears on the phone, the fingerprint prompt follows, and the alarm is set in the clock app (open the app after approving).
 - [ ] Ask "Draft a reply to <someone>": the exact text is shown; reject it; check Gmail Sent that nothing was sent.
 - [ ] Bank SMS: **Settings > Import bank SMS**, allow SMS; a real Bank of Baroda SMS appears in Money, and the balance matches the latest "Avl Bal".
+- [ ] Payment notifications: **Settings > Payment apps > Turn on**, then switch on *PersonalAi payment notifications* in Android's Notification access screen. On Android 13+ a sideloaded app may show the switch greyed out as a restricted setting: open **App info > PersonalAi**, tap the menu (top right), choose **Allow restricted settings**, and try again. Only PhonePe, GPay and bob World notifications are read. Bank of Baroda sends no SMS for some UPI payments; those show up from the PhonePe notification, or, if there is none, as an *Unrecorded payment* worked out from the next balance.
 - [ ] Turn Tailscale off on the phone: the app can no longer reach the server. Turn it back on.
 - [ ] Take the first backup (below) and store the passphrase in your password manager.
 
@@ -315,6 +316,7 @@ uv run python -m agent restore --in D:\backups\personalai-2026-10-05.paibak     
 | `PERSONALAI_FILE_INDEX_MINUTES` | Local file index refresh interval | `30` |
 | `PERSONALAI_FINANCE_UTC_OFFSET_MINUTES` | Local time offset for finance periods (India is +330) | `330` |
 | `PERSONALAI_FINANCE_CATEGORIZE_MINUTES` | How often uncategorised transactions go to the local model | `15` |
+| `PERSONALAI_RECONCILE_MAX_INR` | Largest balance gap (in rupees) recorded as an "Unrecorded payment"; bigger gaps are shown as mismatches instead | `5000` |
 
 Secrets are never read from the environment; they live in the OS keyring.
 

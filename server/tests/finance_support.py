@@ -10,7 +10,8 @@ from agent.connectors.gmail import MailMessage
 from agent.finance.categorize import categorize_by_rules
 from agent.finance.ingest import FinanceIngest
 from agent.finance.ledger import Ledger
-from agent.finance.model import Bank, Parsed, ParsedBalance, ParsedTxn
+from agent.finance.model import NOTIFICATION_SENDERS, Bank, Parsed, ParsedBalance, ParsedTxn
+from agent.finance.reconcile import Reconciler
 from agent.finance.store import FinanceStore
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
@@ -72,6 +73,8 @@ class FakeParsers:
 
     @staticmethod
     def bank_for_sender(sender: str) -> Bank | None:
+        if sender in NOTIFICATION_SENDERS:
+            return NOTIFICATION_SENDERS[sender]
         return "bob" if sender == SENDER else None
 
     def parse_alert_email(self, from_addr: str, subject: str, body: str) -> ParsedTxn | None:
@@ -86,6 +89,7 @@ class FinEnv:
     ledger: Ledger
     ingest: FinanceIngest
     parsers: FakeParsers
+    reconciler: Reconciler
 
 
 def make_fin() -> FinEnv:
@@ -94,10 +98,16 @@ def make_fin() -> FinEnv:
     store = FinanceStore(db, FieldCipher(KEY), KEY, clock)
     ledger = Ledger(store, categorize_by_rules, clock)
     parsers = FakeParsers()
+    reconciler = Reconciler(store, clock, 500_000)
     ingest = FinanceIngest(
-        store, ledger, parsers.parse_sms, parsers.bank_for_sender, parsers.parse_alert_email
+        store,
+        ledger,
+        parsers.parse_sms,
+        parsers.bank_for_sender,
+        parsers.parse_alert_email,
+        reconciler.run,
     )
-    return FinEnv(db, clock, store, ledger, ingest, parsers)
+    return FinEnv(db, clock, store, ledger, ingest, parsers, reconciler)
 
 
 def at(minutes: int = 0) -> datetime:

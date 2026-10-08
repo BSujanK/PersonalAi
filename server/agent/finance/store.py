@@ -17,7 +17,8 @@ from agent.finance.model import ParsedTxn
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 
-Source = Literal["sms", "email"]
+Source = Literal["sms", "email", "notification"]
+BalanceSource = Literal["sms", "email"]
 SmsStatus = Literal["parsed", "balance", "ignored", "unparsed"]
 CategorySource = Literal["rule", "user_rule", "llm", "user"]
 
@@ -48,9 +49,13 @@ class StoredTxn:
     category_source: str | None
     from_sms: bool
     from_email: bool
+    from_notification: bool = False
     account_hash: str | None = None
     reference_hash: str | None = None
     txn_date: date | None = None
+    inferred: bool = False  # an unrecorded payment worked out from a balance gap
+    window_from: datetime | None = None  # inferred rows: the balance readings it lies between
+    window_to: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -170,6 +175,26 @@ class FinanceStore:
         source: Source,
         category: tuple[str, CategorySource] | None,
     ) -> int:
+        return self._insert(parsed, occurred_at, source, category, None)
+
+    def insert_inferred(
+        self,
+        parsed: ParsedTxn,
+        occurred_at: datetime,
+        window: tuple[datetime, datetime],
+        category: tuple[str, CategorySource],
+    ) -> int:
+        """An unrecorded payment inferred from a balance gap: no source flag is set."""
+        return self._insert(parsed, occurred_at, None, category, window)
+
+    def _insert(
+        self,
+        parsed: ParsedTxn,
+        occurred_at: datetime,
+        source: Source | None,
+        category: tuple[str, CategorySource] | None,
+        window: tuple[datetime, datetime] | None,
+    ) -> int:
         enc = self._cipher.encrypt
         account_hash = (
             self.account_hash(parsed.bank, parsed.account_mask) if parsed.account_mask else None
@@ -180,8 +205,9 @@ class FinanceStore:
             cur = self._db.execute(
                 "INSERT INTO finance_txns (bank, account_hash, direction, channel, amount_enc, "
                 "occurred_at, txn_date, counterparty_hash, reference_hash, category, "
-                "category_source, from_sms, from_email, created_at) "
-                "VALUES (?, ?, ?, ?, x'', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "category_source, from_sms, from_email, from_notification, inferred, "
+                "window_from, window_to, created_at) "
+                "VALUES (?, ?, ?, ?, x'', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     parsed.bank,
                     account_hash,
@@ -195,6 +221,10 @@ class FinanceStore:
                     category[1] if category else None,
                     int(source == "sms"),
                     int(source == "email"),
+                    int(source == "notification"),
+                    int(window is not None),
+                    iso(window[0]) if window else None,
+                    iso(window[1]) if window else None,
                     iso(self._clock()),
                 ),
             )
@@ -234,9 +264,13 @@ class FinanceStore:
             category_source=row["category_source"],
             from_sms=bool(row["from_sms"]),
             from_email=bool(row["from_email"]),
+            from_notification=bool(row["from_notification"]),
             account_hash=row["account_hash"],
             reference_hash=row["reference_hash"],
             txn_date=date.fromisoformat(row["txn_date"]) if row["txn_date"] else None,
+            inferred=bool(row["inferred"]),
+            window_from=datetime.fromisoformat(row["window_from"]) if row["window_from"] else None,
+            window_to=datetime.fromisoformat(row["window_to"]) if row["window_to"] else None,
         )
 
     def get_txn(self, txn_id: int) -> StoredTxn | None:
@@ -264,12 +298,10 @@ class FinanceStore:
         reference: str | None,
         source: Source,
     ) -> list[StoredTxn]:
-        """Rows from the other source only that share the reference or fall inside the window."""
-        other = (
-            "from_email = 1 AND from_sms = 0"
-            if source == "sms"
-            else "from_sms = 1 AND from_email = 0"
-        )
+        """Recorded rows without this source's flag that share the reference or fall inside the
+        window. Inferred rows are not payments seen by any source, so they never match."""
+        flag = {"sms": "from_sms", "email": "from_email", "notification": "from_notification"}
+        other = f"{flag[source]} = 0 AND inferred = 0"
         match = "(occurred_at >= ? AND occurred_at <= ?)"
         params: list[object] = [direction, iso(occurred_at - window), iso(occurred_at + window)]
         if reference:
@@ -286,12 +318,19 @@ class FinanceStore:
     ) -> None:
         """Mark the extra source and fill fields the existing row lacks."""
         enc = self._cipher.encrypt
-        sets = ["from_sms = 1" if source == "sms" else "from_email = 1"]
+        flag = {"sms": "from_sms", "email": "from_email", "notification": "from_notification"}
+        sets = [f"{flag[source]} = 1"]
         params: list[object] = []
         if existing.reference_hash is None and parsed.reference:
             sets.append("reference_hash = ?")
             params.append(self.reference_hash(parsed.reference))
-        if existing.counterparty is None and parsed.counterparty and parsed.counterparty.strip():
+        # A bank's own wording beats a payment app's: it replaces a notification-only name.
+        app_only = existing.from_notification and not (existing.from_sms or existing.from_email)
+        if (
+            (existing.counterparty is None or (app_only and source != "notification"))
+            and parsed.counterparty
+            and parsed.counterparty.strip()
+        ):
             name = parsed.counterparty.strip()
             sets += ["counterparty_enc = ?", "counterparty_hash = ?"]
             params += [enc(name, _aad("counterparty", txn_id)), self.counterparty_hash(name)]
@@ -338,9 +377,37 @@ class FinanceStore:
         sql += " ORDER BY occurred_at, id"
         return [self._hydrate(r) for r in self._db.query(sql, params)]
 
+    def txns_since(self, since: datetime) -> list[StoredTxn]:
+        """Every recorded and inferred row from ``since`` on, oldest first."""
+        rows = self._db.query(
+            "SELECT * FROM finance_txns WHERE occurred_at >= ? ORDER BY occurred_at, id",
+            (iso(since),),
+        )
+        return [self._hydrate(r) for r in rows]
+
+    def inferred_since(self, since: datetime) -> list[StoredTxn]:
+        """Inferred rows whose window opens at or after ``since``, oldest first."""
+        rows = self._db.query(
+            "SELECT * FROM finance_txns WHERE inferred = 1 AND window_from >= ? "
+            "ORDER BY window_from, id",
+            (iso(since),),
+        )
+        return [self._hydrate(r) for r in rows]
+
+    def set_inferred_amount(self, txn_id: int, amount_paise: int) -> None:
+        self._db.execute(
+            "UPDATE finance_txns SET amount_enc = ? WHERE id = ? AND inferred = 1",
+            (self._cipher.encrypt(str(amount_paise), _aad("amount", txn_id)), txn_id),
+        )
+
+    def delete_inferred(self, txn_id: int) -> None:
+        self._db.execute("DELETE FROM finance_txns WHERE id = ? AND inferred = 1", (txn_id,))
+
     def uncategorized(self, limit: int) -> list[StoredTxn]:
         rows = self._db.query(
-            "SELECT * FROM finance_txns WHERE category IS NULL ORDER BY id LIMIT ?", (limit,)
+            "SELECT * FROM finance_txns WHERE category IS NULL AND inferred = 0 "
+            "ORDER BY id LIMIT ?",
+            (limit,),
         )
         return [self._hydrate(r) for r in rows]
 
@@ -354,7 +421,7 @@ class FinanceStore:
     # --- balances -------------------------------------------------------------------------
 
     def upsert_balance(
-        self, bank: str, mask: str, balance_paise: int, as_of: datetime, source: Source
+        self, bank: str, mask: str, balance_paise: int, as_of: datetime, source: BalanceSource
     ) -> bool:
         """Store the figure only when it is newer than the one held. True when stored."""
         digest = self.account_hash(bank, mask)

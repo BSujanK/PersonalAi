@@ -189,6 +189,7 @@ class Settings:
     file_index_minutes: int = 30
     finance_utc_offset_minutes: int = 330
     finance_categorize_minutes: int = 15
+    reconcile_max_inr: int = 5000  # a larger balance gap is reported, not turned into a row
     push: str = "off"  # "off" or "expo"; pushes carry only a count, never content
     news_feeds: tuple[str, ...] = ()
     calendar_auto_add: bool = True
@@ -295,6 +296,10 @@ class Settings:
             ),
             finance_categorize_minutes=int(
                 e.get("PERSONALAI_FINANCE_CATEGORIZE_MINUTES", defaults.finance_categorize_minutes)
+            ),
+            reconcile_max_inr=_positive_int(
+                "PERSONALAI_RECONCILE_MAX_INR",
+                e.get("PERSONALAI_RECONCILE_MAX_INR", str(defaults.reconcile_max_inr)),
             ),
             push=_push_mode(e.get("PERSONALAI_PUSH", defaults.push)),
             news_feeds=_news_feeds(e.get("PERSONALAI_NEWS_FEEDS", "")),

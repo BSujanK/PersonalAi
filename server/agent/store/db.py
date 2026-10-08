@@ -9,7 +9,16 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
+
+# Columns added to tables that already existed, as (table, column, definition). A database from
+# an older version gets them by ALTER on open; the CREATE TABLE above carries them for new ones.
+_ADDED_COLUMNS = (
+    ("finance_txns", "from_notification", "INTEGER NOT NULL DEFAULT 0"),
+    ("finance_txns", "inferred", "INTEGER NOT NULL DEFAULT 0"),
+    ("finance_txns", "window_from", "TEXT"),
+    ("finance_txns", "window_to", "TEXT"),
+)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS devices (
@@ -205,6 +214,10 @@ CREATE TABLE IF NOT EXISTS finance_txns (
     category_source TEXT CHECK (category_source IN ('rule', 'user_rule', 'llm', 'user')),
     from_sms INTEGER NOT NULL DEFAULT 0,
     from_email INTEGER NOT NULL DEFAULT 0,
+    from_notification INTEGER NOT NULL DEFAULT 0,
+    inferred INTEGER NOT NULL DEFAULT 0,
+    window_from TEXT,
+    window_to TEXT,
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS finance_txns_time ON finance_txns(occurred_at);
@@ -273,6 +286,10 @@ class Database:
     def _apply_schema(self) -> None:
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            for table, column, definition in _ADDED_COLUMNS:
+                have = {r["name"] for r in self._conn.execute(f"PRAGMA table_info({table})")}
+                if column not in have:
+                    self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
             self._conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
     @contextmanager
