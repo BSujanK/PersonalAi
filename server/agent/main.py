@@ -285,7 +285,7 @@ def _supervise(settings: Settings) -> int:
                 "supervise is only available on Windows (it needs a job object).", file=sys.stderr
             )
         return 1
-    return supervise(server_command(), SERVER_DIR, _log_path(settings))
+    return supervise(server_command(SERVER_DIR), SERVER_DIR, _log_path(settings))
 
 
 def _serve(settings: Settings) -> int:
