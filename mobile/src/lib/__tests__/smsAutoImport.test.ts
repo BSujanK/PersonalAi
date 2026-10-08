@@ -57,6 +57,8 @@ describe('autoImportBankSms', () => {
     expect(await autoImportBankSms(d)).toEqual({ status: 'no-permission' });
     expect(d.setPermissionMissing).toHaveBeenCalledWith(true);
     expect(d.scan).not.toHaveBeenCalled();
+    // Queued payment-app notifications still go up.
+    expect(d.flush).toHaveBeenCalled();
   });
 
   it('runs once at a time', async () => {

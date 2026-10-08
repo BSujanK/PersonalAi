@@ -3,7 +3,9 @@ package expo.modules.banksms
 import android.content.Context
 import android.content.Intent
 import android.provider.AlarmClock
+import android.provider.Settings
 import android.provider.Telephony
+import androidx.core.app.NotificationManagerCompat
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -53,6 +55,17 @@ class BankSmsModule : Module() {
 
     AsyncFunction("queueSize") {
       SmsQueue.size(context)
+    }
+
+    Function("notificationAccessEnabled") {
+      NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+    }
+
+    // The system screen where the owner switches the notification listener on; there is no prompt API.
+    Function("openNotificationAccessSettings") {
+      context.startActivity(
+        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      )
     }
 
     // Phone actions. Built natively so EXTRA_DAYS is the ArrayList<Integer> the clock app expects.

@@ -12,7 +12,7 @@ from agent.core.redact import Redactor
 from agent.finance.categorize import FinanceCategorizer
 from agent.finance.services import FinanceServices
 from agent.store.keystore import KeyStore
-from tests.finance_support import SENDER, FinEnv, balance, make_fin, txn
+from tests.finance_support import SENDER, FinEnv, at, balance, make_fin, txn
 from tests.support import START, make_registry
 from tests.test_api import _auth
 from tests.test_loop import FakeLLM, say
@@ -32,7 +32,11 @@ def _api() -> Api:
     env.parsers.sms[BODY] = txn()
     keystore = KeyStore()
     services = FinanceServices(
-        env.store, env.ledger, env.ingest, FinanceCategorizer(env.store, None, Redactor())
+        env.store,
+        env.ledger,
+        env.ingest,
+        FinanceCategorizer(env.store, None, Redactor()),
+        env.reconciler,
     )
     app = create_app(
         Settings(finance_utc_offset_minutes=330),
@@ -212,3 +216,66 @@ def test_sms_batch_with_some_parsed_is_ok_and_clears_an_old_failure() -> None:
     _sms(api, _item(), _item("Unreadable bank text one", -7))
     assert last_ok(api.env.db, SMS_INGEST) == api.env.clock()
     assert last_failure(api.env.db, SMS_INGEST) is None
+
+
+def _gap_ledger(api: Api) -> None:
+    """Two BoB readings 90 minutes apart whose balances leave 150.00 unexplained."""
+    env = api.env
+    env.ledger.record(txn(reference=None, balance_paise=90000, amount_paise=10000), at(-120), "sms")
+    env.ledger.record(txn(reference=None, balance_paise=70000, amount_paise=5000), at(-30), "sms")
+    env.reconciler.run()
+
+
+def test_transactions_expose_inferred_rows_windows_and_the_notification_source() -> None:
+    api = _api()
+    _gap_ledger(api)
+    api.env.ledger.record(
+        txn(bank="upi", account_mask=None, reference=None, amount_paise=777),
+        at(-5),
+        "notification",
+    )
+    rows = api.client.get("/finance/transactions?period=today", headers=api.headers).json()
+    by_amount = {r["amount_inr"]: r for r in rows["transactions"]}
+    inferred = by_amount["150.00"]
+    assert inferred["inferred"] is True and inferred["sources"] == []
+    assert inferred["category"] == "unrecorded" and inferred["counterparty"] is None
+    assert inferred["window"] == {"from": "2026-10-05T15:30+05:30", "to": "2026-10-05T17:00+05:30"}
+    sms = by_amount["100.00"]
+    assert sms["inferred"] is False and sms["window"] is None and sms["sources"] == ["sms"]
+    assert by_amount["7.77"]["sources"] == ["notification"]
+
+
+def test_summary_counts_unrecorded_money_and_balances_report_mismatches() -> None:
+    api = _api()
+    _gap_ledger(api)
+    summary = api.client.get("/finance/summary?period=today", headers=api.headers).json()
+    assert summary["spent_inr"] == "300.00" and summary["unrecorded_inr"] == "150.00"
+    assert {"category": "unrecorded", "total_inr": "150.00", "count": 1} in summary["by_category"]
+    assert api.client.get("/finance/balances", headers=api.headers).json()["mismatches"] == []
+
+    api.env.ledger.record(
+        txn(reference=None, balance_paise=-900000, amount_paise=100), at(-10), "sms"
+    )
+    api.env.reconciler.run()
+    [mismatch] = api.client.get("/finance/balances", headers=api.headers).json()["mismatches"]
+    assert mismatch == {
+        "account": "XX1234",
+        "from": "2026-10-05T17:00+05:30",
+        "to": "2026-10-05T17:20+05:30",
+        "amount_inr": "9699.00",
+        "direction": "debit",
+    }
+
+
+def test_unrecorded_is_a_valid_category_for_the_owner_to_set() -> None:
+    api = _api()
+    _gap_ledger(api)
+    [row] = [t for t in api.env.store.txns_between(at(-300), at(0)) if t.inferred]
+    ok = api.client.post(
+        "/finance/category", json={"txn_id": row.id, "category": "food"}, headers=api.headers
+    )
+    assert ok.status_code == 200
+    again = api.client.post(
+        "/finance/category", json={"txn_id": row.id, "category": "unrecorded"}, headers=api.headers
+    )
+    assert again.status_code == 200

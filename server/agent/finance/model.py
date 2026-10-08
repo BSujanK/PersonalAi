@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from typing import Literal
@@ -36,3 +37,14 @@ class ParsedBalance:
 
 
 Parsed = ParsedTxn | ParsedBalance
+
+# Payment-app notifications the phone uploads through the SMS pipeline under these reserved
+# sender names (exact, case-sensitive), mapped to the bank the resulting rows carry.
+APP_PHONEPE = "APP-PHONEPE"
+APP_GPAY = "APP-GPAY"
+APP_BOBWORLD = "APP-BOBWORLD"
+NOTIFICATION_SENDERS: Mapping[str, Bank] = {
+    APP_PHONEPE: "upi",
+    APP_GPAY: "upi",
+    APP_BOBWORLD: "bob",
+}

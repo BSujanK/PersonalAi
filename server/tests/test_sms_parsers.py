@@ -227,3 +227,91 @@ def test_find_date(text: str, expected: date | None) -> None:
 )
 def test_find_reference(text: str, ref: str | None) -> None:
     assert find_reference(text) == ref
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Request for RTGS/ NEFT of Rs. 50005.00 in favour of Beneficiary 12345678901 has been "
+        "received. If not requested by you, contact base branch immediately - Bank of Baroda",
+        "Request for NEFT of Rs. 50005.00 in favour of Beneficiary 12345678901 has been "
+        "verified successfully - Bank of Baroda",
+        "Request for RTGS/NEFT of Rs. 50005.00 in favour of Beneficiary 12345678901 has been "
+        "verified successfully - Bank of Baroda",
+        "Amount of Rs. 50005.00 is Credited to Beneficiary A/c on 19-09-2026 13:09:35 through "
+        "NEFT for your UTR No. BARBT12345678901 -Bank of Baroda",
+    ],
+)
+def test_bob_transfer_status_notices_are_not_transactions(body: str) -> None:
+    assert parse_sms("AD-BOBTXN", body) is None
+
+
+@pytest.mark.parametrize(
+    ("body", "direction", "amount", "channel", "reference", "balance"),
+    [
+        (
+            "Rs.60070 Credited to A/c ...1234 from:11112222333344 D. Total Bal:Rs.75000.04CR. "
+            "Avlbl Amt:Rs.75000.04(19-09-2026 10:29:30) - Bank of Baroda",
+            "credit",
+            6007000,
+            "other",
+            None,
+            7500004,
+        ),
+        (
+            "Rs.50005 Debited to A/c ...1234 for NEFT to SOME NAME UTR BARBT12345678901. "
+            "Total Bal:Rs.39977.64CR. Avlbl Amt:Rs.39977.64(19-09-2026 12:45:17). "
+            "Not you? Call 18005700-BOB",
+            "debit",
+            5000500,
+            "neft",
+            "BARBT12345678901",
+            3997764,
+        ),
+        (
+            "Rs.500 Credited to A/c ...1234 thru NEFT UTR AXOBU12345678 by SOME NAME "
+            "Total Bal:Rs.999.99CR. Avlbl Amt:Rs.999.99(01-10-2026 10:00:00) - Bank of Baroda",
+            "credit",
+            50000,
+            "neft",
+            "AXOBU12345678",
+            99999,
+        ),
+        (
+            "Rs.17.4 transferred from A/c ...1234 to:SOME NAME Total Bal:Rs.39977.64CR. "
+            "Avlbl Amt:Rs.39977.64(19-09-2026 12:45:17) - Bank of Baroda",
+            "debit",
+            1740,
+            "other",
+            None,
+            3997764,
+        ),
+        (
+            "Rs.500 deposited in cash to A/c ...1234. Total Bal:Rs.1500.00CR. "
+            "Avlbl Amt:Rs.1500.00(19-09-2026 12:45:17) - Bank of Baroda",
+            "credit",
+            50000,
+            "cash",
+            None,
+            150000,
+        ),
+    ],
+)
+def test_bob_real_transfer_shapes_still_parse(
+    body: str,
+    direction: str,
+    amount: int,
+    channel: str,
+    reference: str | None,
+    balance: int,
+) -> None:
+    parsed = parse_sms("AD-BOBTXN", body)
+    assert isinstance(parsed, ParsedTxn)
+    assert (
+        parsed.direction,
+        parsed.amount_paise,
+        parsed.channel,
+        parsed.reference,
+        parsed.balance_paise,
+        parsed.account_mask,
+    ) == (direction, amount, channel, reference, balance, "XX1234")

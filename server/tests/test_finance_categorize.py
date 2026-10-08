@@ -115,4 +115,5 @@ def test_no_llm_still_applies_rules_and_owner_rules() -> None:
 
 
 def test_categories_are_the_documented_list() -> None:
-    assert len(CATEGORIES) == 17 and "other" in CATEGORIES and json.dumps(CATEGORIES)
+    assert len(CATEGORIES) == 18 and "other" in CATEGORIES and json.dumps(CATEGORIES)
+    assert "unrecorded" in CATEGORIES

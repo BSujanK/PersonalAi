@@ -126,6 +126,11 @@ def _spend_by(txns: list[StoredTxn], key: str) -> list[dict[str, int | str]]:
     return [{"key": k, "paise": totals[k], "count": counts[k]} for k in ranked]
 
 
+def unrecorded_inr(txns: list[StoredTxn]) -> str:
+    """Debits inferred from balance gaps: real money out that no message reported."""
+    return format_inr(sum(t.amount_paise for t in txns if t.inferred and t.direction == "debit"))
+
+
 def spend_summary(txns: list[StoredTxn]) -> dict[str, object]:
     spent = sum(t.amount_paise for t in txns if t.direction == "debit")
     received = sum(t.amount_paise for t in txns if t.direction == "credit")
@@ -136,6 +141,7 @@ def spend_summary(txns: list[StoredTxn]) -> dict[str, object]:
         "spent_inr": format_inr(spent),
         "received_inr": format_inr(received),
         "net_inr": format_inr(received - spent),
+        "unrecorded_inr": unrecorded_inr(txns),
         "by_category": [
             {"category": g["key"], "total_inr": format_inr(int(g["paise"])), "count": g["count"]}
             for g in by_category
@@ -181,6 +187,7 @@ def group_transactions(
     return {
         "count": len(txns),
         "total_inr": format_inr(sum(totals.values())),
+        "unrecorded_inr": unrecorded_inr(txns),
         "group_count": len(keys),
         "groups": [
             {"key": k, "count": counts[k], "total_inr": format_inr(totals[k])} for k in keys[:limit]

@@ -10,6 +10,7 @@ import Animated, {
 
 import type { IconName } from '../../src/components/Icon';
 import { Hero, type Delta } from '../../src/components/Hero';
+import { NotificationAccessPrompt } from '../../src/components/NotificationAccessPrompt';
 import { Screen } from '../../src/components/Screen';
 import {
   Card,
@@ -19,6 +20,7 @@ import {
   ListRow,
   ListSection,
   LoadFailed,
+  Notice,
   StaleNote,
   Stagger,
 } from '../../src/components/ui';
@@ -33,7 +35,14 @@ import {
   type Txn,
 } from '../../src/lib/api';
 import { errorMessage, formatInr, periodLabel, shortDateTime } from '../../src/lib/format';
+import { useNotificationAccess } from '../../src/lib/notificationAccess';
 import { useLoader, usePullToRefresh } from '../../src/lib/usePolling';
+import {
+  inferredSubtitle,
+  inferredTitle,
+  isInferred,
+  mismatchLine,
+} from '../../src/lib/unrecorded';
 import {
   fontFamily,
   motion,
@@ -146,6 +155,7 @@ export default function Money() {
   const pillsPlaced = useRef(false);
   const [editing, setEditing] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const notificationAccess = useNotificationAccess();
 
   // A new period reloads; the previous figures stay up until the new ones land.
   const fetchMoney = useCallback(async () => {
@@ -154,7 +164,12 @@ export default function Money() {
       getSummary(period),
       getTransactions(period),
     ]);
-    return { balances: b.accounts, summary, txns: t.transactions };
+    return {
+      balances: b.accounts,
+      mismatches: b.mismatches ?? [],
+      summary,
+      txns: t.transactions,
+    };
   }, [period]);
   const {
     data,
@@ -166,6 +181,7 @@ export default function Money() {
   });
   const pull = usePullToRefresh(reload);
   const balances = data?.balances ?? [];
+  const mismatches = data?.mismatches ?? [];
   const summary = data?.summary ?? null;
   const txns: Txn[] = data?.txns ?? [];
 
@@ -193,6 +209,7 @@ export default function Money() {
 
   return (
     <Screen tabs title="Money" {...pull}>
+      {notificationAccess === false ? <NotificationAccessPrompt /> : null}
       <ErrorText message={error} />
       {failing && data ? <StaleNote /> : null}
       {failing && !data ? <LoadFailed what="your money" reason={errorMessage(loadError)} /> : null}
@@ -203,6 +220,12 @@ export default function Money() {
         delta={delta}
         palette={palette}
       />
+
+      {mismatches.map((m) => (
+        <Notice key={`${m.account}:${m.from}:${m.to}`} tone="warn">
+          {mismatchLine(m)}
+        </Notice>
+      ))}
 
       <View style={styles.periodsBleed}>
         <ScrollView
@@ -310,17 +333,28 @@ export default function Money() {
         {txns.map((t) => {
           const open = editing === t.id;
           const credit = t.direction === 'credit';
+          const inferred = isInferred(t);
           return (
             <ListRow
               key={t.id}
-              icon={CATEGORY_ICONS[t.category ?? 'other'] ?? 'tag'}
-              iconTint={credit ? palette.ok : palette.accentText}
-              title={t.counterparty ?? 'Unknown'}
-              subtitle={`${t.date} · ${t.category ? periodLabel(t.category) : 'Uncategorised'}`}
-              subtitleLines={1}
+              icon={inferred ? 'help-circle' : (CATEGORY_ICONS[t.category ?? 'other'] ?? 'tag')}
+              iconTint={inferred ? palette.textMuted : credit ? palette.ok : palette.accentText}
+              title={inferred ? inferredTitle(t) : (t.counterparty ?? 'Unknown')}
+              subtitle={
+                inferred
+                  ? inferredSubtitle(t)
+                  : `${t.date} · ${t.category ? periodLabel(t.category) : 'Uncategorised'}`
+              }
+              subtitleLines={inferred ? 2 : 1}
               value={`${credit ? '+' : '−'}${formatInr(t.amount_inr)}`}
-              dot={credit ? palette.ok : palette.danger}
-              accessibilityLabel={`${t.counterparty ?? 'Unknown'}, ${credit ? 'received' : 'spent'} ${formatInr(t.amount_inr)}, ${t.category ?? 'uncategorised'}`}
+              valueMuted={inferred}
+              quiet={inferred}
+              dot={inferred ? undefined : credit ? palette.ok : palette.danger}
+              accessibilityLabel={
+                inferred
+                  ? `${inferredTitle(t)}, ${formatInr(t.amount_inr)}, ${inferredSubtitle(t)}`
+                  : `${t.counterparty ?? 'Unknown'}, ${credit ? 'received' : 'spent'} ${formatInr(t.amount_inr)}, ${t.category ?? 'uncategorised'}`
+              }
               accessibilityHint={open ? 'Hides categories' : 'Shows categories to choose from'}
               selected={open}
               onPress={() => setEditing(open ? null : t.id)}

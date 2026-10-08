@@ -123,7 +123,17 @@ def balances(request: Request) -> dict[str, Any]:
                 "source": b.source,
             }
             for b in finance.store.list_balances()
-        ]
+        ],
+        "mismatches": [
+            {
+                "account": m.account_mask,
+                "from": m.window_from.astimezone(tz).isoformat(timespec="minutes"),
+                "to": m.window_to.astimezone(tz).isoformat(timespec="minutes"),
+                "amount_inr": format_inr(abs(m.gap_paise)),
+                "direction": "credit" if m.gap_paise > 0 else "debit",
+            }
+            for m in finance.reconciler.mismatches
+        ],
     }
 
 
@@ -150,7 +160,22 @@ def transactions(
                 "counterparty": t.counterparty,
                 "account": t.account_mask,
                 "category": t.category,
-                "sources": [s for s, on in (("sms", t.from_sms), ("email", t.from_email)) if on],
+                "sources": [
+                    s
+                    for s, on in (
+                        ("sms", t.from_sms),
+                        ("email", t.from_email),
+                        ("notification", t.from_notification),
+                    )
+                    if on
+                ],
+                "inferred": t.inferred,
+                "window": {
+                    "from": t.window_from.astimezone(tz).isoformat(timespec="minutes"),
+                    "to": t.window_to.astimezone(tz).isoformat(timespec="minutes"),
+                }
+                if t.window_from and t.window_to
+                else None,
             }
             for t in newest
         ],

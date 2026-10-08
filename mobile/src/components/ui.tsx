@@ -177,6 +177,12 @@ const makeStyles = (p: Palette) => ({
     borderColor: p.glassBorder,
   },
   rowSelected: { borderColor: p.accent },
+  // Inferred rows: no fill and a dashed edge, so they read as a note rather than a record.
+  rowQuiet: {
+    backgroundColor: 'transparent',
+    borderStyle: 'dashed' as const,
+    borderColor: p.border,
+  },
   rowMain: { flex: 1, gap: 3 },
   rowTitle: { ...type.callout, fontFamily: fontFamily.bodySemiBold, color: p.text },
   rowTitleStrong: { fontFamily: fontFamily.bodyBold },
@@ -764,6 +770,7 @@ export function ListRow({
   onAccessibilityAction,
   selected,
   destructive,
+  quiet,
 }: A11y & {
   title: string;
   subtitle?: string | null;
@@ -790,6 +797,8 @@ export function ListRow({
   subtitleLines?: number;
   selected?: boolean;
   destructive?: boolean;
+  /** A dashed, unfilled row with muted text, for things the agent inferred rather than read. */
+  quiet?: boolean;
 }) {
   const styles = useThemedStyles(makeStyles);
   const { palette } = useTheme();
@@ -809,6 +818,7 @@ export function ListRow({
           style={[
             styles.rowTitle,
             strong && styles.rowTitleStrong,
+            quiet && { color: palette.textMuted },
             destructive && { color: palette.danger },
             selected && { color: palette.accentText },
           ]}
@@ -840,7 +850,7 @@ export function ListRow({
   if (!onPress && !onLongPress) {
     return (
       <View
-        style={[styles.row, selected && styles.rowSelected]}
+        style={[styles.row, selected && styles.rowSelected, quiet && styles.rowQuiet]}
         accessible={!!accessibilityLabel}
         accessibilityLabel={accessibilityLabel}
       >
@@ -859,7 +869,7 @@ export function ListRow({
       onPress={onPress}
       onLongPress={onLongPress}
       scaleTo={motion.pressScaleCard}
-      style={[styles.row, selected && styles.rowSelected]}
+      style={[styles.row, selected && styles.rowSelected, quiet && styles.rowQuiet]}
     >
       {content}
     </PressableScale>

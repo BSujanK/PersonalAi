@@ -203,8 +203,22 @@ export interface Txn {
   amount_inr: string;
   counterparty: string | null;
   account: string | null;
+  /** "unrecorded" for a payment inferred from a balance change. */
   category: string | null;
+  /** May include "notification" (a payment-app notification) beside the bank SMS. */
   sources: string[];
+  /** The agent inferred this payment from a balance change: no bank SMS or notification exists. */
+  inferred?: boolean;
+  /** For an inferred payment: the two balance readings it happened between. */
+  window?: { from: string; to: string } | null;
+}
+
+export interface BalanceMismatch {
+  account: string | null;
+  from: string;
+  to: string;
+  amount_inr: string;
+  direction: 'debit' | 'credit';
 }
 
 export interface SmsPayload {
@@ -548,7 +562,8 @@ export const getToday = (sections?: TodaySection[]) =>
 export const getSummary = (period: Period) =>
   call<SpendSummary>('GET', `/finance/summary?period=${period}`);
 
-export const getBalances = () => call<{ accounts: Balance[] }>('GET', '/finance/balances');
+export const getBalances = () =>
+  call<{ accounts: Balance[]; mismatches?: BalanceMismatch[] }>('GET', '/finance/balances');
 
 export const getTransactions = (period: Period, limit = 50) =>
   call<{ total: number; transactions: Txn[] }>(

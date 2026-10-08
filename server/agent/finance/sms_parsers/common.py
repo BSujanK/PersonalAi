@@ -7,7 +7,15 @@ from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
-from agent.finance.model import Bank, Channel, Direction, Parsed, ParsedBalance, ParsedTxn
+from agent.finance.model import (
+    NOTIFICATION_SENDERS,
+    Bank,
+    Channel,
+    Direction,
+    Parsed,
+    ParsedBalance,
+    ParsedTxn,
+)
 
 MAX_TEXT = 2000
 MAX_COUNTERPARTY = 64
@@ -49,6 +57,8 @@ def normalize_sender(sender: str) -> str:
 
 
 def bank_for_sender(sender: str) -> Bank | None:
+    if sender in NOTIFICATION_SENDERS:  # exact match: a payment-app notification, not an SMS
+        return NOTIFICATION_SENDERS[sender]
     name = normalize_sender(sender)
     bank = _SENDER_BANKS.get(name)
     if bank is not None:
@@ -230,25 +240,35 @@ _COLLECT = re.compile(
     r"|requests?\s+you\s+to\s+pay|payment\s+request|request(?:ing)?\s+(?:money|payment))",
     re.IGNORECASE,
 )
+# Status notices about an outgoing transfer request or a beneficiary-side credit: no money moved
+# on this account, but "credited" and an amount would otherwise read as income.
+_TRANSFER_NOTICE = re.compile(
+    r"\brequest\s+for\b.{0,20}\b(?:rtgs|neft|imps)\b.*\bin\s+favou?r\s+of\b"
+    r"|\bcredited\s+to\s+beneficiary\b|\bto\s+beneficiary\s+a/?c\b",
+    re.IGNORECASE,
+)
 _REVERSAL = re.compile(r"\b(?:revers(?:ed|al)|refund(?:ed)?)\b", re.IGNORECASE)
 
 _CARD_NAME = re.compile(r"\b(?:debit|credit)\s+card\b", re.IGNORECASE)
 _CREDIT = re.compile(r"\b(?:credited|received|deposited|refunded)\b", re.IGNORECASE)
 _DEBIT = re.compile(
     r"\b(?:debited|debit|spent|withdrawn|wdl|paid|purchase|sent|used\s+for"
-    r"|(?:using|used)\s+(?:your\s+)?card)\b",
+    r"|(?:using|used)\s+(?:your\s+)?card|transferred\s+from)\b",
     re.IGNORECASE,
 )
 
 
 def is_rejected(text: str, *, email: bool = False) -> bool:
-    """True for OTP, promo, failed/declined, collect-request and reversal-without-credit text.
+    """True for OTP, promo, failed/declined, collect-request, transfer-status notices and
+    reversal-without-credit text.
 
     Emails routinely carry a "never share your OTP" footer, so for them only an actual OTP
     value counts.
     """
     otp = _OTP_VALUE if email else _OTP
     if otp.search(text) or _PROMO.search(text) or _FAILED.search(text) or _COLLECT.search(text):
+        return True
+    if _TRANSFER_NOTICE.search(text):
         return True
     return bool(_REVERSAL.search(text) and not _CREDIT.search(text))
 
@@ -268,7 +288,7 @@ def detect_direction(text: str) -> Direction | None:
 
 _CHANNELS: tuple[tuple[Channel, re.Pattern[str]], ...] = (
     ("atm", re.compile(r"\bATM\b|\bwithdrawn\b|cash\s*wdl|\bwdl\b|cash\s*withdrawal", re.I)),
-    ("cash", re.compile(r"cash\s*dep", re.I)),
+    ("cash", re.compile(r"cash\s*dep|deposited\s+in\s+cash", re.I)),
     # UPI also when a VPA-style address (name@bank, no dotted domain) is the only clue.
     ("upi", re.compile(r"\bUPI\b|\bVPA\b|[\w.-]+@[A-Za-z]{2,}(?![\w@-]|\.[A-Za-z])", re.I)),
     ("imps", re.compile(r"\bIMPS\b", re.I)),

@@ -31,6 +31,10 @@ import {
 import { errorMessage } from '../src/lib/format';
 import { usePairing } from '../src/lib/PairingContext';
 import { disablePush, enablePush, isPushEnabled, pushAvailable } from '../src/lib/push';
+import {
+  openNotificationAccessSettings,
+  useNotificationAccess,
+} from '../src/lib/notificationAccess';
 import { clearPairing } from '../src/lib/secureKeys';
 import { autoImportBankSms } from '../src/lib/smsAutoImport';
 import { normaliseSender } from '../src/lib/smsSync';
@@ -56,6 +60,7 @@ export default function Settings() {
   const [queued, setQueued] = useState(0);
   const [smsAllowed, setSmsAllowed] = useState<boolean | null>(null);
   const [push, setPush] = useState(false);
+  const notificationAccess = useNotificationAccess();
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -248,6 +253,43 @@ export default function Settings() {
           chevron
         />
         <ListRow icon="upload" title="Send queued now" onPress={() => void sendQueue()} chevron />
+      </ListSection>
+
+      <ListSection
+        title="Payment apps"
+        footer="Reads only PhonePe, GPay and bob World payment notifications, to catch payments your bank sends no SMS for."
+      >
+        {notificationAccess === false ? (
+          <ListRow
+            icon="bell-off"
+            title="Payment app notifications"
+            value="Off"
+            valueMuted
+            accessory={
+              <Button
+                label="Turn on"
+                tone="tinted"
+                compact
+                onPress={openNotificationAccessSettings}
+                accessibilityHint="Opens Android's notification access settings"
+              />
+            }
+          />
+        ) : (
+          <ListRow
+            icon="bell"
+            title="Payment app notifications"
+            value={notificationAccess === null ? '' : 'On'}
+            valueMuted
+            chevron={notificationAccess === true}
+            onPress={notificationAccess === true ? openNotificationAccessSettings : undefined}
+            accessibilityHint={
+              notificationAccess === true
+                ? "Opens Android's notification access settings"
+                : undefined
+            }
+          />
+        )}
       </ListSection>
 
       <ListSection

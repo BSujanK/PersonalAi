@@ -11,14 +11,15 @@ from datetime import UTC, datetime
 
 from agent.connectors.gmail import MailMessage
 from agent.finance.ledger import Ledger
-from agent.finance.model import Bank, Parsed, ParsedBalance, ParsedTxn
-from agent.finance.store import FinanceStore, SmsStatus
+from agent.finance.model import NOTIFICATION_SENDERS, Bank, Parsed, ParsedBalance, ParsedTxn
+from agent.finance.store import FinanceStore, SmsStatus, Source
 
 log = logging.getLogger(__name__)
 
 ParseSms = Callable[[str, str], Parsed | None]
 BankForSender = Callable[[str], Bank | None]
 ParseAlertEmail = Callable[[str, str, str], ParsedTxn | None]
+AfterIngest = Callable[[], None]
 
 _SKIPPED_LABELS = frozenset({"SPAM", "TRASH"})
 # A bank SMS the parser rejected is kept (encrypted) for a later reparse, except anything that
@@ -56,12 +57,14 @@ class FinanceIngest:
         parse_sms: ParseSms,
         bank_for_sender: BankForSender,
         parse_alert_email: ParseAlertEmail,
+        after_ingest: AfterIngest | None = None,
     ) -> None:
         self._store = store
         self._ledger = ledger
         self._parse_sms = parse_sms
         self._bank_for_sender = bank_for_sender
         self._parse_alert_email = parse_alert_email
+        self._after_ingest = after_ingest
 
     def ingest_sms_batch(self, items: list[SmsIn]) -> IngestResult:
         """Store a whole batch in one transaction: the phone drops its queue only after success."""
@@ -73,14 +76,16 @@ class FinanceIngest:
                 key = self._store.sms_key(item.sender, item.body, received_at)
                 status = self._store.sms_status(key)
                 if status is None:
-                    by_status[self._ingest_one(item, key, received_at)] += 1
+                    by_status[self._tally(item, self._ingest_one(item, key, received_at))] += 1
                 elif status in _REPARSABLE and self._parses_as_txn(item):
                     # A parser fix: an SMS stored as balance-only or unparsed is now a payment.
                     # The phone re-sending it upgrades the row instead of counting a duplicate.
                     self._store.delete_sms(key)
-                    by_status[self._ingest_one(item, key, received_at)] += 1
+                    by_status[self._tally(item, self._ingest_one(item, key, received_at))] += 1
                 else:
                     duplicates += 1
+        if by_status["parsed"] or by_status["balance"]:
+            self._run_after_ingest()
         return IngestResult(
             accepted=sum(by_status.values()),
             duplicates=duplicates,
@@ -89,6 +94,22 @@ class FinanceIngest:
             ignored=by_status["ignored"],
             unparsed=by_status["unparsed"],
         )
+
+    @staticmethod
+    def _tally(item: SmsIn, status: SmsStatus) -> SmsStatus:
+        """An unreadable app notification is mostly noise (offers, reminders): it is kept for a
+        reparse but counted as ignored, so it never reads as a bank-SMS parser failure."""
+        if status == "unparsed" and item.sender in NOTIFICATION_SENDERS:
+            return "ignored"
+        return status
+
+    def _run_after_ingest(self) -> None:
+        if self._after_ingest is None:
+            return
+        try:
+            self._after_ingest()
+        except Exception as exc:  # never let follow-up work fail an ingest
+            log.warning("finance after-ingest failed: %s", type(exc).__name__)
 
     def _parses_as_txn(self, item: SmsIn) -> bool:
         if self._bank_for_sender(item.sender) is None:
@@ -108,12 +129,13 @@ class FinanceIngest:
         except Exception as exc:
             log.warning("sms parser failed: %s", type(exc).__name__)
             parsed = None
+        source: Source = "notification" if item.sender in NOTIFICATION_SENDERS else "sms"
         if isinstance(parsed, ParsedTxn):
-            txn_id, _ = self._ledger.record(parsed, received_at, "sms")
+            txn_id, _ = self._ledger.record(parsed, received_at, source)
             self._store.insert_sms(key, received_at, item.sender, "parsed", txn_id=txn_id)
             return "parsed"
         if isinstance(parsed, ParsedBalance):
-            self._ledger.record_balance(parsed, received_at, "sms")
+            self._ledger.record_balance(parsed, received_at, source)
             self._store.insert_sms(key, received_at, item.sender, "balance")
             return "balance"
         if _SECRET_LIKE.search(item.body):
@@ -137,5 +159,6 @@ class FinanceIngest:
                 occurred_at = datetime.fromtimestamp(msg.internal_date / 1000, UTC)
                 txn_id, _ = self._ledger.record(parsed, occurred_at, "email")
                 self._store.record_email_alert(msg.account, msg.id, "parsed", txn_id)
+            self._run_after_ingest()
         except Exception as exc:
             log.warning("finance email ingest failed: %s", type(exc).__name__)

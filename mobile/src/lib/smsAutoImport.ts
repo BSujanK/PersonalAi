@@ -47,6 +47,8 @@ export function resetAutoImportForTests(): void {
 async function run(deps: AutoImportDeps): Promise<AutoImportResult> {
   if (!(await deps.hasPermission())) {
     await deps.setPermissionMissing(true);
+    // Payment-app notifications are queued without SMS permission; still upload what is queued.
+    await deps.flush().catch(() => undefined);
     return { status: 'no-permission' };
   }
   await deps.setPermissionMissing(false);
