@@ -10,7 +10,6 @@ import Animated, {
 
 import type { IconName } from '../../src/components/Icon';
 import { Hero, type Delta } from '../../src/components/Hero';
-import { NotificationAccessPrompt } from '../../src/components/NotificationAccessPrompt';
 import { Screen } from '../../src/components/Screen';
 import {
   Card,
@@ -20,7 +19,6 @@ import {
   ListRow,
   ListSection,
   LoadFailed,
-  Notice,
   StaleNote,
   Stagger,
 } from '../../src/components/ui';
@@ -35,13 +33,11 @@ import {
   type Txn,
 } from '../../src/lib/api';
 import { errorMessage, formatInr, periodLabel, shortDateTime } from '../../src/lib/format';
-import { useNotificationAccess } from '../../src/lib/notificationAccess';
 import { useLoader, usePullToRefresh } from '../../src/lib/usePolling';
 import {
   inferredSubtitle,
   inferredTitle,
   isInferred,
-  mismatchLine,
 } from '../../src/lib/unrecorded';
 import {
   fontFamily,
@@ -155,7 +151,6 @@ export default function Money() {
   const pillsPlaced = useRef(false);
   const [editing, setEditing] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const notificationAccess = useNotificationAccess();
 
   // A new period reloads; the previous figures stay up until the new ones land.
   const fetchMoney = useCallback(async () => {
@@ -166,7 +161,6 @@ export default function Money() {
     ]);
     return {
       balances: b.accounts,
-      mismatches: b.mismatches ?? [],
       summary,
       txns: t.transactions,
     };
@@ -181,7 +175,6 @@ export default function Money() {
   });
   const pull = usePullToRefresh(reload);
   const balances = data?.balances ?? [];
-  const mismatches = data?.mismatches ?? [];
   const summary = data?.summary ?? null;
   const txns: Txn[] = data?.txns ?? [];
 
@@ -209,7 +202,6 @@ export default function Money() {
 
   return (
     <Screen tabs title="Money" {...pull}>
-      {notificationAccess === false ? <NotificationAccessPrompt /> : null}
       <ErrorText message={error} />
       {failing && data ? <StaleNote /> : null}
       {failing && !data ? <LoadFailed what="your money" reason={errorMessage(loadError)} /> : null}
@@ -220,12 +212,6 @@ export default function Money() {
         delta={delta}
         palette={palette}
       />
-
-      {mismatches.map((m) => (
-        <Notice key={`${m.account}:${m.from}:${m.to}`} tone="warn">
-          {mismatchLine(m)}
-        </Notice>
-      ))}
 
       <View style={styles.periodsBleed}>
         <ScrollView
