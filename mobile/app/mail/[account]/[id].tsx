@@ -1,8 +1,9 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { Icon, type IconName } from '../../../src/components/Icon';
+import { MailSummaryCard } from '../../../src/components/MailSummaryCard';
 import { Screen } from '../../../src/components/Screen';
 import { SkeletonBlock, SkeletonGroup, SkeletonText } from '../../../src/components/Skeleton';
 import {
@@ -13,15 +14,18 @@ import {
   ListSection,
   LoadFailed,
   Notice,
+  PressableScale,
   StaleNote,
 } from '../../../src/components/ui';
 import { askAboutMail, mailRef, replyToMail } from '../../../src/lib/agentPrompts';
 import { getMailMessage, type MailAddress } from '../../../src/lib/api';
 import { openNewChat } from '../../../src/lib/chatRoutes';
 import { errorMessage, formatBytes, initials, shortDateTime } from '../../../src/lib/format';
+import { useMailSummary } from '../../../src/lib/useMailSummary';
 import { useLoader, usePullToRefresh } from '../../../src/lib/usePolling';
 import {
   fontFamily,
+  MIN_TARGET,
   radius,
   space,
   type,
@@ -68,6 +72,20 @@ const makeStyles = (p: Palette) => ({
   // Plain text only: the body is never rendered as HTML or markdown, links are not detected, and
   // nothing remote (images, trackers) is ever loaded.
   bodyText: { ...type.body, color: p.text },
+  toggle: {
+    minHeight: MIN_TARGET,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: space.sm,
+    paddingVertical: space.sm,
+    paddingHorizontal: space.md,
+    borderRadius: radius.pill,
+    backgroundColor: p.glass,
+    borderWidth: 1,
+    borderColor: p.glassBorder,
+  },
+  toggleText: { ...type.headline, color: p.text },
   note: { ...type.footnote, color: p.textMuted, paddingHorizontal: space.md },
 });
 
@@ -107,7 +125,7 @@ function MailSkeleton() {
   );
 }
 
-/** One mail, read-only: headers, attachment metadata and the plain-text body. */
+/** One mail, read-only: headers, the agent's summary, attachment metadata and the plain-text body. */
 export default function MailDetail() {
   const styles = useThemedStyles(makeStyles);
   const { palette } = useTheme();
@@ -116,6 +134,13 @@ export default function MailDetail() {
   const fetchMail = useCallback(() => getMailMessage(account, id), [account, id]);
   const { data, error, failing, retrying, reload } = useLoader(fetchMail);
   const pull = usePullToRefresh(reload);
+  // The summary is asked for beside the mail, not after it. It is a convenience: while it loads
+  // the original is one tap away, and if it fails the original is simply shown, as before.
+  const summary = useMailSummary(account, id);
+  // Which mail's full text the owner opened; nothing is remembered once the screen is left.
+  const [openId, setOpenId] = useState<string | null>(null);
+  const expanded = openId === id;
+  const showBody = summary.status === 'failed' || expanded;
   // Keep to this route's message: a screen reused for another mail never shows the old one.
   const mail = data && data.id === id ? data : null;
 
@@ -124,7 +149,9 @@ export default function MailDetail() {
   return (
     <Screen back {...pull}>
       {failing && mail ? <StaleNote /> : null}
-      {failing && !mail ? <LoadFailed what="this mail" reason={errorMessage(error)} retrying={retrying} /> : null}
+      {failing && !mail ? (
+        <LoadFailed what="this mail" reason={errorMessage(error)} retrying={retrying} />
+      ) : null}
       {!mail && !failing ? <MailSkeleton /> : null}
       {mail ? (
         <>
@@ -207,6 +234,27 @@ export default function MailDetail() {
             <Notice tone="warn">Showing the saved copy; Gmail could not be reached.</Notice>
           ) : null}
 
+          {summary.status !== 'failed' ? (
+            <>
+              <MailSummaryCard summary={summary.status === 'ready' ? summary.summary : null} />
+              <PressableScale
+                accessibilityLabel={expanded ? 'Hide full email' : 'Show full email'}
+                accessibilityState={{ expanded }}
+                onPress={() => setOpenId(expanded ? null : id)}
+                style={styles.toggle}
+              >
+                <Text style={styles.toggleText}>
+                  {expanded ? 'Hide full email' : 'Show full email'}
+                </Text>
+                <Icon
+                  name={expanded ? 'chevron-up' : 'chevron-down'}
+                  size={18}
+                  color={palette.textMuted}
+                />
+              </PressableScale>
+            </>
+          ) : null}
+
           {mail.attachments.length > 0 ? (
             <ListSection
               title={`${mail.attachments.length} attachment${mail.attachments.length === 1 ? '' : 's'}`}
@@ -224,18 +272,24 @@ export default function MailDetail() {
             </ListSection>
           ) : null}
 
-          <View style={styles.bodyCard}>
-            <Text selectable style={styles.bodyText}>
-              {mail.body}
-            </Text>
-          </View>
-          {mail.body_truncated ? (
-            <Text style={styles.note}>This message is long, so only the first part is shown.</Text>
+          {showBody ? (
+            <>
+              <View style={styles.bodyCard}>
+                <Text selectable style={styles.bodyText}>
+                  {mail.body}
+                </Text>
+              </View>
+              {mail.body_truncated ? (
+                <Text style={styles.note}>
+                  This message is long, so only the first part is shown.
+                </Text>
+              ) : null}
+              <View style={[styles.tags, { justifyContent: 'center' }]}>
+                <Icon name="shield" size={14} color={palette.textMuted} />
+                <Text style={styles.date}>Plain text only. Images and links are never loaded.</Text>
+              </View>
+            </>
           ) : null}
-          <View style={[styles.tags, { justifyContent: 'center' }]}>
-            <Icon name="shield" size={14} color={palette.textMuted} />
-            <Text style={styles.date}>Plain text only. Images and links are never loaded.</Text>
-          </View>
         </>
       ) : null}
     </Screen>

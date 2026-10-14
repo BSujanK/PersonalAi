@@ -14,6 +14,7 @@ from typing import Literal
 
 from agent.core.clock import Clock, utcnow
 from agent.finance.model import ParsedTxn
+from agent.finance.sms_parsers.common import normalize_sender
 from agent.store.crypto import FieldCipher
 from agent.store.db import Database
 
@@ -116,6 +117,11 @@ class FinanceStore:
         moment = received_at.replace(microsecond=0)
         return self._mac(self._sms_key, f"{sender}|{body}|{iso(moment)}")
 
+    def body_hash(self, sender: str, body: str) -> str:
+        """Identifies one message wherever and whenever it was seen: the sender's operator prefix
+        (``JK-`` or ``JX-``) and the arrival time are left out."""
+        return self._mac(self._sms_key, f"body|{normalize_sender(sender)}|{body}")
+
     # --- SMS log --------------------------------------------------------------------------
 
     def sms_exists(self, key_hash: str) -> bool:
@@ -124,6 +130,16 @@ class FinanceStore:
     def sms_status(self, key_hash: str) -> str | None:
         rows = self._db.query("SELECT status FROM finance_sms WHERE key_hash = ?", (key_hash,))
         return str(rows[0]["status"]) if rows else None
+
+    def sms_twin_exists(self, body_hash: str, received_at: datetime, window: timedelta) -> bool:
+        """Whether a stored SMS with this content arrived within ``window`` of ``received_at``."""
+        return bool(
+            self._db.query(
+                "SELECT 1 FROM finance_sms WHERE body_hash = ? AND received_at >= ? "
+                "AND received_at <= ? LIMIT 1",
+                (body_hash, iso(received_at - window), iso(received_at + window)),
+            )
+        )
 
     def delete_sms(self, key_hash: str) -> None:
         self._db.execute("DELETE FROM finance_sms WHERE key_hash = ?", (key_hash,))
@@ -137,14 +153,16 @@ class FinanceStore:
         *,
         body: str | None = None,
         txn_id: int | None = None,
+        body_hash: str | None = None,
     ) -> None:
         body_enc = (
             self._cipher.encrypt(body, f"finance_sms.body:{key_hash}") if body is not None else None
         )
         self._db.execute(
-            "INSERT INTO finance_sms (key_hash, received_at, sender, status, body_enc, txn_id) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (key_hash, iso(received_at), sender, status, body_enc, txn_id),
+            "INSERT INTO finance_sms "
+            "(key_hash, received_at, sender, status, body_enc, txn_id, body_hash) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (key_hash, iso(received_at), sender, status, body_enc, txn_id, body_hash),
         )
 
     # --- email alerts ---------------------------------------------------------------------
@@ -312,6 +330,32 @@ class FinanceStore:
             params,
         )
         return [self._hydrate(r) for r in rows]
+
+    def find_balance_twin(
+        self, parsed: ParsedTxn, occurred_at: datetime, window: timedelta
+    ) -> StoredTxn | None:
+        """The recorded payment on the same account with the same direction, amount and the same
+        balance left behind, within ``window``. Two genuine payments can never leave one balance,
+        so this is the same payment seen twice. Inferred rows and rows without a balance never
+        match."""
+        if parsed.balance_paise is None or not parsed.account_mask:
+            return None
+        rows = self._db.query(
+            "SELECT * FROM finance_txns WHERE account_hash = ? AND direction = ? AND inferred = 0 "
+            "AND balance_enc IS NOT NULL AND occurred_at >= ? AND occurred_at <= ? ORDER BY id",
+            (
+                self.account_hash(parsed.bank, parsed.account_mask),
+                parsed.direction,
+                iso(occurred_at - window),
+                iso(occurred_at + window),
+            ),
+        )
+        twins = [
+            txn
+            for txn in map(self._hydrate, rows)
+            if txn.amount_paise == parsed.amount_paise and txn.balance_paise == parsed.balance_paise
+        ]
+        return min(twins, key=lambda t: (abs(t.occurred_at - occurred_at), t.id), default=None)
 
     def merge_txn(
         self, txn_id: int, parsed: ParsedTxn, source: Source, existing: StoredTxn

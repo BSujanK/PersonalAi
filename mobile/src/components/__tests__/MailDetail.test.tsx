@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 
 import MailDetail from '../../../app/mail/[account]/[id]';
-import { getMailMessage, type MailMessage } from '../../lib/api';
+import { ApiError, getMailMessage, getMailSummary, type MailMessage } from '../../lib/api';
 
 const mockNavigate = jest.fn();
 const mockNavigation = { addListener: () => () => undefined };
@@ -18,6 +18,7 @@ jest.mock('expo-router', () => ({
 jest.mock('../../lib/api', () => ({
   ...jest.requireActual('../../lib/api'),
   getMailMessage: jest.fn(),
+  getMailSummary: jest.fn(),
 }));
 
 jest.setTimeout(30_000);
@@ -55,8 +56,24 @@ function hostTypes(node: Node): string[] {
   return [node.type, ...(node.children ?? []).flatMap(hostTypes)];
 }
 
+const SUMMARY = {
+  summary: {
+    text: 'The nightly build failed on main.',
+    points: ['Two tests are red', 'Last green build was Monday'],
+    actions: [
+      { text: 'Fix the flaky test', due: '2026-10-17' },
+      { text: 'Reply to Ravi', due: null },
+    ],
+  },
+  cached: false,
+  model: 'm',
+};
+
 beforeEach(() => {
   jest.mocked(getMailMessage).mockReset();
+  // By default the summary is unavailable, so the screen shows the plain mail.
+  jest.mocked(getMailSummary).mockReset();
+  jest.mocked(getMailSummary).mockRejectedValue(new ApiError(503, 'summary_unavailable'));
   mockNavigate.mockReset();
 });
 
@@ -77,7 +94,7 @@ describe('MailDetail', () => {
     expect(screen.getByText('notes.pdf')).toBeTruthy();
     expect(screen.getByText('2 KB · application/pdf')).toBeTruthy();
     // The markup, the URL and the image tag are shown verbatim, never interpreted or fetched.
-    const body = screen.getByText(BODY);
+    const body = await screen.findByText(BODY);
     expect(body.props.selectable).toBe(true);
     expect(body.props.dataDetectorType).toBeUndefined();
     expect(hostTypes(screen.toJSON())).not.toContain('Image');
@@ -109,6 +126,96 @@ describe('MailDetail', () => {
       await screen.findByText('Showing the saved copy; Gmail could not be reached.'),
     ).toBeTruthy();
     expect(screen.getByText(/only the first part is shown/)).toBeTruthy();
+    expect(getMailSummary).toHaveBeenCalledWith('student@example.com', 'm1');
+  });
+
+  describe('summary', () => {
+    it('shows the summary first and the original after one tap', async () => {
+      jest.mocked(getMailMessage).mockResolvedValue(mail());
+      jest.mocked(getMailSummary).mockResolvedValue(SUMMARY);
+      await render(<MailDetail />);
+
+      const text = await screen.findByText('The nightly build failed on main.');
+      expect(text.props.selectable).toBe(true);
+      expect(screen.getByText('Summary').props.accessibilityRole).toBe('header');
+      expect(screen.getByText('by agent')).toBeTruthy();
+      expect(screen.getByText('Two tests are red')).toBeTruthy();
+      expect(screen.getByText('Last green build was Monday')).toBeTruthy();
+      expect(screen.getByText('To do').props.accessibilityRole).toBe('header');
+      expect(screen.getByText('Fix the flaky test')).toBeTruthy();
+      expect(screen.getByText(/^Due .*Sat.*17.*Oct|^Due .*Sat.*Oct.*17/)).toBeTruthy();
+      expect(screen.getByText('Reply to Ravi')).toBeTruthy();
+      expect(screen.queryByText(BODY)).toBeNull();
+      expect(screen.queryByText(/Plain text only/)).toBeNull();
+      // Attachments belong to the mail, not the body, so they stay in view.
+      expect(screen.getByText('notes.pdf')).toBeTruthy();
+
+      const show = screen.getByRole('button', { name: 'Show full email' });
+      expect(show.props.accessibilityState).toMatchObject({ expanded: false });
+      await fireEvent.press(show);
+      expect((await screen.findByText(BODY)).props.selectable).toBe(true);
+      expect(screen.getByText(/Plain text only/)).toBeTruthy();
+      const hide = screen.getByRole('button', { name: 'Hide full email' });
+      expect(hide.props.accessibilityState).toMatchObject({ expanded: true });
+      expect(screen.getByText('The nightly build failed on main.')).toBeTruthy();
+
+      await fireEvent.press(hide);
+      expect(screen.queryByText(BODY)).toBeNull();
+      expect(screen.getByRole('button', { name: 'Show full email' })).toBeTruthy();
+    });
+
+    it('hides the sections that came back empty', async () => {
+      jest.mocked(getMailMessage).mockResolvedValue(mail());
+      jest.mocked(getMailSummary).mockResolvedValue({
+        ...SUMMARY,
+        summary: { text: 'Just a note.', points: [], actions: [] },
+      });
+      await render(<MailDetail />);
+      await screen.findByText('Just a note.');
+      expect(screen.queryByText('To do')).toBeNull();
+    });
+
+    it('asks for the summary beside the mail, not after it', async () => {
+      jest.mocked(getMailMessage).mockReturnValue(new Promise(() => undefined));
+      jest.mocked(getMailSummary).mockReturnValue(new Promise(() => undefined));
+      await render(<MailDetail />);
+      expect(getMailMessage).toHaveBeenCalledWith('student@example.com', 'm1');
+      expect(getMailSummary).toHaveBeenCalledWith('student@example.com', 'm1');
+    });
+
+    it('shows skeleton lines and the original one tap away while it loads', async () => {
+      jest.mocked(getMailMessage).mockResolvedValue(mail());
+      jest.mocked(getMailSummary).mockReturnValue(new Promise(() => undefined));
+      await render(<MailDetail />);
+      expect(await screen.findByText('Summarising…')).toBeTruthy();
+      expect(screen.getByText('Summary')).toBeTruthy();
+      expect(screen.getByLabelText('Loading')).toBeTruthy();
+      expect(screen.queryByText(BODY)).toBeNull();
+      await fireEvent.press(screen.getByRole('button', { name: 'Show full email' }));
+      expect(await screen.findByText(BODY)).toBeTruthy();
+    });
+
+    it('falls back to the full body, with no banner and no toggle, when it fails', async () => {
+      jest.mocked(getMailMessage).mockResolvedValue(mail());
+      for (const error of [new ApiError(503, 'summary_unavailable'), new Error('network down')]) {
+        jest.mocked(getMailSummary).mockRejectedValue(error);
+        const view = await render(<MailDetail />);
+        expect(await screen.findByText(BODY)).toBeTruthy();
+        expect(screen.queryByText('Summary')).toBeNull();
+        expect(screen.queryByText('Summarising…')).toBeNull();
+        expect(screen.queryByText(/full email/)).toBeNull();
+        expect(screen.queryByText(/network down|unavailable/)).toBeNull();
+        await view.unmount();
+      }
+    });
+
+    it('still asks for the summary when the mail comes from the saved copy', async () => {
+      jest.mocked(getMailMessage).mockResolvedValue(mail({ source: 'stored' }));
+      jest.mocked(getMailSummary).mockResolvedValue(SUMMARY);
+      await render(<MailDetail />);
+      expect(await screen.findByText('The nightly build failed on main.')).toBeTruthy();
+      expect(screen.getByText('Showing the saved copy; Gmail could not be reached.')).toBeTruthy();
+    });
   });
 
   it('shows an error when the mail cannot be loaded', async () => {

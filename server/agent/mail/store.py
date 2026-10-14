@@ -56,6 +56,10 @@ def _aad(column: str, account: str, message_id: str) -> str:
     return f"mail_messages.{column}:{account}/{message_id}"
 
 
+def _summary_aad(account: str, message_id: str) -> str:
+    return f"mail_summaries:{account}/{message_id}"
+
+
 class MailStore:
     def __init__(
         self, db: Database, cipher: FieldCipher, db_key: bytes, clock: Clock = utcnow
@@ -151,11 +155,45 @@ class MailStore:
         return cur.rowcount > 0
 
     def mark_deleted(self, account: str, message_id: str) -> bool:
-        cur = self._db.execute(
-            "UPDATE mail_messages SET deleted = 1 WHERE account = ? AND id = ?",
+        """Hide a message and drop its cached summary, which quotes the mail."""
+        with self._db.transaction():
+            cur = self._db.execute(
+                "UPDATE mail_messages SET deleted = 1 WHERE account = ? AND id = ?",
+                (account, message_id),
+            )
+            self._db.execute(
+                "DELETE FROM mail_summaries WHERE account = ? AND message_id = ?",
+                (account, message_id),
+            )
+        return cur.rowcount > 0
+
+    # --- cached summaries -----------------------------------------------------------------
+
+    def get_summary(self, account: str, message_id: str) -> tuple[str, str] | None:
+        """The cached summary as ``(json text, model)``, or None."""
+        rows = self._db.query(
+            "SELECT summary_enc, model FROM mail_summaries WHERE account = ? AND message_id = ?",
             (account, message_id),
         )
-        return cur.rowcount > 0
+        if not rows:
+            return None
+        text = self._cipher.decrypt_str(rows[0]["summary_enc"], _summary_aad(account, message_id))
+        return text, rows[0]["model"] or ""
+
+    def put_summary(self, account: str, message_id: str, summary_json: str, model: str) -> None:
+        self._db.execute(
+            "INSERT INTO mail_summaries (account, message_id, summary_enc, model, created_at) "
+            "VALUES (?, ?, ?, ?, ?) ON CONFLICT(account, message_id) DO UPDATE SET "
+            "summary_enc = excluded.summary_enc, model = excluded.model, "
+            "created_at = excluded.created_at",
+            (
+                account,
+                message_id,
+                self._cipher.encrypt(summary_json, _summary_aad(account, message_id)),
+                model,
+                self._clock().isoformat(),
+            ),
+        )
 
     def set_category(
         self,

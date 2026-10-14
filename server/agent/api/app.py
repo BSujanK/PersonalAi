@@ -81,6 +81,8 @@ def create_app(
     app.state.push = PushNotifier(db, keystore, enabled=settings.push == "expo")
     app.state.today = today or TodayCache(registry, mail.store if mail else None, clock)
     app.state.chat_locks = KeyedLocks()
+    app.state.llm = llm
+    app.state.redactor = redactor
     app.state.loop = AgentLoop(llm, registry, redactor, approvals, settings, clock)
 
     # /pair is the only route without the device-token dependency.

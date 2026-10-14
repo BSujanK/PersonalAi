@@ -3,6 +3,7 @@ import {
   deleteConversation,
   getApproval,
   getMailMessage,
+  getMailSummary,
   getConversation,
   listConversations,
   renameConversation,
@@ -166,5 +167,55 @@ describe('getMailMessage', () => {
       status: 404,
       detail: 'not_found',
     });
+  });
+});
+
+describe('getMailSummary', () => {
+  const payload = {
+    summary: {
+      text: 'Build failed.',
+      points: ['Tests red'],
+      actions: [{ text: 'Fix', due: null }],
+    },
+    cached: true,
+    model: 'm',
+  };
+
+  it('asks for the summary of one mail, both path parts encoded', async () => {
+    reply(200, payload);
+    await expect(getMailSummary('student@example.com', 'm/1 x')).resolves.toEqual(payload);
+    const { url, init, headers } = lastCall();
+    expect(url).toBe(`${BASE}/mail/student%40example.com/m%2F1%20x/summary`);
+    expect(init.method).toBe('GET');
+    expect(headers.Authorization).toBe('Bearer tok');
+  });
+
+  it('narrows an untrusted body', async () => {
+    reply(200, { ...payload, summary: { text: 'ok', points: ['a', 4], actions: [{ text: 7 }] } });
+    await expect(getMailSummary('a@example.com', 'm1')).resolves.toMatchObject({
+      summary: { text: 'ok', points: ['a'], actions: [] },
+    });
+  });
+
+  it('rejects a body that holds no summary', async () => {
+    reply(200, { summary: { text: '', points: [], actions: [] } });
+    await expect(getMailSummary('a@example.com', 'm1')).rejects.toMatchObject({ status: 502 });
+    reply(200, 'nonsense');
+    await expect(getMailSummary('a@example.com', 'm1')).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it('surfaces the model being down and an unknown mail as ApiErrors', async () => {
+    reply(503, { detail: 'summary_unavailable' });
+    await expect(getMailSummary('a@example.com', 'm1')).rejects.toMatchObject({
+      status: 503,
+      detail: 'summary_unavailable',
+    });
+    reply(404, { detail: 'not_found' });
+    await expect(getMailSummary('a@example.com', 'gone')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('reports an unreachable agent as offline', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('network'));
+    await expect(getMailSummary('a@example.com', 'm1')).rejects.toBeInstanceOf(OfflineError);
   });
 });

@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 # Columns added to tables that already existed, as (table, column, definition). A database from
 # an older version gets them by ALTER on open; the CREATE TABLE above carries them for new ones.
@@ -18,6 +18,12 @@ _ADDED_COLUMNS = (
     ("finance_txns", "inferred", "INTEGER NOT NULL DEFAULT 0"),
     ("finance_txns", "window_from", "TEXT"),
     ("finance_txns", "window_to", "TEXT"),
+    ("finance_sms", "body_hash", "TEXT"),
+)
+
+# Indexes on those added columns: they can only be created once the ALTER above has run.
+_ADDED_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS finance_sms_body_hash ON finance_sms(body_hash, received_at)",
 )
 
 _SCHEMA = """
@@ -127,6 +133,15 @@ CREATE TABLE IF NOT EXISTS mail_feedback (
     new_category TEXT NOT NULL CHECK (new_category IN ('important', 'normal', 'promo', 'spam')),
     created_at TEXT NOT NULL
 );
+-- The AI summary of a stored mail, kept so the phone does not pay for it twice.
+CREATE TABLE IF NOT EXISTS mail_summaries (
+    account TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    summary_enc BLOB NOT NULL,
+    model TEXT,
+    created_at TEXT,
+    PRIMARY KEY (account, message_id)
+);
 -- Ids only: which stored mail the deadline scan has already looked at.
 CREATE TABLE IF NOT EXISTS mail_deadline_scans (
     account TEXT NOT NULL,
@@ -194,7 +209,8 @@ CREATE TABLE IF NOT EXISTS finance_sms (
     sender TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('parsed', 'balance', 'ignored', 'unparsed')),
     body_enc BLOB,
-    txn_id INTEGER
+    txn_id INTEGER,
+    body_hash TEXT
 );
 CREATE TABLE IF NOT EXISTS finance_txns (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -290,6 +306,8 @@ class Database:
                 have = {r["name"] for r in self._conn.execute(f"PRAGMA table_info({table})")}
                 if column not in have:
                     self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            for statement in _ADDED_INDEXES:
+                self._conn.execute(statement)
             self._conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
     @contextmanager

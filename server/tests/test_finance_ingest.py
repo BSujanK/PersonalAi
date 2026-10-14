@@ -36,8 +36,8 @@ def test_duplicate_inside_one_batch_counts_once() -> None:
 def test_same_body_at_another_time_is_a_new_payment() -> None:
     env = make_fin()
     env.parsers.sms[BODY_A] = txn(reference=None)
-    env.ingest.ingest_sms_batch([SmsIn(SENDER, BODY_A, at()), SmsIn(SENDER, BODY_A, at(1))])
-    assert len(env.store.txns_between(at(-5), at(5))) == 2
+    env.ingest.ingest_sms_batch([SmsIn(SENDER, BODY_A, at()), SmsIn(SENDER, BODY_A, at(10))])
+    assert len(env.store.txns_between(at(-5), at(15))) == 2
 
 
 def test_ignored_sms_stores_no_body() -> None:

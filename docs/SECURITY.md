@@ -179,3 +179,5 @@ Owner decision, 2026-10-06. Three READ tools reach the open internet, in `agent/
 ### Inbox
 
 `GET /mail/inbox` (device token) lists synced mail grouped by category for the owner's phone only; nothing from it goes to the LLM.
+
+`GET /mail/{account}/{message_id}/summary` (device token) is the one mail route that reaches the LLM: it sends the stored mail redacted and wrapped as untrusted data, accepts only a validated JSON reply (clipped fields, markdown stripped), restores placeholders locally and caches the result AES-GCM encrypted in `mail_summaries` (deleted with the mail). Logs carry counts only.
