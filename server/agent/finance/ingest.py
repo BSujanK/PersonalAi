@@ -7,7 +7,7 @@ import re
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from agent.connectors.gmail import MailMessage
 from agent.finance.ledger import Ledger
@@ -30,6 +30,9 @@ _SECRET_LIKE = re.compile(
 )
 # Earlier outcomes that a later parser version may turn into a transaction.
 _REPARSABLE = frozenset({"balance", "unparsed"})
+# The live receiver and the inbox scan stamp one SMS differently (by seconds, rarely by a minute),
+# so the same sender and text arriving this close together is one message, not two.
+SMS_TWIN_WINDOW = timedelta(seconds=120)
 
 
 @dataclass(frozen=True)
@@ -76,6 +79,11 @@ class FinanceIngest:
                 key = self._store.sms_key(item.sender, item.body, received_at)
                 status = self._store.sms_status(key)
                 if status is None:
+                    if self._store.sms_twin_exists(
+                        self._store.body_hash(item.sender, item.body), received_at, SMS_TWIN_WINDOW
+                    ):
+                        duplicates += 1
+                        continue
                     by_status[self._tally(item, self._ingest_one(item, key, received_at))] += 1
                 elif status in _REPARSABLE and self._parses_as_txn(item):
                     # A parser fix: an SMS stored as balance-only or unparsed is now a payment.
@@ -120,9 +128,10 @@ class FinanceIngest:
             return False
 
     def _ingest_one(self, item: SmsIn, key: str, received_at: datetime) -> SmsStatus:
+        digest = self._store.body_hash(item.sender, item.body)
         if self._bank_for_sender(item.sender) is None:
             # The sender may be a person's number: keep only the idempotency key.
-            self._store.insert_sms(key, received_at, "", "ignored")
+            self._store.insert_sms(key, received_at, "", "ignored", body_hash=digest)
             return "ignored"
         try:
             parsed = self._parse_sms(item.sender, item.body)
@@ -132,16 +141,20 @@ class FinanceIngest:
         source: Source = "notification" if item.sender in NOTIFICATION_SENDERS else "sms"
         if isinstance(parsed, ParsedTxn):
             txn_id, _ = self._ledger.record(parsed, received_at, source)
-            self._store.insert_sms(key, received_at, item.sender, "parsed", txn_id=txn_id)
+            self._store.insert_sms(
+                key, received_at, item.sender, "parsed", txn_id=txn_id, body_hash=digest
+            )
             return "parsed"
         if isinstance(parsed, ParsedBalance):
             self._ledger.record_balance(parsed, received_at, source)
-            self._store.insert_sms(key, received_at, item.sender, "balance")
+            self._store.insert_sms(key, received_at, item.sender, "balance", body_hash=digest)
             return "balance"
         if _SECRET_LIKE.search(item.body):
-            self._store.insert_sms(key, received_at, item.sender, "ignored")
+            self._store.insert_sms(key, received_at, item.sender, "ignored", body_hash=digest)
             return "ignored"
-        self._store.insert_sms(key, received_at, item.sender, "unparsed", body=item.body)
+        self._store.insert_sms(
+            key, received_at, item.sender, "unparsed", body=item.body, body_hash=digest
+        )
         return "unparsed"
 
     def ingest_email(self, msg: MailMessage) -> None:

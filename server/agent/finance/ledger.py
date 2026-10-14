@@ -11,6 +11,7 @@ from agent.finance.store import BalanceSource, CategorySource, FinanceStore, Sou
 
 DEDUP_WINDOW = timedelta(hours=2)  # the same payment seen by SMS and by bank email
 NOTIFICATION_DEDUP_WINDOW = timedelta(minutes=15)  # a payment-app notification and either
+BALANCE_TWIN_WINDOW = timedelta(minutes=10)  # one payment that left the same balance behind
 
 Rules = Callable[[str | None, str, str, str | None], tuple[str, CategorySource] | None]
 
@@ -40,7 +41,9 @@ class Ledger:
 
         Returns ``(txn_id, merged)``. A row with the same bank reference is the same payment,
         whatever its source. Without a shared reference, rows from the same source are never
-        merged, so two genuine identical payments stay two rows.
+        merged, so two genuine identical payments stay two rows, with one exception: a row on the
+        same account with the same amount and the same balance left behind is the same payment
+        even from the same source, because two payments cannot leave one balance.
         """
         with self._store.transaction():
             match = (
@@ -48,6 +51,7 @@ class Ledger:
                 if parsed.reference
                 else None
             ) or self._find_match(parsed, occurred_at, source)
+            match = match or self._store.find_balance_twin(parsed, occurred_at, BALANCE_TWIN_WINDOW)
             if match is not None:
                 self._store.merge_txn(match.id, parsed, source, match)
                 self._categorize_if_missing(match.id)

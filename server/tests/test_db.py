@@ -157,6 +157,51 @@ def test_a_v9_database_gains_the_notification_and_inferred_columns(tmp_path: Pat
     row = db.query("SELECT * FROM finance_txns")[0]
     assert (row["from_sms"], row["from_notification"], row["inferred"]) == (1, 0, 0)
     assert (row["window_from"], row["window_to"]) == (None, None)
-    assert db.query("PRAGMA user_version")[0][0] == SCHEMA_VERSION == 10
+    assert db.query("PRAGMA user_version")[0][0] == SCHEMA_VERSION == 11
     db.close()
     Database(path).close()  # opening again is a no-op, not a duplicate-column error
+
+
+_V10_FINANCE_SMS = """
+CREATE TABLE finance_sms (
+    key_hash TEXT PRIMARY KEY,
+    received_at TEXT NOT NULL,
+    sender TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('parsed', 'balance', 'ignored', 'unparsed')),
+    body_enc BLOB,
+    txn_id INTEGER
+)
+"""
+
+
+def test_a_v10_database_gains_the_sms_body_hash_and_the_mail_summaries_table(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "agent.db"
+    Database(path).close()
+    old = sqlite3.connect(path)
+    old.execute("DROP TABLE finance_sms")
+    old.execute(_V10_FINANCE_SMS)
+    old.execute(
+        "INSERT INTO finance_sms (key_hash, received_at, sender, status) "
+        "VALUES ('k', 't', 'VM-TESTBK', 'parsed')"
+    )
+    old.execute("DROP TABLE mail_summaries")
+    old.execute("PRAGMA user_version=10")
+    old.commit()
+    old.close()
+
+    db = Database(path)
+    columns = {r["name"]: r for r in db.query("PRAGMA table_info(finance_sms)")}
+    assert "body_hash" in columns and columns["body_hash"]["notnull"] == 0
+    assert db.query("SELECT body_hash FROM finance_sms")[0]["body_hash"] is None
+    indexes = {r["name"] for r in db.query("PRAGMA index_list(finance_sms)")}
+    assert "finance_sms_body_hash" in indexes
+    summary_columns = {r["name"] for r in db.query("PRAGMA table_info(mail_summaries)")}
+    assert summary_columns == {"account", "message_id", "summary_enc", "model", "created_at"}
+    db.execute(
+        "INSERT INTO mail_summaries (account, message_id, summary_enc) VALUES ('a', 'm', x'00')"
+    )
+    assert db.query("PRAGMA user_version")[0][0] == SCHEMA_VERSION == 11
+    db.close()
+    Database(path).close()  # opening again is a no-op

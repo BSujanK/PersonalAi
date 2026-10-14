@@ -2,6 +2,9 @@
 
 GET /mail/{account}/{message_id} returns one message in full for the owner's paired phone only.
 Nothing here goes to the LLM, so no redaction applies: the owner sees their own mail.
+
+GET /mail/{account}/{message_id}/summary is the one exception: it sends the stored mail to the
+main model, redacted and wrapped as untrusted (see agent.mail.summary), and caches the answer.
 """
 
 from __future__ import annotations
@@ -19,10 +22,14 @@ from pydantic import BaseModel, Field
 from agent.api.auth import require_device
 from agent.connectors.gmail import Address, MessageNotFound, parse_detail
 from agent.core.audit import AuditLog
+from agent.core.llm import LLMClient
+from agent.core.redact import Redactor
 from agent.mail.digest import build_digest
 from agent.mail.rules import Category
 from agent.mail.services import MailServices
 from agent.mail.store import CATEGORY_RANKS, UNCLASSIFIED_RANK, StoredMail
+from agent.mail.summary import MailSummary, SummaryUnavailable, summarize_mail
+from agent.store.crypto import DecryptionError
 from agent.store.models import Device
 
 log = logging.getLogger(__name__)
@@ -185,3 +192,35 @@ def message_detail(
         ],
         "source": "live",
     }
+
+
+@router.get("/mail/{account}/{message_id}/summary")
+def message_summary(
+    account: Annotated[str, Path(min_length=1, max_length=254)],
+    message_id: Annotated[str, Path(min_length=1, max_length=128)],
+    request: Request,
+) -> dict[str, Any]:
+    """A short summary of a synced message, from the cache or made now from the stored copy.
+    503 ``summary_unavailable`` when the model cannot give one; the app then shows the body."""
+    mail: MailServices = request.app.state.mail
+    stored = mail.store.get(account, message_id)
+    if stored is None:  # only synced mail of configured accounts can be opened
+        raise HTTPException(status_code=404, detail="not_found")
+    try:
+        cached = mail.store.get_summary(account, message_id)
+        if cached is not None:
+            text, model = cached
+            summary = MailSummary.from_json(json.loads(text))
+            return {"summary": summary.to_json(), "cached": True, "model": model}
+    except (DecryptionError, ValueError) as exc:  # unreadable cache entry: make a new one
+        log.warning("mail summary cache unreadable: %s", type(exc).__name__)
+    llm: LLMClient = request.app.state.llm
+    redactor: Redactor = request.app.state.redactor
+    try:
+        summary, model = summarize_mail(llm, redactor, stored)
+    except SummaryUnavailable:
+        raise HTTPException(status_code=503, detail="summary_unavailable") from None
+    mail.store.put_summary(
+        account, message_id, json.dumps(summary.to_json(), ensure_ascii=False), model
+    )
+    return {"summary": summary.to_json(), "cached": False, "model": model}

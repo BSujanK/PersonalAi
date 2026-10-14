@@ -1,6 +1,7 @@
 // Typed client for the laptop agent. Every route except /pair sends the device bearer token.
 import { loadPairing } from './secureKeys';
 import { createSseParser } from './sse';
+import { parseMailSummary } from './mailSummary';
 import { parseSources, type Source } from './sources';
 import { normaliseServerUrl } from './serverUrl';
 
@@ -11,6 +12,8 @@ export const CHAT_TIMEOUT_MS = 120_000;
 /** /today asks Gmail, Calendar and Classroom in turn, so a section can take a while. */
 export const TODAY_TIMEOUT_MS = 30_000;
 const STREAM_INACTIVITY_MS = 60_000;
+/** A summary that is not cached waits on the language model. */
+export const SUMMARY_TIMEOUT_MS = 45_000;
 
 export class ApiError extends Error {
   constructor(
@@ -552,6 +555,40 @@ export interface MailMessage {
 
 export const getMailMessage = (account: string, id: string) =>
   call<MailMessage>('GET', `/mail/${encodeURIComponent(account)}/${encodeURIComponent(id)}`);
+
+/** One thing the mail asks the owner to do, with its due date when the mail names one. */
+export interface MailSummaryAction {
+  text: string;
+  /** An ISO date or datetime as the agent wrote it; shown through `summaryDueLabel`. */
+  due: string | null;
+}
+
+/** The agent's reading of one mail. Validated by `parseMailSummary`; at least one part is set. */
+export interface MailSummary {
+  text: string;
+  points: string[];
+  actions: MailSummaryAction[];
+}
+
+export interface MailSummaryResponse {
+  summary: MailSummary;
+  cached: boolean;
+  model: string;
+}
+
+/**
+ * The agent's summary of one mail. It can take several seconds when not cached. The payload is
+ * untrusted wire data: a body that does not validate counts as a failure, so the caller falls
+ * back to the plain mail.
+ */
+export const getMailSummary = (account: string, id: string) =>
+  call<unknown>('GET', `/mail/${encodeURIComponent(account)}/${encodeURIComponent(id)}/summary`, {
+    timeoutMs: SUMMARY_TIMEOUT_MS,
+  }).then((raw) => {
+    const parsed = parseMailSummary(raw);
+    if (!parsed) throw new ApiError(502, 'invalid_summary');
+    return parsed;
+  });
 
 /** Only the named sections; an older agent ignores `sections` and answers with all of them. */
 export const getToday = (sections?: TodaySection[]) =>
